@@ -18,8 +18,10 @@
   },
   "homepage": "https://github.com/christiantroyandrada/node-microservice#readme",
   "dependencies": {
+    "dotenv": "^16.3.1",
     "koa": "^2.7.0",
     "koa-better-router": "^2.1.1",
-    "koa-body": "^4.1.0"
+    "koa-body": "^4.1.0",
+    "mongoose": "^8.0.3"
   }
 }
