@@ -1,0 +1,16 @@
+version: "3.7"
+services:
+  recordsService:
+    image: christiantroyandrada/records-service:1.0
+    environment:
+      DB_HOST: recorddb
+      DB_PORT: 27017
+    ports:
+      - "8080:8080"
+  recorddb:
+    image: mongo:4.0
+    volumes:
+      - dbdata:/data/db
+volumes:
+  dbdata:
+    external: true

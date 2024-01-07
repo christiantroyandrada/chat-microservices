@@ -5,8 +5,8 @@ mongoose.Promise = global.Promise;
 module.exports = async (dbOptions = {}) => {
   const {
     host = 'localhost',
-    // port = process.env.PORT,
-    database = process.env.DB_DATABASE,
+    port = '27017',
+    database = 'record',
   } = dbOptions;
 
   const options = {};

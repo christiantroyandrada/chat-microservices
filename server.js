@@ -3,7 +3,7 @@ const Koa = require('koa');
 const routes = require('./src/routes');
 const app = new Koa();
 const connectToDb = require('./src/db-connect');
-const PORT = process.env.PORT;
+const PORT = process.env.PORT || 8080;
 
 connectToDb({
   host: process.env.DB_HOST,
