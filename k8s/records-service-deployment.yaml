@@ -1,0 +1,41 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    kompose.cmd: C:\Users\Yort.B4TTLE-ST4SY0N\AppData\Local\Microsoft\WinGet\Links\kompose.exe convert
+    kompose.version: 1.31.2 (a92241f79)
+  creationTimestamp: null
+  labels:
+    io.kompose.service: recordsservice
+  name: recordsservice
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      io.kompose.service: recordsservice
+  strategy: {}
+  template:
+    metadata:
+      annotations:
+        kompose.cmd: C:\Users\Yort.B4TTLE-ST4SY0N\AppData\Local\Microsoft\WinGet\Links\kompose.exe convert
+        kompose.version: 1.31.2 (a92241f79)
+      creationTimestamp: null
+      labels:
+        io.kompose.network/node-microservice-default: "true"
+        io.kompose.service: recordsservice
+    spec:
+      containers:
+        - env:
+            - name: DB_HOST
+              value: recorddb
+            - name: DB_PORT
+              value: "27017"
+          image: christiantroyandrada/records-service:1.0
+          name: recordsservice
+          ports:
+            - containerPort: 8080
+              hostPort: 8080
+              protocol: TCP
+          resources: {}
+      restartPolicy: Always
+status: {}
