@@ -1,4 +1,4 @@
-import { config } from 'dotenv';
+import { config } from 'dotenv'
 
 const configFile = `./.env`
 config({ path: configFile })
@@ -14,7 +14,7 @@ const {
   SMTP_PORT = 587,
   SMTP_USER,
   SMTP_PASS
-} = process.env;
+} = process.env
 
 const queue = { notifications: 'NOTIFICATIONS' }
 
