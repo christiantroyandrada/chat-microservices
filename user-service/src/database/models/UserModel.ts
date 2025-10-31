@@ -2,11 +2,11 @@ import mongoose, { Document, Schema } from 'mongoose'
 import validator from 'validator'
 
 export interface IUser extends Document {
-  name: string;
-  email: string;
-  password: string;
-  createdAt: Date;
-  updatedAt: Date;
+  name: string
+  email: string
+  password: string
+  createdAt: Date
+  updatedAt: Date
 }
 
 const UserSchema: Schema = new Schema({
