@@ -17,7 +17,7 @@ app.use(errorHandler)
 connectDB()
 
 server = app.listen(config.PORT, () => {
-  console.log(`Server is running on port ${config.PORT}`)
+  console.log(`User Service is running on port ${config.PORT}`)
 })
 
 const initRabbitMQClient = async () => {
