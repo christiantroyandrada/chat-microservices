@@ -1,4 +1,4 @@
-import express, { Request, Response, NextFunction } from 'express'
+import { Request, Response, NextFunction } from 'express'
 import jwt from 'jsonwebtoken'
 import { User, IUser } from '../database'
 import { APIError, encryptPassword, isPasswordMatch } from '../utils'
@@ -106,4 +106,9 @@ const login = async (
       message,
     })
   }
+}
+
+export default {
+  registration,
+  login,
 }
