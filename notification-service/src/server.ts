@@ -18,9 +18,9 @@ server = app.listen(config.PORT, () => {
 const initializeRabbitMQClient = async () => {
   try {
     await rabbitMQService.connect()
-    console.log('RabbitMQ client initialized. now listening...')
+    console.log('[notification-service] RabbitMQ client initialized. now listening...')
   } catch (e) {
-    console.error(`Failed to initialize RabbitMQ client: ${e}`)
+    console.error(`[notification-service] Failed to initialize RabbitMQ client: ${e}`)
   }
 }
 
