@@ -1,8 +1,6 @@
 import express, { Express } from 'express'
 import { Server } from 'http'
-import userServiceRouter from './routes/userServiceRouter'
 import { errorMiddleware, errorHandler } from './middleware'
-import { connectDB } from './database'
 import config from './config/config'
 import { rabbitMQService } from './services/RabbitMQService'
 
@@ -10,25 +8,23 @@ const app: Express = express()
 let server: Server
 app.use(express.json())
 app.use(express.urlencoded({ extended: true }))
-app.use(userServiceRouter)
 app.use(errorMiddleware)
 app.use(errorHandler)
 
-connectDB()
-
 server = app.listen(config.PORT, () => {
-  console.log(`User Service is running on port ${config.PORT}`)
+  console.log(`Notification Service is running on port ${config.PORT}`)
 })
 
-const initRabbitMQClient = async () => {
+const initializeRabbitMQClient = async () => {
   try {
     await rabbitMQService.connect()
-    console.log('[user-service] RabbitMQ client initialized. now listening...')
+    console.log('[notification-service] RabbitMQ client initialized. now listening...')
   } catch (e) {
-    console.error(`[user-service] Failed to initialize RabbitMQ client: ${e}`)
+    console.error(`[notification-service] Failed to initialize RabbitMQ client: ${e}`)
   }
 }
-initRabbitMQClient()
+
+initializeRabbitMQClient()
 
 const exitHandler = () => {
   if (server) {
@@ -42,7 +38,7 @@ const exitHandler = () => {
 }
 
 const unexpectedErrorHandler = (error: unknown) => {
-  console.error('[user-service]: Uncaught Exception', error)
+  console.error('[notification-service]: Uncaught Exception', error)
   exitHandler()
 }
 
