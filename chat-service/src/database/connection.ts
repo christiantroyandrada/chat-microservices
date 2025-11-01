@@ -3,7 +3,7 @@ import config from '../config/config'
 
 export const connectDB = async () => {
   try {
-    console.info('[chat-service] Connecting to MongoDB...' + config.MONGO_URI)
+    console.info('[chat-service] Connecting to MongoDB...')
     await mongoose.connect(config.MONGO_URI! as string)
     console.info('[chat-service] MongoDB connected successfully')
   } catch (error) {

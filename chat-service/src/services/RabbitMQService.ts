@@ -5,11 +5,12 @@ import config from '../config/config'
 class RabbitMQService {
   private requestQueue = 'USER_DETAILS_REQUEST'
   private responseQueue = 'USER_DETAILS_RESPONSE'
-  private correlationMap = new Map()
+  // store callback + timeout so we can clean up if no response arrives
+  private correlationMap = new Map<string, { callback: Function; timer: NodeJS.Timeout }>()
   private channel!: Channel
 
   constructor () {
-    this.connect()
+    // do not auto-connect here; server/bootstrap should call connect()
   }
 
   async connect () {
@@ -18,27 +19,44 @@ class RabbitMQService {
     await this.channel.assertQueue(this.requestQueue)
     await this.channel.assertQueue(this.responseQueue)
 
-    this.channel.consume(this.responseQueue, (msg) => {
-      if (msg) {
+    this.channel.consume(
+      this.responseQueue,
+      (msg) => {
+        if (!msg) return
         const correlationId = msg.properties.correlationId
         const user = JSON.parse(msg.content.toString())
 
-        const callback = this.correlationMap.get(correlationId)
-        if (callback) {
-          callback(user)
+        const entry = this.correlationMap.get(correlationId)
+        if (entry) {
+          clearTimeout(entry.timer)
+          entry.callback(user)
           this.correlationMap.delete(correlationId)
         }
-      }
-    }, { noAck: true })
+      },
+      { noAck: true },
+    )
   }
 
-  async getUserDetails (userId:string, callback: Function) {
+  async getUserDetails (userId: string, callback: Function) {
     const correlationId = uuid_v4()
-    this.correlationMap.set(correlationId, callback)
+    const timer = setTimeout(() => {
+      const entry = this.correlationMap.get(correlationId)
+      if (entry) {
+        // call the callback with null to indicate timeout
+        try {
+          entry.callback(null)
+        } catch (e) {
+          console.error('[chat-service] getUserDetails callback error after timeout', e)
+        }
+        this.correlationMap.delete(correlationId)
+      }
+    }, 5000)
+
+    this.correlationMap.set(correlationId, { callback, timer })
     this.channel.sendToQueue(
       this.requestQueue,
       Buffer.from(JSON.stringify({ userId })),
-      { correlationId }
+      { correlationId },
     )
   }
 

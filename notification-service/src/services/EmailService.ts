@@ -22,7 +22,7 @@ export class EmailService {
     content: string,
   ) {
     const mailOptions = {
-      from: config.EMAIAL_FROM,
+      from: config.smtp.user,
       to: to,
       subject: subject,
       html: content,
