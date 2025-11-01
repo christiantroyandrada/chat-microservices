@@ -46,6 +46,8 @@ const authMiddleware = async (
       createdAt: new Date(decoded.iat * 1000),
       updatedAt: new Date(decoded.exp * 1000),
     }
+    // proceed to next middleware / route handler
+    return next()
   } catch (error) {
     console.error('[chat-service] Error in auth middleware:', error)
     return next(new APIError(401, 'Invalid or expired token'))
@@ -92,7 +94,6 @@ const errorHandler: ErrorRequestHandler = (
   }
 
   res.status(statusCode).json(response)
-  next()
 }
 
 export {
