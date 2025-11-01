@@ -1,10 +1,10 @@
 import { Response } from 'express'
-import { AuthRequest } from '../middleware'
+import { AuthenticatedRequest } from '../middleware'
 import { Message } from '../database'
-import { APIError, handleReceivedMessage } from '../utils'
+import { APIError, handleMessageReceived } from '../utils'
 
 const sendMessage = async (
-  req: AuthRequest,
+  req: AuthenticatedRequest,
   res: Response,
 ) => {
   try {
@@ -19,7 +19,7 @@ const sendMessage = async (
       message,
     })
 
-    await handleReceivedMessage(
+    await handleMessageReceived(
       name,
       email,
       receiverId,
@@ -54,7 +54,7 @@ const validateReceiver = (
 }
 
 const fetchConversation = async (
-  req: AuthRequest,
+  req: AuthenticatedRequest,
   res: Response,
 ) => {
   try {
