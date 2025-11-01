@@ -9,7 +9,6 @@ const  {
   JWT_SECRET,
   MESSAGE_BROKER_URL,
   NODE_ENV,
-  queue,
 } = process.env
 
 const queue = { notifications: 'NOTIFICATIONS' }
