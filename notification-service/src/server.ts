@@ -38,7 +38,7 @@ const exitHandler = () => {
 }
 
 const unexpectedErrorHandler = (error: unknown) => {
-  console.error(error)
+  console.error('[notification-service]: Uncaught Exception', error)
   exitHandler()
 }
 

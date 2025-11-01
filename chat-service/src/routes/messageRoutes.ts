@@ -1,14 +1,18 @@
-import { Router } from 'express'
+import { Router, RequestHandler } from 'express'
 import MessageController from '../controllers/MessageController'
 import { authMiddleware } from '../middleware'
 
-const messageRoutes = Router()
+const chatServiceRouter = Router()
 
-messageRoutes.post('/send', authMiddleware, MessageController.sendMessage)
-messageRoutes.get(
+chatServiceRouter.post(
+  '/send',
+  authMiddleware as RequestHandler,
+  MessageController.sendMessage as unknown as RequestHandler
+)
+chatServiceRouter.get(
   '/get/:receiverId',
-  authMiddleware,
-  MessageController.fetchConversation
+  authMiddleware as RequestHandler,
+  MessageController.fetchConversation as unknown as RequestHandler
 )
 
-export default messageRoutes
+export default chatServiceRouter
