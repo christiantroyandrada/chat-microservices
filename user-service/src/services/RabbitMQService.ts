@@ -23,7 +23,7 @@ class RabbitMQService {
   private channel!: amqp.Channel
 
   constructor () {
-    this.connect()
+    // do not auto-connect in constructor; server bootstrap will call connect()
   }
 
   async connect () {
