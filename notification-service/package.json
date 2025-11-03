@@ -7,7 +7,7 @@
     "dev-server": "NODE_ENV=development nodemon src/server.ts",
     "dev": "node scripts/purgeQueue.js && npm run dev-server",
     "build": "rm -rf build/ && tsc -p .",
-    "start": "NODE_ENV=production nodemon build/server.js"
+  "start": "NODE_ENV=production node build/server.js"
   },
   "keywords": [],
   "author": "christiantroyandrada",

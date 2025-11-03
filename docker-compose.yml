@@ -1,4 +1,3 @@
-version: '3.8'
 services:
   mongodb:
     image: mongo:latest
@@ -13,30 +12,58 @@ services:
     restart: always
     ports:
       - "8081:8081"
+    # load other env vars from the service .env, but override MONGO_URI below
+    env_file:
+      - ./user-service/.env
+    environment:
+      - MONGO_URI=mongodb://mongodb:27017/chat-db
+      - NODE_ENV=production
     depends_on:
       - mongodb
-    environment:
-      - NODE_ENV=production
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"const http=require('http'); const req=http.get('http://localhost:8081/health', res=>{process.exit(res.statusCode===200?0:1)}); req.on('error',()=>process.exit(1)); setTimeout(()=>process.exit(1),2000);\""]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    
 
   chat:
     build: ./chat-service
     restart: always
     ports:
       - "8082:8082"
+    env_file:
+      - ./chat-service/.env
+    environment:
+      - MONGO_URI=mongodb://mongodb:27017/chat-db
+      - NODE_ENV=production
     depends_on:
       - mongodb
-    environment:
-      - NODE_ENV=production
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"const http=require('http'); const req=http.get('http://localhost:8082/health', res=>{process.exit(res.statusCode===200?0:1)}); req.on('error',()=>process.exit(1)); setTimeout(()=>process.exit(1),2000);\""]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
 
   notification:
     build: ./notification-service
     restart: always
     ports:
       - "8083:8083"
+    env_file:
+      - ./notification-service/.env
     depends_on:
       - mongodb
     environment:
       - NODE_ENV=production
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"const http=require('http'); const req=http.get('http://localhost:8083/health', res=>{process.exit(res.statusCode===200?0:1)}); req.on('error',()=>process.exit(1)); setTimeout(()=>process.exit(1),2000);\""]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
 
   nginx:
     build:

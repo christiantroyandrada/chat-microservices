@@ -8,6 +8,8 @@ const app: Express = express()
 let server: Server
 app.use(express.json())
 app.use(express.urlencoded({ extended: true }))
+// Health check endpoint for Docker and monitoring
+app.get('/health', (_req, res) => res.status(200).json({ status: 'ok' }))
 app.use(errorMiddleware)
 app.use(errorHandler)
 

@@ -1,4 +1,5 @@
 import express, { Express } from 'express'
+import mongoose from 'mongoose'
 import { Server } from 'http'
 import userServiceRouter from './routes/userServiceRouter'
 import { errorMiddleware, errorHandler } from './middleware'
@@ -10,6 +11,23 @@ const app: Express = express()
 let server: Server
 app.use(express.json())
 app.use(express.urlencoded({ extended: true }))
+// Health check endpoint for Docker and monitoring (includes DB readiness)
+app.get('/health', async (_req, res) => {
+  try {
+    const state = mongoose.connection.readyState
+    // 1 = connected
+    if (state !== 1) {
+      return res.status(503).json({ status: 'error', dbState: state })
+    }
+    // perform a lightweight ping to verify DB responsiveness
+    if (mongoose.connection.db) {
+      await mongoose.connection.db.admin().ping()
+    }
+    return res.status(200).json({ status: 'ok', db: 'ok' })
+  } catch (err) {
+    return res.status(503).json({ status: 'error', error: String(err) })
+  }
+})
 app.use(userServiceRouter)
 app.use(errorMiddleware)
 app.use(errorHandler)
