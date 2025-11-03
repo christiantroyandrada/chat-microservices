@@ -1,52 +1,176 @@
-version: '3.8'
 services:
-  mongodb:
-    image: mongo:latest
-    restart: unless-stopped
-    ports:
-      - "27017:27017"
+  # Setup service - generates .env files from consolidated secrets before other services start
+  setup:
+    image: bash:5.2
     volumes:
-      - "mongo-data:/data/db"
+      - ./scripts:/scripts:ro
+      - ./docker-secrets:/docker-secrets:ro
+      - ./user-service:/user-service
+      - ./chat-service:/chat-service
+      - ./notification-service:/notification-service
+    command: /scripts/generate-envs.sh
+    restart: "no"
+
+  mongodb:
+    image: mongo:8.2.1
+    restart: unless-stopped
+    volumes:
+      - mongo-data:/data/db
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${ADMIN_USERNAME}
+      MONGO_INITDB_ROOT_PASSWORD: ${ADMIN_PASSWORD}
+    secrets:
+      - app_secrets
+    depends_on:
+      setup:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "mongosh --quiet --eval \"db.adminCommand('ping').ok\" | grep 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    logging:
+      driver: "json-file"
+      options: { max-size: "10m", max-file: "3" }
+
+  # Web UI for MongoDB - Nosqlclient (Mongoclient)
+  nosqlclient:
+    image: mongoclient/mongoclient:4.0.1
+    restart: unless-stopped
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:8088:3000" # visit http://localhost:8088 (bound to localhost only)
+    environment:
+      # MongoDB connection (use URL-encoded password to handle special characters like '@')
+      MONGO_URL: "mongodb://${ADMIN_USERNAME}:${ADMIN_PASSWORD_ENCODED}@mongodb:27017/?authSource=admin"
+      # Root URL for the application
+      ROOT_URL: "http://localhost:8088"
+      # Port to run on (internal)
+      PORT: "3000"
+    secrets:
+      - app_secrets
+    healthcheck:
+      # Check if the web UI is responding (curl is more reliable than wget in this image)
+      test: ["CMD-SHELL", "curl -f http://localhost:3000/ >/dev/null 2>&1 || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    logging:
+      driver: "json-file"
+      options: { max-size: "10m", max-file: "3" }
 
   user:
     build: ./user-service
     restart: always
-    ports:
-      - "8081:8081"
-    depends_on:
-      - mongodb
+    expose:
+      - "8081"
+    env_file:
+      - ./user-service/.env
     environment:
-      - NODE_ENV=production
+      # build the URI from .env variables (keeps credentials out of the compose file itself)
+      MONGO_URI: mongodb://${ADMIN_USERNAME}:${ADMIN_PASSWORD_ENCODED}@mongodb:27017/chat-db?authSource=admin
+      NODE_ENV: production
+    secrets:
+      - app_secrets
+    depends_on:
+      setup:
+        condition: service_completed_successfully
+      mongodb:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"const http=require('http'); const req=http.get('http://localhost:8081/health', res=>{process.exit(res.statusCode===200?0:1)}); req.on('error',()=>process.exit(1)); setTimeout(()=>process.exit(1),2000);\""]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    logging:
+      driver: "json-file"
+      options: { max-size: "10m", max-file: "3" }
 
   chat:
     build: ./chat-service
     restart: always
-    ports:
-      - "8082:8082"
-    depends_on:
-      - mongodb
+    expose:
+      - "8082"
+    env_file:
+      - ./chat-service/.env
     environment:
-      - NODE_ENV=production
+      MONGO_URI: mongodb://${ADMIN_USERNAME}:${ADMIN_PASSWORD_ENCODED}@mongodb:27017/chat-db?authSource=admin
+      NODE_ENV: production
+    secrets:
+      - app_secrets
+    depends_on:
+      setup:
+        condition: service_completed_successfully
+      mongodb:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"const http=require('http'); const req=http.get('http://localhost:8082/health', res=>{process.exit(res.statusCode===200?0:1)}); req.on('error',()=>process.exit(1)); setTimeout(()=>process.exit(1),2000);\""]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    logging:
+      driver: "json-file"
+      options: { max-size: "10m", max-file: "3" }
 
   notification:
     build: ./notification-service
     restart: always
-    ports:
-      - "8083:8083"
-    depends_on:
-      - mongodb
+    expose:
+      - "8083"
+    env_file:
+      - ./notification-service/.env
     environment:
-      - NODE_ENV=production
+      NODE_ENV: production
+      MONGO_URI: mongodb://${ADMIN_USERNAME}:${ADMIN_PASSWORD_ENCODED}@mongodb:27017/chat-db?authSource=admin
+    depends_on:
+      setup:
+        condition: service_completed_successfully
+      mongodb:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"const http=require('http'); const req=http.get('http://localhost:8083/health', res=>{process.exit(res.statusCode===200?0:1)}); req.on('error',()=>process.exit(1)); setTimeout(()=>process.exit(1),2000);\""]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    logging:
+      driver: "json-file"
+      options: { max-size: "10m", max-file: "3" }
 
   nginx:
     build:
       context: ./nginx
       dockerfile: Dockerfile
     ports:
-      - "85:85"
+      - "127.0.0.1:85:8080"  # map host 85 to container 8080 (non-root port)
     depends_on:
-      - user
-      - chat
-      - notification
+      user:
+        condition: service_healthy
+      chat:
+        condition: service_healthy
+      notification:
+        condition: service_healthy
+    # volumes:
+    #   - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8080/ >/dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    logging:
+      driver: "json-file"
+      options: { max-size: "10m", max-file: "3" }
+
 volumes:
   mongo-data:
+
+secrets:
+  app_secrets:
+    file: ./docker-secrets/app_secrets

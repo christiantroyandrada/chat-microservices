@@ -1,13 +1,13 @@
 import amqp, { Channel } from 'amqplib'
 import config from '../config/config'
 import { FCMService } from './FCMService'
-import { EmailService } from './EmailService'
+import { SecureEmailService } from './SecureEmailService'
 import { UserStatusStore } from '../utils'
 
 class RabbitMQService {
   private channel!: Channel
   private fcmService = FCMService
-  private emailService = new EmailService()
+  private emailService = new SecureEmailService()
   private userStatusStore = new UserStatusStore()
 
   constructor () {

@@ -1,4 +1,4 @@
 import { FCMService } from './FCMService'
-import { EmailService } from './EmailService'
+import { SecureEmailService } from './SecureEmailService'
 
-export { FCMService, EmailService }
+export { FCMService, SecureEmailService }

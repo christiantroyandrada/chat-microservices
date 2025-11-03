@@ -22,7 +22,33 @@ const start = async () => {
     console.log(`[chat-service]: Server is running at port ${config.PORT}`)
   })
 
-  const io = new SocketIOServer(server)
+  // after `server = app.listen(...)`
+  const io = new SocketIOServer(server, {
+    // MUST match the NGINX location below
+    path: '/chat/socket.io',
+
+    // Heartbeats: default is fine, but make them explicit
+    pingInterval: 25000,   // server sends ping every 25s
+    pingTimeout: 60000,    // drop if no pong within 60s
+
+    // Helpful compression limit (optional)
+    perMessageDeflate: { threshold: 1024 },
+
+    // Make CORS explicit (add your domains/ports)
+    cors: {
+      origin: [
+        'http://localhost:85',
+        'https://your-hostname.example', // replace
+      ],
+      credentials: true,
+      methods: ['GET', 'POST', 'OPTIONS'],
+      allowedHeaders: ['Content-Type', 'Authorization']
+    },
+
+    // Let Socket.IO pick websocket then fallback to polling
+    transports: ['websocket', 'polling'] // optional; default includes both
+  })
+
 
   io.on('connection', (socket: Socket) => {
     console.log('[chat-service] New client connected: ', socket.id)
@@ -42,19 +68,18 @@ const start = async () => {
       io.emit('receiveMessage', message)
     })
 
-    socket.on('sendMessage', async (data) => {
+    socket.on('sendMessage', async (data, ack?: (res: { ok: boolean; id?: string; error?: string }) => void) => {
       try {
         const { senderId, receiverId, message } = data
-        const msg = new Message({
-          senderId,
-          receiverId,
-          message,
-        })
+        const msg = new Message({ senderId, receiverId, message })
         await msg.save()
         io.to(receiverId).emit('receiveMessage', msg)
+        ack?.({ ok: true, id: String(msg._id) })
       } catch (err) {
         console.error('[chat-service] socket sendMessage error:', err)
-        socket.emit('error', { message: 'Failed to send message' })
+        ack?.({ ok: false, error: 'Failed to send message' })
+        // Prefer a namespaced error event vs. 'error' (which Socket.IO also uses internally)
+        socket.emit('server:error', { message: 'Failed to send message' })
       }
     })
   })

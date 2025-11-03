@@ -7,4 +7,8 @@ COPY . .
 
 RUN npm run build
 EXPOSE 8082
+RUN addgroup -S app && adduser -S app -G app
+RUN chown -R app:app /usr/src/app
+USER app
+
 CMD ["npm", "start"]
