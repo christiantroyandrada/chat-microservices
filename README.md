@@ -13,8 +13,8 @@ This repository contains a small set of Node.js + TypeScript microservices for a
 ## Quick overview
 
 - Gateway routes (default):
-  - `/api/auth` -> user-service (http://localhost:8081)
-  - `/api/messages` -> chat-service (http://localhost:8082)
+  - `/api/user` -> user-service (http://localhost:8081)
+  - `/api/chats` -> chat-service (http://localhost:8082)
   - `/api/notifications` -> notification-service (http://localhost:8083)
 
 - Inter-service messaging: RabbitMQ (services read `MESSAGE_BROKER_URL`)

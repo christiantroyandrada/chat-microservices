@@ -1,0 +1,52 @@
+version: '3.8'
+services:
+  mongodb:
+    image: mongo:latest
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    volumes:
+      - "mongo-data:/data/db"
+
+  user:
+    build: ./user-service
+    restart: always
+    ports:
+      - "8081:8081"
+    depends_on:
+      - mongodb
+    environment:
+      - NODE_ENV=production
+
+  chat:
+    build: ./chat-service
+    restart: always
+    ports:
+      - "8082:8082"
+    depends_on:
+      - mongodb
+    environment:
+      - NODE_ENV=production
+
+  notification:
+    build: ./notification-service
+    restart: always
+    ports:
+      - "8083:8083"
+    depends_on:
+      - mongodb
+    environment:
+      - NODE_ENV=production
+
+  nginx:
+    build:
+      context: ./nginx
+      dockerfile: Dockerfile
+    ports:
+      - "85:85"
+    depends_on:
+      - user
+      - chat
+      - notification
+volumes:
+  mongo-data:
