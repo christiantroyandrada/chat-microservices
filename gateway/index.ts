@@ -28,12 +28,12 @@ const proxyOptions = {
   }
 }
 
-const auth = proxy('http://localhost:8081', proxyOptions)
-const messages = proxy('http://localhost:8082', proxyOptions)
+const user = proxy('http://localhost:8081', proxyOptions)
+const chat = proxy('http://localhost:8082', proxyOptions)
 const notifications = proxy('http://localhost:8083', proxyOptions)
 
-app.use('/api/auth', auth)
-app.use('/api/messages', messages)
+app.use('/api/user', user)
+app.use('/api/chat', chat)
 app.use('/api/notifications', notifications)
 
 const server = app.listen(8080, () => {
