@@ -1,4 +1,16 @@
 services:
+  # Setup service - generates .env files from consolidated secrets before other services start
+  setup:
+    image: bash:5.2
+    volumes:
+      - ./scripts:/scripts:ro
+      - ./docker-secrets:/docker-secrets:ro
+      - ./user-service:/user-service
+      - ./chat-service:/chat-service
+      - ./notification-service:/notification-service
+    command: /scripts/generate-envs.sh
+    restart: "no"
+
   mongodb:
     image: mongo:8.2.1
     restart: unless-stopped
@@ -9,6 +21,9 @@ services:
       MONGO_INITDB_ROOT_PASSWORD: ${ADMIN_PASSWORD}
     secrets:
       - app_secrets
+    depends_on:
+      setup:
+        condition: service_completed_successfully
     healthcheck:
       test: ["CMD-SHELL", "mongosh --quiet --eval \"db.adminCommand('ping').ok\" | grep 1"]
       interval: 10s
@@ -71,6 +86,8 @@ services:
     secrets:
       - app_secrets
     depends_on:
+      setup:
+        condition: service_completed_successfully
       mongodb:
         condition: service_healthy
     healthcheck:
@@ -96,6 +113,8 @@ services:
     secrets:
       - app_secrets
     depends_on:
+      setup:
+        condition: service_completed_successfully
       mongodb:
         condition: service_healthy
     healthcheck:
@@ -119,6 +138,8 @@ services:
       NODE_ENV: production
       MONGO_URI: mongodb://${ADMIN_USERNAME}:${ADMIN_PASSWORD_ENCODED}@mongodb:27017/chat-db?authSource=admin
     depends_on:
+      setup:
+        condition: service_completed_successfully
       mongodb:
         condition: service_healthy
     healthcheck:
