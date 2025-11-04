@@ -2,11 +2,13 @@ services:
   mongodb:
     image: mongo:8.2.1
     restart: unless-stopped
-    # If you need to connect from your host for debugging, uncomment ports:
-    # ports:
-    #   - "27017:27017"
     volumes:
       - mongo-data:/data/db
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${ADMIN_USERNAME}
+      MONGO_INITDB_ROOT_PASSWORD: ${ADMIN_PASSWORD}
+    secrets:
+      - app_secrets
     healthcheck:
       test: ["CMD-SHELL", "mongosh --quiet --eval \"db.adminCommand('ping').ok\" | grep 1"]
       interval: 10s
@@ -15,21 +17,59 @@ services:
       start_period: 10s
     logging:
       driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
+      options: { max-size: "10m", max-file: "3" }
+
+  # Web UI for MongoDB
+  mongo-express:
+    image: mongo-express:1.0.2
+    restart: unless-stopped
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    ports:
+      - "8088:8081" # visit http://localhost:8088
+    environment:
+      # Use the full URL (with the password URL-encoded) so the image
+      # doesn't try to reconstruct/parse parts and mis-handle '@' in the
+      # password. Sensitive values are read from the project .env file.
+      ME_CONFIG_MONGODB_URL: "mongodb://${ADMIN_USERNAME}:${ADMIN_PASSWORD_ENCODED}@mongodb:27017/?authSource=admin"
+      ME_CONFIG_MONGODB_ENABLE_ADMIN: "true"
+      ME_CONFIG_MONGODB_PORT: "27017"
+      # Bind to 0.0.0.0 inside the container so the host port mapping can reach it.
+      VCAP_APP_HOST: 0.0.0.0
+      # Protect the UI with Basic Auth (kept in .env)
+      ME_CONFIG_BASICAUTH_USERNAME: ${MEEXP_USER}
+      ME_CONFIG_BASICAUTH_PASSWORD: ${MEEXP_PASSWORD}
+      ME_CONFIG_OPTIONS_EDITORTHEME: default
+    secrets:
+      - app_secrets
+    healthcheck:
+      # Verify the web UI is reachable and that the container can actually
+      # connect to MongoDB using the configured ME_CONFIG_MONGODB_URL.
+      # This runs a small Node.js one-liner which uses the mongodb driver
+      # (present in the image) to connect and ping the server.
+      test: ["CMD-SHELL", "node -e \"const {MongoClient}=require('mongodb');(async()=>{try{const client=new MongoClient(process.env.ME_CONFIG_MONGODB_URL);await client.connect();await client.db('admin').command({ping:1});await client.close();console.log('DB OK');process.exit(0);}catch(e){console.error(e);process.exit(1)}})()\""]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    logging:
+      driver: "json-file"
+      options: { max-size: "10m", max-file: "3" }
 
   user:
     build: ./user-service
     restart: always
-    # Internal only; NGINX front-doors this service
     expose:
       - "8081"
     env_file:
       - ./user-service/.env
     environment:
-      - MONGO_URI=mongodb://mongodb:27017/chat-db
-      - NODE_ENV=production
+      # build the URI from .env variables (keeps credentials out of the compose file itself)
+      MONGO_URI: mongodb://${ADMIN_USERNAME}:${ADMIN_PASSWORD_ENCODED}@mongodb:27017/chat-db?authSource=admin
+      NODE_ENV: production
+    secrets:
+      - app_secrets
     depends_on:
       mongodb:
         condition: service_healthy
@@ -41,9 +81,7 @@ services:
       start_period: 5s
     logging:
       driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
+      options: { max-size: "10m", max-file: "3" }
 
   chat:
     build: ./chat-service
@@ -53,8 +91,10 @@ services:
     env_file:
       - ./chat-service/.env
     environment:
-      - MONGO_URI=mongodb://mongodb:27017/chat-db
-      - NODE_ENV=production
+      MONGO_URI: mongodb://${ADMIN_USERNAME}:${ADMIN_PASSWORD_ENCODED}@mongodb:27017/chat-db?authSource=admin
+      NODE_ENV: production
+    secrets:
+      - app_secrets
     depends_on:
       mongodb:
         condition: service_healthy
@@ -66,9 +106,7 @@ services:
       start_period: 5s
     logging:
       driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
+      options: { max-size: "10m", max-file: "3" }
 
   notification:
     build: ./notification-service
@@ -78,7 +116,8 @@ services:
     env_file:
       - ./notification-service/.env
     environment:
-      - NODE_ENV=production
+      NODE_ENV: production
+      MONGO_URI: mongodb://${ADMIN_USERNAME}:${ADMIN_PASSWORD_ENCODED}@mongodb:27017/chat-db?authSource=admin
     depends_on:
       mongodb:
         condition: service_healthy
@@ -90,9 +129,7 @@ services:
       start_period: 5s
     logging:
       driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
+      options: { max-size: "10m", max-file: "3" }
 
   nginx:
     build:
@@ -107,20 +144,21 @@ services:
         condition: service_healthy
       notification:
         condition: service_healthy
-    # If you keep nginx.conf in the repo, you can mount it:
     # volumes:
     #   - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:85/ || exit 1"]
+      test: ["CMD-SHELL", "curl -fsS http://localhost:85/ >/dev/null"]
       interval: 10s
       timeout: 5s
       retries: 3
       start_period: 5s
     logging:
       driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
+      options: { max-size: "10m", max-file: "3" }
 
 volumes:
   mongo-data:
+
+secrets:
+  app_secrets:
+    file: ./docker-secrets/app_secrets

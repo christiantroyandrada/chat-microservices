@@ -1,3 +1,10 @@
+.env
+
+# keep real secrets out
+docker-secrets/*
+
+# allow the example to be committed so teams have a template
+!docker-secrets/app_secrets.example
 **/node_modules
 **/.env
 **/build
