@@ -1,5 +1,4 @@
 import { FCMService } from './FCMService'
-import { EmailService } from './EmailService'
-import { SendinBlueService } from './SendinBlueService'
+import { SecureEmailService } from './SecureEmailService'
 
-export { FCMService, EmailService, SendinBlueService }
+export { FCMService, SecureEmailService }
