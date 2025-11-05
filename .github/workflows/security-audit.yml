@@ -1,0 +1,107 @@
+name: Security Audit
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+  schedule:
+    # Run weekly on Mondays at 9am UTC
+    - cron: '0 9 * * 1'
+
+jobs:
+  npm-audit:
+    name: NPM Security Audit
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        service: [user-service, chat-service, notification-service, gateway]
+      fail-fast: false
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: '${{ matrix.service }}/package-lock.json'
+
+      - name: Install dependencies
+        working-directory: ./${{ matrix.service }}
+        run: npm ci --ignore-scripts
+
+      - name: Run npm audit
+        working-directory: ./${{ matrix.service }}
+        run: |
+          # Fail on high and critical vulnerabilities
+          npm audit --audit-level=high
+        continue-on-error: false
+
+      - name: Generate audit report (JSON)
+        if: always()
+        working-directory: ./${{ matrix.service }}
+        run: npm audit --json > audit-report-${{ matrix.service }}.json || true
+
+      - name: Upload audit report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: audit-report-${{ matrix.service }}
+          path: ./${{ matrix.service }}/audit-report-${{ matrix.service }}.json
+          retention-days: 30
+
+  trivy-scan:
+    name: Container Image Security Scan
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        service: [user-service, chat-service, notification-service, nginx]
+      fail-fast: false
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: |
+          if [ "${{ matrix.service }}" = "nginx" ]; then
+            docker build -t ${{ matrix.service }}:test -f ./nginx/Dockerfile ./nginx
+          else
+            docker build -t ${{ matrix.service }}:test ./${{ matrix.service }}
+          fi
+
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: '${{ matrix.service }}:test'
+          format: 'sarif'
+          output: 'trivy-results-${{ matrix.service }}.sarif'
+          severity: 'CRITICAL,HIGH'
+          exit-code: '1'  # Fail the build if vulnerabilities found
+
+      - name: Upload Trivy results to GitHub Security tab
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: 'trivy-results-${{ matrix.service }}.sarif'
+          category: 'trivy-${{ matrix.service }}'
+
+      - name: Generate Trivy report (JSON)
+        if: always()
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: '${{ matrix.service }}:test'
+          format: 'json'
+          output: 'trivy-report-${{ matrix.service }}.json'
+          severity: 'CRITICAL,HIGH,MEDIUM,LOW'
+
+      - name: Upload Trivy report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-report-${{ matrix.service }}
+          path: 'trivy-report-${{ matrix.service }}.json'
+          retention-days: 30

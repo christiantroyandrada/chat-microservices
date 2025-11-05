@@ -220,3 +220,47 @@ Or simply open http://localhost:8088/ in your browser to access the Mongoclient 
 - Verify `MESSAGE_BROKER_URL` in your consolidated secrets or `.env` files
 - Check RabbitMQ is accessible (if using external instance)
 - Review service logs for connection errors: `docker-compose logs --tail 100 user chat notification`
+
+## Security
+
+This project implements multiple security layers for local development and production readiness. See [SECURITY.md](./SECURITY.md) for detailed guidelines.
+
+### Key Security Features
+
+1. **Container Security**
+   - All services run as non-root users
+   - Admin UIs bound to localhost only (127.0.0.1)
+   - Minimal Alpine-based images
+
+2. **Dependency Security**
+   - Automated npm audit in CI
+   - Container image scanning with Trivy
+   - Vulnerable packages removed (replaced sib-api-v3-typescript with axios)
+
+3. **HTTP Hardening**
+   - Helmet.js for security headers
+   - Request body size limits (100KB)
+   - Rate limiting on auth endpoints (10 requests/15min)
+
+4. **Secrets Management**
+   - Consolidated secrets file (gitignored)
+   - No hardcoded credentials
+   - Environment variable injection
+
+5. **CI/CD Security**
+   - Automated security scans on push/PR
+   - Weekly scheduled security audits
+   - TypeScript type checking
+
+### Quick Security Checklist
+
+Before deploying to production:
+- [ ] Rotate all default credentials
+- [ ] Enable HTTPS/TLS
+- [ ] Set `NODE_ENV=production`
+- [ ] Configure proper CORS origins
+- [ ] Review rate limits for production traffic
+- [ ] Enable `secure: true` for cookies
+- [ ] Review and apply production recommendations in [SECURITY.md](./SECURITY.md)
+
+For more details, see the [Security Guidelines](./SECURITY.md).
