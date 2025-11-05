@@ -34,40 +34,31 @@ services:
       driver: "json-file"
       options: { max-size: "10m", max-file: "3" }
 
-  # Web UI for MongoDB
-  mongo-express:
-    image: mongo-express:1.0.2
+  # Web UI for MongoDB - Nosqlclient (Mongoclient)
+  nosqlclient:
+    image: mongoclient/mongoclient:4.0.1
     restart: unless-stopped
     depends_on:
       mongodb:
         condition: service_healthy
     ports:
-      - "8088:8081" # visit http://localhost:8088
+      - "8088:3000" # visit http://localhost:8088
     environment:
-      # Use the full URL (with the password URL-encoded) so the image
-      # doesn't try to reconstruct/parse parts and mis-handle '@' in the
-      # password. Sensitive values are read from the project .env file.
-      ME_CONFIG_MONGODB_URL: "mongodb://${ADMIN_USERNAME}:${ADMIN_PASSWORD_ENCODED}@mongodb:27017/?authSource=admin"
-      ME_CONFIG_MONGODB_ENABLE_ADMIN: "true"
-      ME_CONFIG_MONGODB_PORT: "27017"
-      # Bind to 0.0.0.0 inside the container so the host port mapping can reach it.
-      VCAP_APP_HOST: 0.0.0.0
-      # Protect the UI with Basic Auth (kept in .env)
-      ME_CONFIG_BASICAUTH_USERNAME: ${MEEXP_USER}
-      ME_CONFIG_BASICAUTH_PASSWORD: ${MEEXP_PASSWORD}
-      ME_CONFIG_OPTIONS_EDITORTHEME: default
+      # MongoDB connection (use URL-encoded password to handle special characters like '@')
+      MONGO_URL: "mongodb://${ADMIN_USERNAME}:${ADMIN_PASSWORD_ENCODED}@mongodb:27017/?authSource=admin"
+      # Root URL for the application
+      ROOT_URL: "http://localhost:8088"
+      # Port to run on (internal)
+      PORT: "3000"
     secrets:
       - app_secrets
     healthcheck:
-      # Verify the web UI is reachable and that the container can actually
-      # connect to MongoDB using the configured ME_CONFIG_MONGODB_URL.
-      # This runs a small Node.js one-liner which uses the mongodb driver
-      # (present in the image) to connect and ping the server.
-      test: ["CMD-SHELL", "node -e \"const {MongoClient}=require('mongodb');(async()=>{try{const client=new MongoClient(process.env.ME_CONFIG_MONGODB_URL);await client.connect();await client.db('admin').command({ping:1});await client.close();console.log('DB OK');process.exit(0);}catch(e){console.error(e);process.exit(1)}})()\""]
-      interval: 10s
+      # Check if the web UI is responding (curl is more reliable than wget in this image)
+      test: ["CMD-SHELL", "curl -f http://localhost:3000/ >/dev/null 2>&1 || exit 1"]
+      interval: 15s
       timeout: 5s
       retries: 3
-      start_period: 5s
+      start_period: 20s
     logging:
       driver: "json-file"
       options: { max-size: "10m", max-file: "3" }

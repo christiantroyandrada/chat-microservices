@@ -8,7 +8,7 @@ This repository contains a small set of Node.js + TypeScript microservices for a
 - `user-service/` — authentication and user management (port 8081).
 - `chat-service/` — message storage and messages API + socket support (port 8082).
 - `notification-service/` — email / push notification sender and queue consumer (port 8083).
-- `docker-compose.yml` — orchestrates MongoDB, mongo-express, user/chat/notification services, and nginx.
+- `docker-compose.yml` — orchestrates MongoDB, Nosqlclient (Mongoclient), user/chat/notification services, and nginx.
 - `scripts/` — helper scripts including `generate-envs.sh` for automatic .env generation.
 - `docker-secrets/` — consolidated secrets file (not committed) and example file.
 
@@ -31,7 +31,7 @@ This repository contains a small set of Node.js + TypeScript microservices for a
 │  Docker Compose Stack                                       │
 │                                                              │
 │  ┌──────────┐  ┌──────────────┐  ┌────────────────────┐   │
-│  │  setup   │→ │  mongodb     │  │  mongo-express     │   │
+│  │  setup   │→ │  mongodb     │  │  nosqlclient       │   │
 │  │ (one-run)│  │  :27017      │  │  localhost:8088    │   │
 │  └──────────┘  └──────────────┘  └────────────────────┘   │
 │                       ↓                                      │
@@ -114,7 +114,7 @@ To manually regenerate `.env` files (useful for local development):
 The compose file brings up:
 - `setup` — one-time service that generates .env files from consolidated secrets
 - `mongodb` (mongo:8.2.1) — database for user and chat services
-- `mongo-express` (web UI, host port 8088) — protected with basic auth
+- `nosqlclient` (Mongoclient 4.0.1, web UI, host port 8088) — modern MongoDB admin interface
 - `user`, `chat`, `notification` services (Node.js microservices)
 - `nginx` (reverse proxy, host port 85)
 
@@ -129,24 +129,25 @@ docker-compose up -d --build
 Recreate a single service (non-destructive):
 
 ```bash
-# recreate mongo-express only
-docker-compose up -d --no-deps --force-recreate mongo-express
+# recreate nosqlclient only
+docker-compose up -d --no-deps --force-recreate nosqlclient
 ```
 
 Check status and logs:
 
 ```bash
 docker-compose ps
-docker-compose logs --tail 200 mongo-express
+docker-compose logs --tail 200 nosqlclient
 docker-compose logs --tail 200 mongodb
 docker-compose logs --tail 200 user
 ```
 
-Mongo-express is reachable on the host at http://localhost:8088/ (it will return HTTP 401 Unauthorized unless you provide the basic-auth credentials from `docker-secrets/app_secrets` or `.env`).
+Nosqlclient (Mongoclient) is reachable on the host at http://localhost:8088/ — a modern web interface for MongoDB with query history, aggregation pipeline builder, and more features than mongo-express.
 
 ## Healthchecks
 
-- `mongo-express` includes a Node-based healthcheck that attempts a real `ping` to MongoDB using the configured `ME_CONFIG_MONGODB_URL`.
+- `nosqlclient` includes a healthcheck that verifies the web UI is responding on port 3000.
+- `mongodb` has a healthcheck that runs a ping command via mongosh.
 - Services expose simple HTTP `/health` endpoints which are used by compose healthchecks.
 
 ## How to run services (development without Docker)
@@ -198,12 +199,14 @@ This connects to RabbitMQ using `MESSAGE_BROKER_URL` and purges the `NOTIFICATIO
   - your `.env` values (MONGO_URI) are correct, or
   - `docker-secrets/app_secrets` contains the correct ADMIN_USERNAME / ADMIN_PASSWORD and the compose stack was recreated.
 
-### Verify mongo-express connectivity
+### Verify Nosqlclient connectivity
 
 ```bash
 curl -I http://localhost:8088/ || true
-# expected: HTTP/1.1 401 Unauthorized (if basic auth is configured)
+# expected: HTTP/1.1 200 OK (Nosqlclient UI is up)
 ```
+
+Or simply open http://localhost:8088/ in your browser to access the Mongoclient interface.
 
 ### General debugging
 
