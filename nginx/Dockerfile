@@ -1,5 +1,8 @@
 FROM nginx:alpine-slim
 
+# Install curl for healthchecks
+RUN apk add --no-cache curl
+
 # Create a non-root user and group for nginx (use 1001 to avoid conflicts with existing groups)
 RUN addgroup -g 1001 -S nginx-app && adduser -S -D -H -u 1001 -h /var/cache/nginx -s /sbin/nologin -G nginx-app -g nginx-app nginx-app
 

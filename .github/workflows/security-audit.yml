@@ -2,14 +2,19 @@ name: Security Audit
 
 on:
   push:
-    branches: [ main, develop ]
-  pull_request:
-    branches: [ main, develop ]
+    # Run when changes are merged to main (for example: Merge Request accepted)
+    branches: [ main ]
   schedule:
     # Run weekly on Mondays at 9am UTC
     - cron: '0 9 * * 1'
 
+# Workflow permissions (top-level). Required for SARIF upload to the Security tab.
+permissions:
+  contents: read
+  security-events: write
+
 jobs:
+
   npm-audit:
     name: NPM Security Audit
     runs-on: ubuntu-latest
@@ -83,7 +88,10 @@ jobs:
           exit-code: '1'  # Fail the build if vulnerabilities found
 
       - name: Upload Trivy results to GitHub Security tab
-        if: always()
+        # Upload SARIF only for non-fork runs. Forked PRs do not have permission to call the
+        # CodeQL API with the GITHUB_TOKEN and will fail with "Resource not accessible by integration".
+        # We still generate and attach the JSON artifact above so maintainers can inspect results.
+        if: always() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: 'trivy-results-${{ matrix.service }}.sarif'

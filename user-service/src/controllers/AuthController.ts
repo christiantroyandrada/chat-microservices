@@ -6,14 +6,19 @@ import config from '../config/config'
 
 const JWT_SECRET = config.JWT_SECRET as string
 const COOKIE_EXPIRATION_DAYS = 7
-const expirationDate = new Date(
-  Date.now() + COOKIE_EXPIRATION_DAYS * 24 * 60 * 60 * 1000
-)
 
-const cookieOptions = {
-  expires: expirationDate,
-  secure: false,
-  httpOnly: true,
+const getCookieOptions = () => {
+  const expirationDate = new Date(
+    Date.now() + COOKIE_EXPIRATION_DAYS * 24 * 60 * 60 * 1000
+  )
+  
+  return {
+    expires: expirationDate,
+    secure: config.env === 'production', // HTTPS only in production
+    httpOnly: true, // Prevent XSS attacks
+    sameSite: 'strict' as const, // CSRF protection
+    path: '/', // Cookie path
+  }
 }
 
 type RegistrationBody = {
@@ -52,13 +57,7 @@ const registration = async (
       data: userData,
     })
   } catch (error: unknown) {
-    const message =
-      error instanceof Error ? error.message : 'Internal Server Error'
-
-    return res.json({
-      status: 500,
-      message,
-    })
+    _next(error)
   }
 }
 
@@ -70,10 +69,9 @@ const createSendToken = async (
   const token = jwt.sign({ name, email, id }, JWT_SECRET, {
     expiresIn: '1d',
   })
-  if ( config.env === 'production' ) {
-    cookieOptions.secure = true
-  }
-  res.cookie( 'jwt', token, cookieOptions )
+  
+  const cookieOptions = getCookieOptions()
+  res.cookie('jwt', token, cookieOptions)
 
   return token
 }
@@ -81,6 +79,7 @@ const createSendToken = async (
 const login = async (
   req: Request,
   res: Response,
+  next: NextFunction
 ) => {
   try {
     const { email, password } = req.body
@@ -98,13 +97,8 @@ const login = async (
       token,
     })
   } catch ( error: unknown ) {
-    const message =
-      error instanceof Error ? error.message : 'Internal Server Error'
-
-    return res.json({
-      status: 500,
-      message,
-    })
+    // Pass error to Express error handling middleware
+    next(error)
   }
 }
 

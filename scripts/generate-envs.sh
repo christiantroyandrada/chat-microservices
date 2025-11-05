@@ -51,6 +51,7 @@ write_env() {
       echo "JWT_SECRET=\"$(get_value JWT_SECRET_CHAT)\"" >> "$dest"
       echo "MONGO_URI=\"$(get_value MONGO_URI_CHAT)\"" >> "$dest"
       echo "MESSAGE_BROKER_URL=\"$(get_value MESSAGE_BROKER_URL)\"" >> "$dest"
+      echo "CORS_ORIGINS=\"$(get_value CORS_ORIGINS)\"" >> "$dest"
       ;;
     */notification-service/.env)
       echo "NODE_ENV=\"$(get_value NODE_ENV)\"" >> "$dest"
@@ -64,11 +65,18 @@ write_env() {
       echo "EMAIL_FROM=\"$(get_value EMAIL_FROM)\"" >> "$dest"
       echo "NOTIFICATIONS_QUEUE=\"$(get_value NOTIFICATIONS_QUEUE)\"" >> "$dest"
       ;;
+    *)
+      # Root .env for docker-compose.yml variable substitution
+      echo "ADMIN_USERNAME=\"$(get_value ADMIN_USERNAME)\"" >> "$dest"
+      echo "ADMIN_PASSWORD=\"$(get_value ADMIN_PASSWORD)\"" >> "$dest"
+      echo "ADMIN_PASSWORD_ENCODED=\"$(get_value ADMIN_PASSWORD_ENCODED)\"" >> "$dest"
+      ;;
   esac
   
   chmod 600 "$dest" 2>/dev/null || true
 }
 
+write_env "$ROOT_DIR/.env"
 write_env "$ROOT_DIR/user-service/.env"
 write_env "$ROOT_DIR/chat-service/.env"
 write_env "$ROOT_DIR/notification-service/.env"
