@@ -22,7 +22,9 @@
     "firebase-admin": "^13.5.0",
     "nodemailer": "^7.0.10",
     "nodemon": "^3.1.10",
-    "sib-api-v3-typescript": "^2.2.2",
+    "axios": "^1.4.0",
+    "helmet": "^7.0.0",
+    "express-rate-limit": "^6.7.0",
     "ts-node": "^10.9.2",
     "typescript": "^5.9.3"
   }

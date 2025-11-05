@@ -1,4 +1,6 @@
 import express, { Express } from 'express'
+import helmet from 'helmet'
+import rateLimit from 'express-rate-limit'
 import mongoose from 'mongoose'
 import { Server } from 'http'
 import userServiceRouter from './routes/userServiceRouter'
@@ -9,8 +11,16 @@ import { rabbitMQService } from './services/RabbitMQService'
 
 const app: Express = express()
 let server: Server
-app.use(express.json())
-app.use(express.urlencoded({ extended: true }))
+
+// Basic HTTP hardening
+app.use(helmet())
+
+// Body size limit to mitigate large-payload DoS
+app.use(express.json({ limit: '100kb' }))
+app.use(express.urlencoded({ extended: true, parameterLimit: 1000 }))
+
+// Rate limiter - apply to auth endpoints via router-level middleware (see routes)
+const authLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 10 })
 // Health check endpoint for Docker and monitoring (includes DB readiness)
 app.get('/health', async (_req, res) => {
   try {
@@ -28,6 +38,7 @@ app.get('/health', async (_req, res) => {
     return res.status(503).json({ status: 'error', error: String(err) })
   }
 })
+// apply authLimiter to registration/login routes inside the router file
 app.use(userServiceRouter)
 app.use(errorMiddleware)
 app.use(errorHandler)

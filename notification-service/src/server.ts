@@ -1,4 +1,5 @@
 import express, { Express } from 'express'
+import helmet from 'helmet'
 import { Server } from 'http'
 import { errorMiddleware, errorHandler } from './middleware'
 import config from './config/config'
@@ -6,7 +7,12 @@ import { rabbitMQService } from './services/RabbitMQService'
 
 const app: Express = express()
 let server: Server
-app.use(express.json())
+
+// Basic HTTP hardening
+app.use(helmet())
+
+// limit body size
+app.use(express.json({ limit: '100kb' }))
 app.use(express.urlencoded({ extended: true }))
 // Health check endpoint for Docker and monitoring
 app.get('/health', (_req, res) => res.status(200).json({ status: 'ok' }))

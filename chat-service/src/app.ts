@@ -1,10 +1,14 @@
 import express, { Express } from 'express'
 import mongoose from 'mongoose'
+import helmet from 'helmet'
 import chatServiceRouter from './routes/messageRoutes'
 import { errorMiddleware, errorHandler } from './middleware'
 
 const app: Express = express()
-app.use(express.json())
+// Basic HTTP hardening
+app.use(helmet())
+// limit body size
+app.use(express.json({ limit: '100kb' }))
 app.use(express.urlencoded({ extended: true }))
 // Health check endpoint for Docker and monitoring (includes DB readiness)
 app.get('/health', async (_req, res) => {

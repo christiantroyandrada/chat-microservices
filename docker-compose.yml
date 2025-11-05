@@ -42,7 +42,7 @@ services:
       mongodb:
         condition: service_healthy
     ports:
-      - "8088:3000" # visit http://localhost:8088
+      - "127.0.0.1:8088:3000" # visit http://localhost:8088 (bound to localhost only)
     environment:
       # MongoDB connection (use URL-encoded password to handle special characters like '@')
       MONGO_URL: "mongodb://${ADMIN_USERNAME}:${ADMIN_PASSWORD_ENCODED}@mongodb:27017/?authSource=admin"
@@ -148,7 +148,7 @@ services:
       context: ./nginx
       dockerfile: Dockerfile
     ports:
-      - "85:85"
+      - "127.0.0.1:85:85"
     depends_on:
       user:
         condition: service_healthy
