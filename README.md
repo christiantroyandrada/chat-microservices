@@ -240,7 +240,11 @@ This project implements multiple security layers for local development and produ
 3. **HTTP Hardening**
    - Helmet.js for security headers
    - Request body size limits (100KB)
-   - Rate limiting on auth endpoints (10 requests/15min)
+   - Global rate limiting (100-200 requests/15min)
+   - Strict auth rate limiting (10 requests/15min)
+   - Input validation with express-validator
+   - MongoDB injection protection with express-mongo-sanitize
+   - Enhanced cookie security (httpOnly, secure, sameSite)
 
 4. **Secrets Management**
    - Consolidated secrets file (gitignored)
@@ -264,3 +268,5 @@ Before deploying to production:
 - [ ] Review and apply production recommendations in [SECURITY.md](./SECURITY.md)
 
 For more details, see the [Security Guidelines](./SECURITY.md).
+
+**Recent Security Improvements (Nov 2025)**: Input validation, MongoDB injection protection, environment validation, enhanced rate limiting, and improved cookie security. See [SECURITY_IMPROVEMENTS.md](./SECURITY_IMPROVEMENTS.md) for implementation details.

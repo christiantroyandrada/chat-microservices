@@ -5,6 +5,24 @@ import { Message, connectDB } from './database'
 import config from './config/config'
 import { rabbitMQService } from './services/RabbitMQService'
 
+// Validate required environment variables on startup
+const validateEnv = () => {
+  const required = ['JWT_SECRET', 'MONGO_URI', 'PORT', 'MESSAGE_BROKER_URL']
+  const missing = required.filter(key => !process.env[key])
+  
+  if (missing.length > 0) {
+    console.error(`[chat-service] FATAL: Missing required environment variables: ${missing.join(', ')}`)
+    process.exit(1)
+  }
+  
+  // Warn about default/weak secrets
+  if (process.env.JWT_SECRET === '{{YOUR_SECRET_KEY}}' || process.env.JWT_SECRET === 'CHANGEME') {
+    console.warn('[chat-service] WARNING: Using default JWT_SECRET. Change this in production!')
+  }
+}
+
+validateEnv()
+
 let server: Server
 
 const start = async () => {
@@ -34,12 +52,11 @@ const start = async () => {
     // Helpful compression limit (optional)
     perMessageDeflate: { threshold: 1024 },
 
-    // Make CORS explicit (add your domains/ports)
+    // Make CORS explicit - use environment variables for allowed origins
     cors: {
-      origin: [
-        'http://localhost:85',
-        'https://your-hostname.example', // replace
-      ],
+      origin: process.env.CORS_ORIGINS 
+        ? process.env.CORS_ORIGINS.split(',').map(o => o.trim())
+        : ['http://localhost:85', 'http://localhost:8080'], // Default for local dev
       credentials: true,
       methods: ['GET', 'POST', 'OPTIONS'],
       allowedHeaders: ['Content-Type', 'Authorization']

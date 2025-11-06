@@ -5,15 +5,33 @@ import { errorMiddleware, errorHandler } from './middleware'
 import config from './config/config'
 import { rabbitMQService } from './services/RabbitMQService'
 
+// Validate required environment variables on startup
+const validateEnv = () => {
+  const required = ['PORT', 'MESSAGE_BROKER_URL', 'NOTIFICATIONS_QUEUE']
+  const missing = required.filter(key => !process.env[key])
+  
+  if (missing.length > 0) {
+    console.error(`[notification-service] FATAL: Missing required environment variables: ${missing.join(', ')}`)
+    process.exit(1)
+  }
+  
+  // Warn if email credentials are missing (optional but recommended)
+  if (!process.env.SMTP_HOST && !process.env.SENDINBLUE_APIKEY) {
+    console.warn('[notification-service] WARNING: No email credentials configured (SMTP or SendinBlue)')
+  }
+}
+
+validateEnv()
+
 const app: Express = express()
 let server: Server
 
 // Basic HTTP hardening
 app.use(helmet())
 
-// limit body size
+// Limit body size
 app.use(express.json({ limit: '100kb' }))
-app.use(express.urlencoded({ extended: true }))
+app.use(express.urlencoded({ extended: true, parameterLimit: 1000 }))
 // Health check endpoint for Docker and monitoring
 app.get('/health', (_req, res) => res.status(200).json({ status: 'ok' }))
 app.use(errorMiddleware)

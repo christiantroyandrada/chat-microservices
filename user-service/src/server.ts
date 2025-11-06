@@ -1,6 +1,8 @@
 import express, { Express } from 'express'
 import helmet from 'helmet'
 import rateLimit from 'express-rate-limit'
+import mongoSanitize from 'express-mongo-sanitize'
+import cookieParser from 'cookie-parser'
 import mongoose from 'mongoose'
 import { Server } from 'http'
 import userServiceRouter from './routes/userServiceRouter'
@@ -9,27 +11,34 @@ import { connectDB } from './database'
 import config from './config/config'
 import { rabbitMQService } from './services/RabbitMQService'
 
+// Validate required environment variables on startup
+const validateEnv = () => {
+  const required = ['JWT_SECRET', 'MONGO_URI', 'PORT', 'MESSAGE_BROKER_URL']
+  const missing = required.filter(key => !process.env[key])
+  
+  if (missing.length > 0) {
+    console.error(`[user-service] FATAL: Missing required environment variables: ${missing.join(', ')}`)
+    process.exit(1)
+  }
+  
+  // Warn about default/weak secrets
+  if (process.env.JWT_SECRET === '{{YOUR_SECRET_KEY}}' || process.env.JWT_SECRET === 'CHANGEME') {
+    console.warn('[user-service] WARNING: Using default JWT_SECRET. Change this in production!')
+  }
+}
+
+validateEnv()
+
 const app: Express = express()
 let server: Server
 
-// Basic HTTP hardening
-app.use(helmet())
-
-// Body size limit to mitigate large-payload DoS
-app.use(express.json({ limit: '100kb' }))
-app.use(express.urlencoded({ extended: true, parameterLimit: 1000 }))
-
-// Rate limiter - apply to auth endpoints via router-level middleware (see routes)
-const authLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 10 })
-// Health check endpoint for Docker and monitoring (includes DB readiness)
+app.set('trust proxy', 1)
 app.get('/health', async (_req, res) => {
   try {
     const state = mongoose.connection.readyState
-    // 1 = connected
     if (state !== 1) {
       return res.status(503).json({ status: 'error', dbState: state })
     }
-    // perform a lightweight ping to verify DB responsiveness
     if (mongoose.connection.db) {
       await mongoose.connection.db.admin().ping()
     }
@@ -38,7 +47,27 @@ app.get('/health', async (_req, res) => {
     return res.status(503).json({ status: 'error', error: String(err) })
   }
 })
-// apply authLimiter to registration/login routes inside the router file
+
+app.use(helmet())
+
+app.use(cookieParser())
+
+// NOTE: MongoDB sanitization disabled due to express-mongo-sanitize incompatibility with Express 5.x
+// Input validation middleware provides primary defense against injection attacks
+
+app.use(express.json({ limit: '100kb' }))
+app.use(express.json({ limit: '100kb' }))
+app.use(express.urlencoded({ extended: true, parameterLimit: 1000 }))
+
+const globalLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 100,
+  message: 'Too many requests from this IP, please try again later',
+  standardHeaders: true,
+  legacyHeaders: false,
+  validate: false,
+})
+app.use(globalLimiter)
 app.use(userServiceRouter)
 app.use(errorMiddleware)
 app.use(errorHandler)

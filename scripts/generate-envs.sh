@@ -51,6 +51,7 @@ write_env() {
       echo "JWT_SECRET=\"$(get_value JWT_SECRET_CHAT)\"" >> "$dest"
       echo "MONGO_URI=\"$(get_value MONGO_URI_CHAT)\"" >> "$dest"
       echo "MESSAGE_BROKER_URL=\"$(get_value MESSAGE_BROKER_URL)\"" >> "$dest"
+      echo "CORS_ORIGINS=\"$(get_value CORS_ORIGINS)\"" >> "$dest"
       ;;
     */notification-service/.env)
       echo "NODE_ENV=\"$(get_value NODE_ENV)\"" >> "$dest"

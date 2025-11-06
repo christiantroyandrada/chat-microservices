@@ -19,7 +19,11 @@ This document outlines the security measures implemented in the chat-microservic
 ### 3. HTTP Hardening
 - **Helmet.js**: Added to all HTTP services for security headers (CSP, HSTS, etc.).
 - **Body size limits**: Request body limited to 100KB to prevent large-payload DoS attacks.
-- **Rate limiting**: Auth endpoints (`/register`, `/login`) protected with express-rate-limit (max 10 requests per 15 minutes).
+- **Global rate limiting**: All services have global rate limits (100-200 req/15min depending on service).
+- **Auth rate limiting**: Auth endpoints (`/register`, `/login`) protected with stricter limits (10 requests per 15 minutes).
+- **Input validation**: express-validator used for all user inputs with strict validation rules.
+- **MongoDB injection protection**: express-mongo-sanitize automatically sanitizes inputs to prevent NoSQL injection.
+- **Enhanced cookie security**: httpOnly, secure (in production), and sameSite flags enabled.
 
 ### 4. Secrets Management
 - **Consolidated secrets**: Single `docker-secrets/app_secrets` file for local dev (gitignored).

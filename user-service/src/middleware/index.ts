@@ -42,7 +42,7 @@ export const errorHandler: ErrorRequestHandler = (
   }
 
   if (environment === 'development') {
-    console.error(err)
+    console.error('[user-service] Error:', err)
   }
 
   res.status(statusCode).json(response)
