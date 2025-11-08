@@ -22,7 +22,8 @@ class APIError extends Error {
 }
 
 const encryptPassword = async (password: string): Promise<string> => {
-  const encryptedPassword = await bcrypt.hash(password, 10) 
+  // Using cost factor 12 for modern security standards (was 10)
+  const encryptedPassword = await bcrypt.hash(password, 12) 
   return encryptedPassword
 }
 

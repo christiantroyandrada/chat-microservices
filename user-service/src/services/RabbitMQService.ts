@@ -44,21 +44,30 @@ class RabbitMQService {
 
   private async listenForRequests () {
     this.channel.consume(this.requestQueue, async (msg) => {
-      if (msg && msg.content) {
-        const { userId } = JSON.parse(msg.content.toString())
-        const userDetails = await getUserDetails(userId)
-
-        // send the user details response
-        this.channel.sendToQueue(
-          this.responseQueue,
-          Buffer.from(JSON.stringify(userDetails)),
-          { correlationId: msg.properties.correlationId }
-        )
-
-        // acknowledge the processed message
-        this.channel.ack(msg)
-      }
-    })
+        if (msg !== null) {
+          try {
+            const { userId } = JSON.parse(msg.content.toString())
+            const userDetails = await User.findById(userId).select('-password')
+            
+            // Reply with user details
+            this.channel.sendToQueue(
+              msg.properties.replyTo,
+              Buffer.from(JSON.stringify(userDetails)),
+              { correlationId: msg.properties.correlationId }
+            )
+          } catch (parseError) {
+            console.error('[user-service] RabbitMQ message parse error:', parseError)
+            // Send error response
+            this.channel.sendToQueue(
+              msg.properties.replyTo,
+              Buffer.from(JSON.stringify({ error: 'Invalid message format' })),
+              { correlationId: msg.properties.correlationId }
+            )
+          } finally {
+            this.channel.ack(msg)
+          }
+        }
+      })
   }
 }
 

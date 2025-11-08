@@ -13,17 +13,31 @@ const sendMessage = async (
     
     validateReceiver(_id, receiverId)
 
+    // Validate message content
+    if (!message || typeof message !== 'string') {
+      throw new APIError(400, 'Invalid message content')
+    }
+
+    const trimmedMessage = message.trim()
+    if (trimmedMessage.length === 0) {
+      throw new APIError(400, 'Message cannot be empty')
+    }
+
+    if (trimmedMessage.length > 5000) {
+      throw new APIError(400, 'Message exceeds maximum length of 5000 characters')
+    }
+
     const newMessage = await Message.create({
       senderId: _id,
       receiverId,
-      message,
+      message: trimmedMessage,
     })
 
     await handleMessageReceived(
       name,
       email,
       receiverId,
-      message
+      trimmedMessage
     )
 
     return res.json({
@@ -82,7 +96,74 @@ const fetchConversation = async (
   }
 }
 
+const getConversations = async (
+  req: AuthenticatedRequest,
+  res: Response,
+) => {
+  try {
+    const { _id: userId } = req.user
+    
+    // Get all unique conversation partners
+    const conversations = await Message.aggregate([
+      {
+        $match: {
+          $or: [{ senderId: userId }, { receiverId: userId }]
+        }
+      },
+      {
+        $sort: { createdAt: -1 }
+      },
+      {
+        $group: {
+          _id: {
+            $cond: [
+              { $eq: ['$senderId', userId] },
+              '$receiverId',
+              '$senderId'
+            ]
+          },
+          lastMessage: { $first: '$$ROOT' },
+          unreadCount: {
+            $sum: {
+              $cond: [
+                { $and: [
+                  { $eq: ['$receiverId', userId] },
+                  { $eq: ['$isRead', false] }
+                ]},
+                1,
+                0
+              ]
+            }
+          }
+        }
+      },
+      {
+        $project: {
+          _id: 0,
+          userId: '$_id',
+          lastMessage: 1,
+          unreadCount: 1
+        }
+      }
+    ])
+
+    return res.json({
+      status: 200,
+      message: 'Conversations fetched successfully',
+      data: conversations,
+    })
+  } catch (error: unknown) {
+    const message = 
+      error instanceof Error ? error.message : 'Internal Server Error'
+    return res.json({
+      status: 500,
+      message,
+    })
+  }
+}
+
 export default {
   sendMessage,
   fetchConversation,
+  getConversations,
 }

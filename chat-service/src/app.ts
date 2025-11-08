@@ -1,4 +1,5 @@
 import express, { Express } from 'express'
+import cors from 'cors'
 import mongoose from 'mongoose'
 import helmet from 'helmet'
 import mongoSanitize from 'express-mongo-sanitize'
@@ -9,7 +10,14 @@ import { errorMiddleware, errorHandler } from './middleware'
 const app: Express = express()
 
 app.set('trust proxy', 1)
+// CORS for chat REST endpoints. Socket.IO has its own CORS settings in server.ts.
+const allowedOrigins = process.env.CORS_ORIGINS
+  ? process.env.CORS_ORIGINS.split(',').map(o => o.trim())
+  : ['http://localhost:5173', 'http://localhost:85', 'http://localhost:8080']
+app.use(cors({ origin: allowedOrigins, credentials: true, methods: ['GET', 'POST', 'OPTIONS', 'PUT', 'DELETE'], allowedHeaders: ['Content-Type', 'Authorization'], preflightContinue: false, optionsSuccessStatus: 204 }))
+
 app.use(helmet())
+
 app.get('/health', async (req, res) => {
 	try {
 		const state = mongoose.connection.readyState

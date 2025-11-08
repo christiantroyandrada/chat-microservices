@@ -44,6 +44,7 @@ write_env() {
       echo "JWT_SECRET=\"$(get_value JWT_SECRET_USER)\"" >> "$dest"
       echo "MONGO_URI=\"$(get_value MONGO_URI_USER)\"" >> "$dest"
       echo "MESSAGE_BROKER_URL=\"$(get_value MESSAGE_BROKER_URL)\"" >> "$dest"
+      echo "CORS_ORIGINS=\"$(get_value CORS_ORIGINS)\"" >> "$dest"
       ;;
     */chat-service/.env)
       echo "NODE_ENV=\"$(get_value NODE_ENV)\"" >> "$dest"
@@ -64,12 +65,15 @@ write_env() {
       echo "SENDINBLUE_APIKEY=\"$(get_value SENDINBLUE_APIKEY)\"" >> "$dest"
       echo "EMAIL_FROM=\"$(get_value EMAIL_FROM)\"" >> "$dest"
       echo "NOTIFICATIONS_QUEUE=\"$(get_value NOTIFICATIONS_QUEUE)\"" >> "$dest"
+      echo "CORS_ORIGINS=\"$(get_value CORS_ORIGINS)\"" >> "$dest"
       ;;
     *)
       # Root .env for docker-compose.yml variable substitution
       echo "ADMIN_USERNAME=\"$(get_value ADMIN_USERNAME)\"" >> "$dest"
       echo "ADMIN_PASSWORD=\"$(get_value ADMIN_PASSWORD)\"" >> "$dest"
       echo "ADMIN_PASSWORD_ENCODED=\"$(get_value ADMIN_PASSWORD_ENCODED)\"" >> "$dest"
+      # Optional: central CORS origins for local/dev use
+      echo "CORS_ORIGINS=\"$(get_value CORS_ORIGINS)\"" >> "$dest"
       ;;
   esac
   

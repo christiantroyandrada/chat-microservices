@@ -46,7 +46,7 @@ const registration = async (
     })
 
     const userData = {
-      id: user._id,
+      id: String(user._id),
       name: user.name,
       email: user.email,
     }
@@ -65,11 +65,14 @@ const createSendToken = async (
   user: IUser,
   res: Response,
 ) => {
-  const { name, email, id } = user
-  const token = jwt.sign({ name, email, id }, JWT_SECRET, {
+  // Ensure the token `id` is the MongoDB _id string for consistency
+  const { name, email } = user as any
+  const userId = String((user as any)._id ?? (user as any).id)
+
+  const token = jwt.sign({ name, email, id: userId }, JWT_SECRET, {
     expiresIn: '1d',
   })
-  
+
   const cookieOptions = getCookieOptions()
   res.cookie('jwt', token, cookieOptions)
 
@@ -102,7 +105,78 @@ const login = async (
   }
 }
 
+const getCurrentUser = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    // req.user is populated by authenticate middleware
+    if (!req.user) {
+      throw new APIError(401, 'Authentication required')
+    }
+
+    // Fetch full user data from database
+    const user = await User.findById(req.user.id).select('-password')
+    
+    if (!user) {
+      throw new APIError(404, 'User not found')
+    }
+
+    return res.json({
+      status: 200,
+      message: 'User retrieved successfully',
+      data: {
+        id: String(user._id),
+        name: user.name,
+        email: user.email,
+      }
+    })
+  } catch (error: unknown) {
+    next(error)
+  }
+}
+
+const search = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const q = (req.query.q as string) || ''
+    if (!q || q.trim().length === 0) {
+      return res.json({ status: 200, data: [] })
+    }
+
+    // Escape special regex characters to prevent ReDoS attacks
+    const escapedQuery = q.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const regex = new RegExp(escapedQuery, 'i')
+    
+    // Get current user ID from JWT token
+    const currentUserId = req.user?.id
+
+    // Search by name or email, excluding the current logged-in user
+    const users = await User.find({
+      $and: [
+        { $or: [{ name: regex }, { email: regex }] },
+        { _id: { $ne: currentUserId } } // Exclude current user
+      ]
+    })
+      .select('-password')
+      .limit(20)
+
+    const mapped = users.map((u) => ({ _id: u._id, name: u.name, email: u.email }))
+
+    return res.json({ status: 200, data: mapped })
+  } catch (error) {
+    // Delegate to error handling middleware
+    next(error)
+  }
+}
+
 export default {
   registration,
   login,
+  getCurrentUser,
+  search,
 }
