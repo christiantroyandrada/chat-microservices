@@ -5,10 +5,12 @@ import { Server } from 'http'
 import { errorMiddleware, errorHandler } from './middleware'
 import config from './config/config'
 import { rabbitMQService } from './services/RabbitMQService'
+import { connectDB } from './database'
+import notificationRouter from './routes/notificationRoutes'
 
 // Validate required environment variables on startup
 const validateEnv = () => {
-  const required = ['PORT', 'MESSAGE_BROKER_URL', 'NOTIFICATIONS_QUEUE']
+  const required = ['PORT', 'MESSAGE_BROKER_URL', 'NOTIFICATIONS_QUEUE', 'MONGO_URI', 'JWT_SECRET']
   const missing = required.filter(key => !process.env[key])
   
   if (missing.length > 0) {
@@ -27,26 +29,58 @@ validateEnv()
 const app: Express = express()
 let server: Server
 
-// Basic HTTP hardening
-app.use(helmet())
-
-// CORS for the notification service (REST). Can be overridden with CORS_ORIGINS env var.
+// CORS must be applied before helmet to ensure preflight requests are handled properly
 const allowedOrigins = process.env.CORS_ORIGINS
   ? process.env.CORS_ORIGINS.split(',').map(o => o.trim())
   : ['http://localhost:5173', 'http://localhost:85', 'http://localhost:8080']
-app.use(cors({ origin: allowedOrigins, credentials: true, methods: ['GET', 'POST', 'OPTIONS', 'PUT', 'DELETE'], allowedHeaders: ['Content-Type', 'Authorization'], preflightContinue: false, optionsSuccessStatus: 204 }))
+
+app.use(cors({
+  origin: (origin, callback) => {
+    // Allow requests with no origin (like mobile apps, curl, Postman)
+    if (!origin) return callback(null, true)
+    
+    if (allowedOrigins.indexOf(origin) !== -1) {
+      callback(null, true)
+    } else {
+      console.warn(`[notification-service] CORS blocked origin: ${origin}`)
+      callback(null, false)
+    }
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'OPTIONS', 'PUT', 'DELETE'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+  exposedHeaders: ['Content-Length', 'X-Request-Id'],
+  preflightContinue: false,
+  optionsSuccessStatus: 204
+}))
+
+// Basic HTTP hardening (applied after CORS)
+app.use(helmet())
 
 // Limit body size
 app.use(express.json({ limit: '100kb' }))
 app.use(express.urlencoded({ extended: true, parameterLimit: 1000 }))
+
 // Health check endpoint for Docker and monitoring
 app.get('/health', (_req, res) => res.status(200).json({ status: 'ok' }))
+
+// Mount notification routes (use plural `/notifications` prefix for consistency)
+app.use('/notifications', notificationRouter)
+
 app.use(errorMiddleware)
 app.use(errorHandler)
 
-server = app.listen(config.PORT, () => {
-  console.log(`Notification Service is running on port ${config.PORT}`)
-})
+const start = async () => {
+  // Connect to MongoDB
+  await connectDB()
+
+  server = app.listen(config.PORT, () => {
+    console.log(`[notification-service] Server is running on port ${config.PORT}`)
+  })
+
+  // Initialize RabbitMQ client for message queue consumption
+  await initializeRabbitMQClient()
+}
 
 const initializeRabbitMQClient = async () => {
   try {
@@ -57,7 +91,10 @@ const initializeRabbitMQClient = async () => {
   }
 }
 
-initializeRabbitMQClient()
+start().catch(err => {
+  console.error('[notification-service] Failed to start:', err)
+  process.exit(1)
+})
 
 const exitHandler = () => {
   if (server) {

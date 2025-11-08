@@ -27,9 +27,9 @@ jobs:
           cache-dependency-path: '${{ matrix.service }}/package-lock.json'
 
       - name: Install dependencies
-        working-directory: ./${{ matrix.service }}
+        working-directory: ${{ matrix.service }}
         run: npm ci
 
       - name: Run TypeScript type check
-        working-directory: ./${{ matrix.service }}
+        working-directory: ${{ matrix.service }}
         run: npx tsc --noEmit

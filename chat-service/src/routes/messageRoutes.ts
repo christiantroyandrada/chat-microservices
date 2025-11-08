@@ -19,5 +19,10 @@ chatServiceRouter.get(
   authMiddleware as RequestHandler,
   MessageController.getConversations as unknown as RequestHandler
 )
+chatServiceRouter.put(
+  '/messages/read/:senderId',
+  authMiddleware as RequestHandler,
+  MessageController.markAsRead as unknown as RequestHandler
+)
 
 export default chatServiceRouter

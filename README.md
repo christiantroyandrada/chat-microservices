@@ -22,7 +22,7 @@ This repository contains a small set of Node.js + TypeScript microservices for a
   - `/api/notifications` -> notification-service (http://localhost:8083)
 
 - Inter-service messaging: RabbitMQ (services read `MESSAGE_BROKER_URL`)
-- Databases: MongoDB used by `user-service` and `chat-service` (services read `MONGO_URI` or `MONGO_URI` built from secrets)
+- Databases: MongoDB used by `user-service`, `chat-service`, and `notification-service` (services read `MONGO_URI` built from secrets)
 
 ## Architecture
 
@@ -70,16 +70,16 @@ Optional external services if not using Docker locally:
 
 ## Secrets and .env (local development)
 
-This project supports two local patterns for secrets:
+This project supports two patterns for managing secrets locally:
 
-1) Simple `.env` files (used by the services via dotenv) — good for quick local development.
-2) A consolidated Docker secret file `docker-secrets/app_secrets` (recommended for local runs with `docker-compose`).
+1. Simple `.env` files (used by the services via dotenv) — good for quick local development.
+2. A consolidated Docker secret file `docker-secrets/app_secrets` (recommended for local runs with `docker-compose`).
 
-What we added
+**What's included:**
 - `docker-secrets/app_secrets.example` — a tracked example file you can commit. Copy it to `docker-secrets/app_secrets` and fill in real values locally.
-- `.gitignore` excludes the `docker-secrets/` folder and `.env` to avoid accidentally committing real secrets.
+- `.gitignore` excludes the `docker-secrets/` folder and `.env` files to avoid accidentally committing real secrets.
 
-How to use the consolidated secret file (quick):
+**How to use the consolidated secret file:**
 
 ```bash
 # copy the example to the real secret file (local only)
@@ -102,23 +102,31 @@ The secret file is mounted into containers at `/run/secrets/app_secrets` (dotenv
 - ✅ Services work locally in VS Code (using generated `.env` files)
 - ✅ No manual `.env` copying needed
 
-To manually regenerate `.env` files (useful for local development):
+**To manually regenerate `.env` files** (useful for local development):
 
 ```bash
 ./scripts/generate-envs.sh         # Creates .env files if they don't exist
 ./scripts/generate-envs.sh --force # Overwrites existing .env files
 ```
 
-## Docker / docker-compose (local)
+## Secrets Guidance (CI / Production)
 
-The compose file brings up:
-- `setup` — one-time service that generates .env files from consolidated secrets
-- `mongodb` (mongo:8.2.1) — database for user and chat services
+**Do not commit real secrets.** For CI and production environments, inject secrets via your CI provider or secret store (GitHub Actions Secrets, HashiCorp Vault, etc.). 
+
+The tracked `docker-secrets/app_secrets.example` file uses `${VAR_NAME}` template placeholders to indicate which environment variables need to be set (for example, `${JWT_SECRET_NOTIFICATION}`).
+
+When deploying locally with `docker-compose`, copy the example file to `docker-secrets/app_secrets` and replace the `${VAR_NAME}` placeholders with actual values on your machine. The repository's `.gitignore` prevents committing the real `app_secrets` file.
+
+## Docker / docker-compose (Local Development)
+
+The compose file brings up the following services:
+- `setup` — one-time service that generates `.env` files from consolidated secrets
+- `mongodb` (mongo:8.2.1) — database for user, chat, and notification services
 - `nosqlclient` (Mongoclient 4.0.1, web UI, host port 8088) — modern MongoDB admin interface
 - `user`, `chat`, `notification` services (Node.js microservices)
 - `nginx` (reverse proxy, host port 85)
 
-**Note**: The `gateway` service is **not** included in docker-compose. It runs standalone. Services are accessible directly or via nginx.
+**Note**: The `gateway` service is **not** included in docker-compose and runs standalone. Services are accessible directly or via nginx.
 
 Basic start (rebuild images):
 
@@ -126,10 +134,10 @@ Basic start (rebuild images):
 docker-compose up -d --build
 ```
 
-Recreate a single service (non-destructive):
+Recreate a single service without affecting others:
 
 ```bash
-# recreate nosqlclient only
+# Example: recreate nosqlclient only
 docker-compose up -d --no-deps --force-recreate nosqlclient
 ```
 
@@ -142,17 +150,17 @@ docker-compose logs --tail 200 mongodb
 docker-compose logs --tail 200 user
 ```
 
-Nosqlclient (Mongoclient) is reachable on the host at http://localhost:8088/ — a modern web interface for MongoDB with query history, aggregation pipeline builder, and more features than mongo-express.
+Nosqlclient (Mongoclient) is available at http://localhost:8088/ — a modern web interface for MongoDB with query history, aggregation pipeline builder, and more features than mongo-express.
 
 ## Healthchecks
 
-- `nosqlclient` includes a healthcheck that verifies the web UI is responding on port 3000.
-- `mongodb` has a healthcheck that runs a ping command via mongosh.
-- Services expose simple HTTP `/health` endpoints which are used by compose healthchecks.
+- `nosqlclient` includes a healthcheck that verifies the web UI is responding on port 3000
+- `mongodb` has a healthcheck that runs a ping command via mongosh
+- Backend services expose simple HTTP `/health` endpoints used by compose healthchecks
 
-## How to run services (development without Docker)
+## How to Run Services (Development Without Docker)
 
-For quick local dev of an individual service (example: `user-service`):
+For quick local development of an individual service (example: `user-service`):
 
 ```bash
 cd user-service
@@ -161,11 +169,11 @@ npm install
 npm run dev
 ```
 
-Repeat for `chat-service` and `notification-service` when working on them individually.
+Repeat the steps above for `chat-service` and `notification-service` when working on them individually.
 
-### Running the gateway (standalone)
+### Running the Gateway (Standalone)
 
-The gateway is not part of docker-compose. To run it:
+The gateway is not part of docker-compose. To run it separately:
 
 ```bash
 cd gateway
@@ -180,7 +188,7 @@ The gateway proxies requests to the backend services:
 
 ## Helper Scripts
 
-### Purge notification queue
+### Purge Notification Queue
 
 The notification service includes a script to purge the RabbitMQ queue:
 
@@ -189,36 +197,37 @@ cd notification-service
 node scripts/purgeQueue.js
 ```
 
-This connects to RabbitMQ using `MESSAGE_BROKER_URL` and purges the `NOTIFICATIONS_QUEUE` (defaults to "NOTIFICATIONS"). Useful for clearing test messages during development.
+This script connects to RabbitMQ using `MESSAGE_BROKER_URL` and purges the `NOTIFICATIONS_QUEUE` (defaults to "NOTIFICATIONS"). This is useful for clearing test messages during development.
 
 ## Troubleshooting
 
-### MongoDB authentication issues
+### MongoDB Authentication Issues
 
-- If services fail to authenticate to MongoDB, make sure either:
-  - your `.env` values (MONGO_URI) are correct, or
-  - `docker-secrets/app_secrets` contains the correct ADMIN_USERNAME / ADMIN_PASSWORD and the compose stack was recreated.
+If services fail to authenticate to MongoDB, ensure that:
+- Your `.env` values (`MONGO_URI`) are correct, or
+- `docker-secrets/app_secrets` contains the correct `ADMIN_USERNAME` and `ADMIN_PASSWORD`, and the compose stack has been recreated
 
-### Verify Nosqlclient connectivity
+### Verify Nosqlclient Connectivity
 
 ```bash
 curl -I http://localhost:8088/ || true
-# expected: HTTP/1.1 200 OK (Nosqlclient UI is up)
+# Expected: HTTP/1.1 200 OK (Nosqlclient UI is up)
 ```
 
-Or simply open http://localhost:8088/ in your browser to access the Mongoclient interface.
+Alternatively, open http://localhost:8088/ in your browser to access the Mongoclient interface.
 
-### General debugging
+### General Debugging
 
 - Check service health: `docker-compose ps`
 - View logs: `docker-compose logs --tail 200 <service>`
 - Restart a service: `docker-compose restart <service>`
-- Check .env files were generated: `ls -la */service/.env`
+- Verify `.env` files were generated: `ls -la */service/.env`
 
-### Services not connecting to RabbitMQ
+### Services Not Connecting to RabbitMQ
 
+If services cannot connect to RabbitMQ:
 - Verify `MESSAGE_BROKER_URL` in your consolidated secrets or `.env` files
-- Check RabbitMQ is accessible (if using external instance)
+- Check that RabbitMQ is accessible (if using an external instance)
 - Review service logs for connection errors: `docker-compose logs --tail 100 user chat notification`
 
 ## Security
@@ -235,7 +244,7 @@ This project implements multiple security layers for local development and produ
 2. **Dependency Security**
    - Automated npm audit in CI
    - Container image scanning with Trivy
-   - Vulnerable packages removed (replaced sib-api-v3-typescript with axios)
+   - Vulnerable packages removed (replaced `sib-api-v3-typescript` with `axios`)
 
 3. **HTTP Hardening**
    - Helmet.js for security headers
@@ -269,4 +278,4 @@ Before deploying to production:
 
 For more details, see the [Security Guidelines](./SECURITY.md).
 
-**Recent Security Improvements (Nov 2025)**: Input validation, MongoDB injection protection, environment validation, enhanced rate limiting, and improved cookie security. See [SECURITY_IMPROVEMENTS.md](./SECURITY_IMPROVEMENTS.md) for implementation details.
+**Recent Security Improvements (November 2025)**: Input validation, MongoDB injection protection, environment validation, enhanced rate limiting, and improved cookie security. See [SECURITY_IMPROVEMENTS.md](./SECURITY_IMPROVEMENTS.md) for implementation details.

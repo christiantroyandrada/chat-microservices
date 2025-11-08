@@ -174,9 +174,42 @@ const search = async (
   }
 }
 
+const getUserById = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const { userId } = req.params
+    
+    if (!userId) {
+      throw new APIError(400, 'User ID is required')
+    }
+
+    const user = await User.findById(userId).select('-password')
+    
+    if (!user) {
+      throw new APIError(404, 'User not found')
+    }
+
+    return res.json({
+      status: 200,
+      message: 'User retrieved successfully',
+      data: {
+        id: String(user._id),
+        name: user.name,
+        email: user.email,
+      }
+    })
+  } catch (error: unknown) {
+    next(error)
+  }
+}
+
 export default {
   registration,
   login,
   getCurrentUser,
   search,
+  getUserById,
 }

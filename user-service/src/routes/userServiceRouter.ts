@@ -45,4 +45,10 @@ userServiceRouter.get(
   AuthController.search
 )
 
+// Get user by ID (used by chat service to fetch usernames)
+userServiceRouter.get(
+  '/users/:userId',
+  AuthController.getUserById
+)
+
 export default userServiceRouter
