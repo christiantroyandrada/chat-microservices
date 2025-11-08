@@ -103,7 +103,7 @@ const getConversations = async (
   try {
     const { _id: userId } = req.user
     
-    // Get all unique conversation partners
+    // Get all unique conversation partners with their last messages
     const conversations = await Message.aggregate([
       {
         $match: {
@@ -122,13 +122,13 @@ const getConversations = async (
               '$senderId'
             ]
           },
-          lastMessage: { $first: '$$ROOT' },
+          lastMessageDoc: { $first: '$$ROOT' },
           unreadCount: {
             $sum: {
               $cond: [
                 { $and: [
                   { $eq: ['$receiverId', userId] },
-                  { $eq: ['$isRead', false] }
+                  { $ne: ['$status', 'Seen'] }
                 ]},
                 1,
                 0
@@ -141,7 +141,8 @@ const getConversations = async (
         $project: {
           _id: 0,
           userId: '$_id',
-          lastMessage: 1,
+          lastMessage: '$lastMessageDoc.message',
+          lastMessageTime: '$lastMessageDoc.createdAt',
           unreadCount: 1
         }
       }
@@ -162,8 +163,50 @@ const getConversations = async (
   }
 }
 
+const markAsRead = async (
+  req: AuthenticatedRequest,
+  res: Response,
+) => {
+  try {
+    const { senderId } = req.params
+    const { _id: receiverId } = req.user
+
+    if (!senderId) {
+      throw new APIError(400, 'Sender ID is required')
+    }
+
+    // Mark all messages from senderId to the current user as read (Seen)
+    const result = await Message.updateMany(
+      {
+        senderId,
+        receiverId,
+        status: { $ne: 'Seen' }
+      },
+      {
+        $set: { status: 'Seen' }
+      }
+    )
+
+    return res.json({
+      status: 200,
+      message: 'Messages marked as read',
+      data: {
+        modifiedCount: result.modifiedCount
+      }
+    })
+  } catch (error: unknown) {
+    const message = 
+      error instanceof Error ? error.message : 'Internal Server Error'
+    return res.json({
+      status: 500,
+      message,
+    })
+  }
+}
+
 export default {
   sendMessage,
   fetchConversation,
   getConversations,
+  markAsRead,
 }
