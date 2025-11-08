@@ -38,4 +38,11 @@ userServiceRouter.get(
   AuthController.getCurrentUser
 )
 
+// Search users (used by frontend for starting new conversations)
+userServiceRouter.get(
+  '/search',
+  authenticated,
+  AuthController.search
+)
+
 export default userServiceRouter

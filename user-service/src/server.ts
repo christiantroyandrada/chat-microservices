@@ -69,7 +69,7 @@ app.use(cookieParser())
 // NOTE: MongoDB sanitization disabled due to express-mongo-sanitize incompatibility with Express 5.x
 // Input validation middleware provides primary defense against injection attacks
 
-app.use(express.json({ limit: '100kb' }))
+// Parse JSON request bodies
 app.use(express.json({ limit: '100kb' }))
 app.use(express.urlencoded({ extended: true, parameterLimit: 1000 }))
 

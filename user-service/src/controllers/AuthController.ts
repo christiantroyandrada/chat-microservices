@@ -134,8 +134,44 @@ const getCurrentUser = async (
   }
 }
 
+const search = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const q = (req.query.q as string) || ''
+    if (!q || q.trim().length === 0) {
+      return res.json({ status: 200, data: [] })
+    }
+
+    const regex = new RegExp(q.trim(), 'i')
+    
+  // Get current user ID from JWT token
+  const currentUserId = req.user?.id
+
+    // Search by name or email, excluding the current logged-in user
+    const users = await User.find({
+      $and: [
+        { $or: [{ name: regex }, { email: regex }] },
+        { _id: { $ne: currentUserId } } // Exclude current user
+      ]
+    })
+      .select('-password')
+      .limit(20)
+
+    const mapped = users.map((u) => ({ _id: u._id, name: u.name, email: u.email }))
+
+    return res.json({ status: 200, data: mapped })
+  } catch (error) {
+    // Delegate to error handling middleware
+    next(error)
+  }
+}
+
 export default {
   registration,
   login,
   getCurrentUser,
+  search,
 }
