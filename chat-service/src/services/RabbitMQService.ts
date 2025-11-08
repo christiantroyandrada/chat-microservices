@@ -23,14 +23,18 @@ class RabbitMQService {
       this.responseQueue,
       (msg) => {
         if (!msg) return
-        const correlationId = msg.properties.correlationId
-        const user = JSON.parse(msg.content.toString())
+        try {
+          const correlationId = msg.properties.correlationId
+          const user = JSON.parse(msg.content.toString())
 
-        const entry = this.correlationMap.get(correlationId)
-        if (entry) {
-          clearTimeout(entry.timer)
-          entry.callback(user)
-          this.correlationMap.delete(correlationId)
+          const entry = this.correlationMap.get(correlationId)
+          if (entry) {
+            clearTimeout(entry.timer)
+            entry.callback(user)
+            this.correlationMap.delete(correlationId)
+          }
+        } catch (parseError) {
+          console.error('[chat-service] RabbitMQ response parse error:', parseError)
         }
       },
       { noAck: true },

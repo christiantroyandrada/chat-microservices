@@ -46,7 +46,7 @@ const registration = async (
     })
 
     const userData = {
-      id: user._id,
+      id: String(user._id),
       name: user.name,
       email: user.email,
     }
@@ -65,11 +65,14 @@ const createSendToken = async (
   user: IUser,
   res: Response,
 ) => {
-  const { name, email, id } = user
-  const token = jwt.sign({ name, email, id }, JWT_SECRET, {
+  // Ensure the token `id` is the MongoDB _id string for consistency
+  const { name, email } = user as any
+  const userId = String((user as any)._id ?? (user as any).id)
+
+  const token = jwt.sign({ name, email, id: userId }, JWT_SECRET, {
     expiresIn: '1d',
   })
-  
+
   const cookieOptions = getCookieOptions()
   res.cookie('jwt', token, cookieOptions)
 
@@ -124,7 +127,7 @@ const getCurrentUser = async (
       status: 200,
       message: 'User retrieved successfully',
       data: {
-        id: user._id,
+        id: String(user._id),
         name: user.name,
         email: user.email,
       }
@@ -145,10 +148,12 @@ const search = async (
       return res.json({ status: 200, data: [] })
     }
 
-    const regex = new RegExp(q.trim(), 'i')
+    // Escape special regex characters to prevent ReDoS attacks
+    const escapedQuery = q.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const regex = new RegExp(escapedQuery, 'i')
     
-  // Get current user ID from JWT token
-  const currentUserId = req.user?.id
+    // Get current user ID from JWT token
+    const currentUserId = req.user?.id
 
     // Search by name or email, excluding the current logged-in user
     const users = await User.find({

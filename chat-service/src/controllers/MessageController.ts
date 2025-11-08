@@ -13,17 +13,31 @@ const sendMessage = async (
     
     validateReceiver(_id, receiverId)
 
+    // Validate message content
+    if (!message || typeof message !== 'string') {
+      throw new APIError(400, 'Invalid message content')
+    }
+
+    const trimmedMessage = message.trim()
+    if (trimmedMessage.length === 0) {
+      throw new APIError(400, 'Message cannot be empty')
+    }
+
+    if (trimmedMessage.length > 5000) {
+      throw new APIError(400, 'Message exceeds maximum length of 5000 characters')
+    }
+
     const newMessage = await Message.create({
       senderId: _id,
       receiverId,
-      message,
+      message: trimmedMessage,
     })
 
     await handleMessageReceived(
       name,
       email,
       receiverId,
-      message
+      trimmedMessage
     )
 
     return res.json({

@@ -1,5 +1,6 @@
 import { Server } from 'http'
 import { Socket, Server as SocketIOServer } from 'socket.io'
+import jwt from 'jsonwebtoken'
 import app from './app'
 import { Message, connectDB } from './database'
 import config from './config/config'
@@ -52,6 +53,9 @@ const start = async () => {
     // Helpful compression limit (optional)
     perMessageDeflate: { threshold: 1024 },
 
+    // Maximum message size (1MB) to prevent memory exhaustion
+    maxHttpBufferSize: 1e6,
+
     // Make CORS explicit - use environment variables for allowed origins
     cors: {
       origin: process.env.CORS_ORIGINS 
@@ -66,16 +70,39 @@ const start = async () => {
     transports: ['websocket', 'polling'] // optional; default includes both
   })
 
+  // JWT authentication middleware for Socket.IO
+  io.use((socket, next) => {
+    try {
+      const token = socket.handshake.auth.token;
+      if (!token) {
+        return next(new Error('Authentication required'));
+      }
+
+      // Verify JWT token
+      const decoded = jwt.verify(token, config.JWT_SECRET as string) as any;
+      
+      // Attach user to socket
+      socket.data.user = {
+        id: decoded.id,
+        email: decoded.email,
+        name: decoded.name
+      };
+      
+      next();
+    } catch (err) {
+      next(new Error('Invalid token'));
+    }
+  });
+
 
   io.on('connection', (socket: Socket) => {
     console.log('[chat-service] New client connected: ', socket.id)
 
-    // clients should emit an 'identify' event with their userId after connecting
-    socket.on('identify', (userId: string) => {
-      if (userId) {
-        socket.join(userId)
-      }
-    })
+    // Use authenticated user ID from JWT (already verified by middleware)
+    const userId = socket.data.user?.id;
+    if (userId) {
+      socket.join(userId);
+    }
 
     socket.on('disconnect', () => {
       console.log('[chat-service] Client disconnected: ', socket.id)
@@ -88,7 +115,32 @@ const start = async () => {
     socket.on('sendMessage', async (data, ack?: (res: { ok: boolean; id?: string; error?: string }) => void) => {
       try {
         const { senderId, receiverId, message } = data
-        const msg = new Message({ senderId, receiverId, message })
+        
+        // Validate: authenticated user can only send as themselves
+        if (senderId !== userId) {
+          ack?.({ ok: false, error: 'Unauthorized: cannot send as another user' });
+          return;
+        }
+
+        // Validate message content
+        if (!message || typeof message !== 'string') {
+          ack?.({ ok: false, error: 'Invalid message content' });
+          return;
+        }
+
+        const trimmedMessage = message.trim();
+        if (trimmedMessage.length === 0 || trimmedMessage.length > 5000) {
+          ack?.({ ok: false, error: 'Message must be between 1 and 5000 characters' });
+          return;
+        }
+
+        // Validate receiverId
+        if (!receiverId || senderId === receiverId) {
+          ack?.({ ok: false, error: 'Invalid receiver' });
+          return;
+        }
+
+        const msg = new Message({ senderId, receiverId, message: trimmedMessage })
         await msg.save()
         io.to(receiverId).emit('receiveMessage', msg)
         ack?.({ ok: true, id: String(msg._id) })
