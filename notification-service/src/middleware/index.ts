@@ -47,3 +47,5 @@ export const errorHandler: ErrorRequestHandler = (
 
   res.status(statusCode).json(response)
 }
+
+export { authMiddleware } from './auth'

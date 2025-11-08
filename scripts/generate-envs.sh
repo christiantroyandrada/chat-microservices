@@ -57,6 +57,7 @@ write_env() {
     */notification-service/.env)
       echo "NODE_ENV=\"$(get_value NODE_ENV)\"" >> "$dest"
       echo "PORT=\"$(get_value PORT_NOTIFICATION)\"" >> "$dest"
+      echo "JWT_SECRET=\"$(get_value JWT_SECRET_NOTIFICATION)\"" >> "$dest"
       echo "MESSAGE_BROKER_URL=\"$(get_value MESSAGE_BROKER_URL)\"" >> "$dest"
       echo "SMTP_HOST=\"$(get_value SMTP_HOST)\"" >> "$dest"
       echo "SMTP_PORT=\"$(get_value SMTP_PORT)\"" >> "$dest"
