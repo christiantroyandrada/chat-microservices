@@ -3,6 +3,7 @@ import rateLimit from 'express-rate-limit'
 import AuthController from '../controllers/AuthController'
 import { registrationValidation, loginValidation } from '../middleware/validation/authValidation'
 import { validateRequest } from '../middleware/validation/validateRequest'
+import { authenticated } from '../middleware/auth'
 
 const userServiceRouter = Router()
 
@@ -29,6 +30,12 @@ userServiceRouter.post(
   ...loginValidation,
   validateRequest,
   AuthController.login
+)
+
+userServiceRouter.get(
+  '/me',
+  authenticated,
+  AuthController.getCurrentUser
 )
 
 export default userServiceRouter

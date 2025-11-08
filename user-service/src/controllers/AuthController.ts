@@ -102,7 +102,40 @@ const login = async (
   }
 }
 
+const getCurrentUser = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    // req.user is populated by authenticate middleware
+    if (!req.user) {
+      throw new APIError(401, 'Authentication required')
+    }
+
+    // Fetch full user data from database
+    const user = await User.findById(req.user.id).select('-password')
+    
+    if (!user) {
+      throw new APIError(404, 'User not found')
+    }
+
+    return res.json({
+      status: 200,
+      message: 'User retrieved successfully',
+      data: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+      }
+    })
+  } catch (error: unknown) {
+    next(error)
+  }
+}
+
 export default {
   registration,
   login,
+  getCurrentUser,
 }

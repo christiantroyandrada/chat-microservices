@@ -82,7 +82,74 @@ const fetchConversation = async (
   }
 }
 
+const getConversations = async (
+  req: AuthenticatedRequest,
+  res: Response,
+) => {
+  try {
+    const { _id: userId } = req.user
+    
+    // Get all unique conversation partners
+    const conversations = await Message.aggregate([
+      {
+        $match: {
+          $or: [{ senderId: userId }, { receiverId: userId }]
+        }
+      },
+      {
+        $sort: { createdAt: -1 }
+      },
+      {
+        $group: {
+          _id: {
+            $cond: [
+              { $eq: ['$senderId', userId] },
+              '$receiverId',
+              '$senderId'
+            ]
+          },
+          lastMessage: { $first: '$$ROOT' },
+          unreadCount: {
+            $sum: {
+              $cond: [
+                { $and: [
+                  { $eq: ['$receiverId', userId] },
+                  { $eq: ['$isRead', false] }
+                ]},
+                1,
+                0
+              ]
+            }
+          }
+        }
+      },
+      {
+        $project: {
+          _id: 0,
+          userId: '$_id',
+          lastMessage: 1,
+          unreadCount: 1
+        }
+      }
+    ])
+
+    return res.json({
+      status: 200,
+      message: 'Conversations fetched successfully',
+      data: conversations,
+    })
+  } catch (error: unknown) {
+    const message = 
+      error instanceof Error ? error.message : 'Internal Server Error'
+    return res.json({
+      status: 500,
+      message,
+    })
+  }
+}
+
 export default {
   sendMessage,
   fetchConversation,
+  getConversations,
 }
