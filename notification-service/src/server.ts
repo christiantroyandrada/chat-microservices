@@ -1,4 +1,5 @@
 import express, { Express } from 'express'
+import cors from 'cors'
 import helmet from 'helmet'
 import { Server } from 'http'
 import { errorMiddleware, errorHandler } from './middleware'
@@ -28,6 +29,12 @@ let server: Server
 
 // Basic HTTP hardening
 app.use(helmet())
+
+// CORS for the notification service (REST). Can be overridden with CORS_ORIGINS env var.
+const allowedOrigins = process.env.CORS_ORIGINS
+  ? process.env.CORS_ORIGINS.split(',').map(o => o.trim())
+  : ['http://localhost:5173', 'http://localhost:85', 'http://localhost:8080']
+app.use(cors({ origin: allowedOrigins, credentials: true, methods: ['GET', 'POST', 'OPTIONS', 'PUT', 'DELETE'], allowedHeaders: ['Content-Type', 'Authorization'], preflightContinue: false, optionsSuccessStatus: 204 }))
 
 // Limit body size
 app.use(express.json({ limit: '100kb' }))

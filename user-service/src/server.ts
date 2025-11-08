@@ -1,4 +1,5 @@
 import express, { Express } from 'express'
+import cors from 'cors'
 import helmet from 'helmet'
 import rateLimit from 'express-rate-limit'
 import mongoSanitize from 'express-mongo-sanitize'
@@ -33,6 +34,19 @@ const app: Express = express()
 let server: Server
 
 app.set('trust proxy', 1)
+// Configure CORS for the user service. Can be overridden with CORS_ORIGINS env var (comma-separated).
+const allowedOrigins = process.env.CORS_ORIGINS
+  ? process.env.CORS_ORIGINS.split(',').map(o => o.trim())
+  : ['http://localhost:5173', 'http://localhost:85', 'http://localhost:8080']
+app.use(cors({
+  origin: allowedOrigins,
+  credentials: true,
+  methods: ['GET', 'POST', 'OPTIONS', 'PUT', 'DELETE'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  preflightContinue: false,
+  optionsSuccessStatus: 204
+}))
+
 app.get('/health', async (_req, res) => {
   try {
     const state = mongoose.connection.readyState

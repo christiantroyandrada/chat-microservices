@@ -56,7 +56,7 @@ const start = async () => {
     cors: {
       origin: process.env.CORS_ORIGINS 
         ? process.env.CORS_ORIGINS.split(',').map(o => o.trim())
-        : ['http://localhost:85', 'http://localhost:8080'], // Default for local dev
+        : ['http://localhost:5173', 'http://localhost:85', 'http://localhost:8080'], // Default for local dev (include frontend)
       credentials: true,
       methods: ['GET', 'POST', 'OPTIONS'],
       allowedHeaders: ['Content-Type', 'Authorization']
