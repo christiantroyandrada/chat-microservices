@@ -3,6 +3,25 @@ import { AuthenticatedRequest } from '../middleware'
 import { Message } from '../database'
 import { APIError, handleMessageReceived } from '../utils'
 
+// Helper to fetch user details from user service
+const fetchUserDetails = async (userId: string): Promise<{ name: string } | null> => {
+  try {
+    const userServiceUrl = process.env.USER_SERVICE_URL || 'http://user:8081'
+    const response = await fetch(`${userServiceUrl}/users/${userId}`)
+    
+    if (!response.ok) {
+      console.warn(`Failed to fetch user ${userId}: ${response.status}`)
+      return null
+    }
+    
+    const data = await response.json()
+    return data?.data || data || null
+  } catch (error) {
+    console.error(`Error fetching user ${userId}:`, error)
+    return null
+  }
+}
+
 const sendMessage = async (
   req: AuthenticatedRequest,
   res: Response,
@@ -148,10 +167,21 @@ const getConversations = async (
       }
     ])
 
+    // Fetch usernames for all conversation partners
+    const conversationsWithUsernames = await Promise.all(
+      conversations.map(async (conv) => {
+        const userDetails = await fetchUserDetails(conv.userId)
+        return {
+          ...conv,
+          username: userDetails?.name || 'Unknown User'
+        }
+      })
+    )
+
     return res.json({
       status: 200,
       message: 'Conversations fetched successfully',
-      data: conversations,
+      data: conversationsWithUsernames,
     })
   } catch (error: unknown) {
     const message = 
