@@ -46,7 +46,7 @@ app.use(express.urlencoded({ extended: true, parameterLimit: 1000 }))
 app.get('/health', (_req, res) => res.status(200).json({ status: 'ok' }))
 
 // Mount notification routes
-app.use('/notifications', notificationRouter)
+app.use('/notification', notificationRouter)
 
 app.use(errorMiddleware)
 app.use(errorHandler)
