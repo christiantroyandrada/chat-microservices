@@ -1,6 +1,6 @@
 import * as amqp from 'amqplib'
 import config from '../config/config'
-import { User } from '../database'
+import { User, AppDataSource } from '../database'
 import { APIError } from '../utils'
 
 type AmqpConnectionLike = {
@@ -9,7 +9,11 @@ type AmqpConnectionLike = {
 }
 
 const getUserDetails = async (userId:string) => {
-  const userDetails = await User.findById(userId).select('-password')
+  const userRepo = AppDataSource.getRepository(User)
+  const userDetails = await userRepo.findOne({ 
+    where: { id: userId },
+    select: ['id', 'name', 'email', 'createdAt', 'updatedAt']
+  })
   if (!userDetails) {
     throw new APIError(404, 'User not found')
   }
@@ -47,7 +51,11 @@ class RabbitMQService {
         if (msg !== null) {
           try {
             const { userId } = JSON.parse(msg.content.toString())
-            const userDetails = await User.findById(userId).select('-password')
+            const userRepo = AppDataSource.getRepository(User)
+            const userDetails = await userRepo.findOne({ 
+              where: { id: userId },
+              select: ['id', 'name', 'email', 'createdAt', 'updatedAt']
+            })
             
             // Reply with user details
             this.channel.sendToQueue(

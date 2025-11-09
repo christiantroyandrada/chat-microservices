@@ -11,21 +11,22 @@ services:
     command: /scripts/generate-envs.sh
     restart: "no"
 
-  mongodb:
-    image: mongo:8.2.1
+  postgres:
+    image: postgres:16.6-alpine
     restart: unless-stopped
     volumes:
-      - mongo-data:/data/db
+      - postgres-data:/var/lib/postgresql/data
     environment:
-      MONGO_INITDB_ROOT_USERNAME: ${ADMIN_USERNAME}
-      MONGO_INITDB_ROOT_PASSWORD: ${ADMIN_PASSWORD}
+      POSTGRES_USER: ${ADMIN_USERNAME}
+      POSTGRES_PASSWORD: ${ADMIN_PASSWORD}
+      POSTGRES_DB: chat_db
     secrets:
       - app_secrets
     depends_on:
       setup:
         condition: service_completed_successfully
     healthcheck:
-      test: ["CMD-SHELL", "mongosh --quiet --eval \"db.adminCommand('ping').ok\" | grep 1"]
+      test: ["CMD-SHELL", "pg_isready -U ${ADMIN_USERNAME} -d chat_db"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -34,27 +35,26 @@ services:
       driver: "json-file"
       options: { max-size: "10m", max-file: "3" }
 
-  # Web UI for MongoDB - Nosqlclient (Mongoclient)
-  nosqlclient:
-    image: mongoclient/mongoclient:4.0.1
+  # Web UI for PostgreSQL - pgAdmin
+  pgadmin:
+    image: dpage/pgadmin4:latest
     restart: unless-stopped
     depends_on:
-      mongodb:
+      postgres:
         condition: service_healthy
     ports:
-      - "127.0.0.1:8088:3000" # visit http://localhost:8088 (bound to localhost only)
+      - "127.0.0.1:8088:80" # visit http://localhost:8088 (bound to localhost only)
     environment:
-      # MongoDB connection (use URL-encoded password to handle special characters like '@')
-      MONGO_URL: "mongodb://${ADMIN_USERNAME}:${ADMIN_PASSWORD_ENCODED}@mongodb:27017/?authSource=admin"
-      # Root URL for the application
-      ROOT_URL: "http://localhost:8088"
-      # Port to run on (internal)
-      PORT: "3000"
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@admin.com}
+      PGADMIN_DEFAULT_PASSWORD: ${ADMIN_PASSWORD}
+      PGADMIN_CONFIG_SERVER_MODE: 'False'
+      PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED: 'False'
     secrets:
       - app_secrets
+    volumes:
+      - pgadmin-data:/var/lib/pgadmin
     healthcheck:
-      # Check if the web UI is responding (curl is more reliable than wget in this image)
-      test: ["CMD-SHELL", "curl -f http://localhost:3000/ >/dev/null 2>&1 || exit 1"]
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:80/misc/ping || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 3
@@ -72,14 +72,14 @@ services:
       - ./user-service/.env
     environment:
       # build the URI from .env variables (keeps credentials out of the compose file itself)
-      MONGO_URI: mongodb://${ADMIN_USERNAME}:${ADMIN_PASSWORD_ENCODED}@mongodb:27017/chat-db?authSource=admin
+      DATABASE_URL: postgresql://${ADMIN_USERNAME}:${ADMIN_PASSWORD}@postgres:5432/chat_db
       NODE_ENV: production
     secrets:
       - app_secrets
     depends_on:
       setup:
         condition: service_completed_successfully
-      mongodb:
+      postgres:
         condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "node -e \"const http=require('http'); const req=http.get('http://localhost:8081/health', res=>{process.exit(res.statusCode===200?0:1)}); req.on('error',()=>process.exit(1)); setTimeout(()=>process.exit(1),2000);\""]
@@ -99,14 +99,14 @@ services:
     env_file:
       - ./chat-service/.env
     environment:
-      MONGO_URI: mongodb://${ADMIN_USERNAME}:${ADMIN_PASSWORD_ENCODED}@mongodb:27017/chat-db?authSource=admin
+      DATABASE_URL: postgresql://${ADMIN_USERNAME}:${ADMIN_PASSWORD}@postgres:5432/chat_db
       NODE_ENV: production
     secrets:
       - app_secrets
     depends_on:
       setup:
         condition: service_completed_successfully
-      mongodb:
+      postgres:
         condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "node -e \"const http=require('http'); const req=http.get('http://localhost:8082/health', res=>{process.exit(res.statusCode===200?0:1)}); req.on('error',()=>process.exit(1)); setTimeout(()=>process.exit(1),2000);\""]
@@ -127,11 +127,11 @@ services:
       - ./notification-service/.env
     environment:
       NODE_ENV: production
-      MONGO_URI: mongodb://${ADMIN_USERNAME}:${ADMIN_PASSWORD_ENCODED}@mongodb:27017/chat-db?authSource=admin
+      DATABASE_URL: postgresql://${ADMIN_USERNAME}:${ADMIN_PASSWORD}@postgres:5432/chat_db
     depends_on:
       setup:
         condition: service_completed_successfully
-      mongodb:
+      postgres:
         condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "node -e \"const http=require('http'); const req=http.get('http://localhost:8083/health', res=>{process.exit(res.statusCode===200?0:1)}); req.on('error',()=>process.exit(1)); setTimeout(()=>process.exit(1),2000);\""]
@@ -169,7 +169,8 @@ services:
       options: { max-size: "10m", max-file: "3" }
 
 volumes:
-  mongo-data:
+  postgres-data:
+  pgadmin-data:
 
 secrets:
   app_secrets:

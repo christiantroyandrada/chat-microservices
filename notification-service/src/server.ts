@@ -10,7 +10,7 @@ import notificationRouter from './routes/notificationRoutes'
 
 // Validate required environment variables on startup
 const validateEnv = () => {
-  const required = ['PORT', 'MESSAGE_BROKER_URL', 'NOTIFICATIONS_QUEUE', 'MONGO_URI', 'JWT_SECRET']
+  const required = ['PORT', 'MESSAGE_BROKER_URL', 'NOTIFICATIONS_QUEUE', 'DATABASE_URL', 'JWT_SECRET']
   const missing = required.filter(key => !process.env[key])
   
   if (missing.length > 0) {
@@ -71,7 +71,6 @@ app.use(errorMiddleware)
 app.use(errorHandler)
 
 const start = async () => {
-  // Connect to MongoDB
   await connectDB()
 
   server = app.listen(config.PORT, () => {

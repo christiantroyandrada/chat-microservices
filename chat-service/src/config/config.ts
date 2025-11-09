@@ -4,7 +4,7 @@ const configFile = `./.env`
 config ({ path: configFile })
 
 const  {
-  MONGO_URI,
+  DATABASE_URL,
   PORT,
   JWT_SECRET,
   MESSAGE_BROKER_URL,
@@ -14,7 +14,7 @@ const  {
 const queue = { notifications: 'NOTIFICATIONS' }
 
 export default {
-  MONGO_URI,
+  DATABASE_URL,
   PORT,
   JWT_SECRET,
   msgBrokerURL: MESSAGE_BROKER_URL,

@@ -17,22 +17,23 @@
     "@types/jsonwebtoken": "^9.0.10",
     "@types/uuid": "^10.0.0",
     "amqplib": "^0.10.9",
+    "cors": "^2.8.5",
     "dotenv": "^17.2.3",
     "express": "^5.1.0",
-  "cors": "^2.8.5",
-    "express-mongo-sanitize": "^2.2.0",
     "express-rate-limit": "^6.7.0",
     "express-validator": "^7.3.0",
     "helmet": "^7.0.0",
     "jsonwebtoken": "^9.0.2",
-    "mongoose": "^8.19.2",
     "nodemon": "^3.1.10",
+    "pg": "^8.16.3",
+    "reflect-metadata": "^0.2.2",
     "socket.io": "^4.8.1",
     "ts-node": "^10.9.2",
+    "typeorm": "^0.3.27",
     "typescript": "^5.9.3",
     "uuid": "^13.0.0"
-  }
-  ,"devDependencies": {
+  },
+  "devDependencies": {
     "@types/cors": "^2.8.17"
   }
 }

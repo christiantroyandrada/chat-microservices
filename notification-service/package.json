@@ -7,7 +7,7 @@
     "dev-server": "NODE_ENV=development nodemon src/server.ts",
     "dev": "node scripts/purgeQueue.js && npm run dev-server",
     "build": "rm -rf build/ && tsc -p .",
-  "start": "NODE_ENV=production node build/server.js"
+    "start": "NODE_ENV=production node build/server.js"
   },
   "keywords": [],
   "author": "christiantroyandrada",
@@ -15,24 +15,26 @@
   "dependencies": {
     "@types/amqplib": "^0.10.8",
     "@types/express": "^5.0.5",
+    "@types/jsonwebtoken": "^9.0.3",
     "@types/nodemailer": "^7.0.3",
     "amqplib": "^0.10.9",
+    "axios": "^1.4.0",
+    "cors": "^2.8.5",
     "dotenv": "^17.2.3",
     "express": "^5.1.0",
-  "cors": "^2.8.5",
+    "express-rate-limit": "^6.7.0",
     "firebase-admin": "^13.5.0",
+    "helmet": "^7.0.0",
+    "jsonwebtoken": "^9.0.2",
     "nodemailer": "^7.0.10",
     "nodemon": "^3.1.10",
-    "axios": "^1.4.0",
-    "helmet": "^7.0.0",
-    "express-rate-limit": "^6.7.0",
+    "pg": "^8.16.3",
+    "reflect-metadata": "^0.2.2",
     "ts-node": "^10.9.2",
-    "typescript": "^5.9.3",
-    "mongoose": "^8.0.0",
-    "jsonwebtoken": "^9.0.2",
-    "@types/jsonwebtoken": "^9.0.3"
-  }
-  ,"devDependencies": {
+    "typeorm": "^0.3.27",
+    "typescript": "^5.9.3"
+  },
+  "devDependencies": {
     "@types/cors": "^2.8.17"
   }
 }

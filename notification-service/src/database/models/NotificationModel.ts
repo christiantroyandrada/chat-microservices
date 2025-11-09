@@ -1,49 +1,43 @@
-import mongoose, { Schema, Document } from 'mongoose'
+import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, Index } from 'typeorm'
 
-export interface INotification extends Document {
+export enum NotificationType {
+  MESSAGE = 'message',
+  SYSTEM = 'system',
+  ALERT = 'alert'
+}
+
+@Entity('notifications')
+@Index(['userId', 'createdAt'])
+@Index(['userId', 'read'])
+export class Notification {
+  @PrimaryGeneratedColumn('uuid')
+  id: string
+
+  @Column({ type: 'varchar', length: 255 })
+  @Index()
   userId: string
-  type: 'message' | 'system' | 'alert'
+
+  @Column({
+    type: 'enum',
+    enum: NotificationType
+  })
+  type: NotificationType
+
+  @Column({ type: 'varchar', length: 255 })
   title: string
+
+  @Column({ type: 'text' })
   message: string
+
+  @Column({ type: 'boolean', default: false })
+  @Index()
   read: boolean
+
+  @CreateDateColumn()
   createdAt: Date
+
+  @UpdateDateColumn()
   updatedAt: Date
 }
 
-const NotificationSchema: Schema = new Schema(
-  {
-    userId: {
-      type: String,
-      required: true,
-      index: true
-    },
-    type: {
-      type: String,
-      enum: ['message', 'system', 'alert'],
-      required: true
-    },
-    title: {
-      type: String,
-      required: true
-    },
-    message: {
-      type: String,
-      required: true
-    },
-    read: {
-      type: Boolean,
-      default: false,
-      index: true
-    }
-  },
-  {
-    timestamps: true
-  }
-)
-
-// Index for efficient queries
-NotificationSchema.index({ userId: 1, createdAt: -1 })
-NotificationSchema.index({ userId: 1, read: 1 })
-
-const Notification = mongoose.model<INotification>('Notification', NotificationSchema)
 export default Notification

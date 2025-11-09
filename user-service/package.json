@@ -20,23 +20,24 @@
     "amqplib": "^0.10.9",
     "bcryptjs": "^3.0.2",
     "cookie-parser": "^1.4.7",
+    "cors": "^2.8.5",
     "csrf-csrf": "^4.0.3",
     "dotenv": "^17.2.3",
     "express": "^5.1.0",
-  "cors": "^2.8.5",
-    "express-mongo-sanitize": "^2.2.0",
     "express-rate-limit": "^6.7.0",
     "express-validator": "^7.3.0",
     "helmet": "^7.0.0",
     "jsonwebtoken": "^9.0.2",
-    "mongoose": "^8.19.2",
     "nodemon": "^3.1.10",
+    "pg": "^8.16.3",
+    "reflect-metadata": "^0.2.2",
     "ts-node": "^10.9.2",
+    "typeorm": "^0.3.27",
     "typescript": "^5.9.3",
     "validator": "^13.15.20"
   },
   "devDependencies": {
-    "@types/cookie-parser": "^1.4.10"
-    ,"@types/cors": "^2.8.17"
+    "@types/cookie-parser": "^1.4.10",
+    "@types/cors": "^2.8.17"
   }
 }

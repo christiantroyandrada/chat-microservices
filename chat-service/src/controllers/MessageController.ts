@@ -1,7 +1,9 @@
 import { Response } from 'express'
 import { AuthenticatedRequest } from '../middleware'
-import { Message } from '../database'
+import { Message, AppDataSource } from '../database'
 import { APIError, handleMessageReceived } from '../utils'
+import { MessageStatus } from '../database/models/MessageModel'
+import { Not } from 'typeorm'
 
 // Helper to fetch user details from user service
 const fetchUserDetails = async (userId: string): Promise<{ name: string } | null> => {
@@ -46,10 +48,12 @@ const sendMessage = async (
       throw new APIError(400, 'Message exceeds maximum length of 5000 characters')
     }
 
-    const newMessage = await Message.create({
+    const messageRepo = AppDataSource.getRepository(Message)
+    const newMessage = await messageRepo.save({
       senderId: _id,
       receiverId,
       message: trimmedMessage,
+      status: MessageStatus.NotDelivered,
     })
 
     await handleMessageReceived(
@@ -93,12 +97,14 @@ const fetchConversation = async (
   try {
     const { receiverId } = req.params
     const { _id: senderId } = req.user  
-    const messages = await Message.find({
-      $or: [
-        { senderId, receiverId },
-        { senderId: receiverId, receiverId: senderId },
-      ]
-    })
+    
+    const messageRepo = AppDataSource.getRepository(Message)
+    const messages = await messageRepo
+      .createQueryBuilder('message')
+      .where('(message.senderId = :senderId AND message.receiverId = :receiverId) OR (message.senderId = :receiverId AND message.receiverId = :senderId)', 
+        { senderId, receiverId })
+      .orderBy('message.createdAt', 'ASC')
+      .getMany()
 
     return res.json({
       status: 200,
@@ -122,54 +128,50 @@ const getConversations = async (
   try {
     const { _id: userId } = req.user
     
-    // Get all unique conversation partners with their last messages
-    const conversations = await Message.aggregate([
-      {
-        $match: {
-          $or: [{ senderId: userId }, { receiverId: userId }]
-        }
-      },
-      {
-        $sort: { createdAt: -1 }
-      },
-      {
-        $group: {
-          _id: {
-            $cond: [
-              { $eq: ['$senderId', userId] },
-              '$receiverId',
-              '$senderId'
-            ]
-          },
-          lastMessageDoc: { $first: '$$ROOT' },
-          unreadCount: {
-            $sum: {
-              $cond: [
-                { $and: [
-                  { $eq: ['$receiverId', userId] },
-                  { $ne: ['$status', 'Seen'] }
-                ]},
-                1,
-                0
-              ]
-            }
-          }
-        }
-      },
-      {
-        $project: {
-          _id: 0,
-          userId: '$_id',
-          lastMessage: '$lastMessageDoc.message',
-          lastMessageTime: '$lastMessageDoc.createdAt',
-          unreadCount: 1
-        }
-      }
-    ])
+    const messageRepo = AppDataSource.getRepository(Message)
+    
+    // Get all unique conversation partners with their last messages using SQL
+    const conversationsRaw = await messageRepo.query(`
+      WITH ranked_messages AS (
+        SELECT 
+          CASE 
+            WHEN "senderId" = $1 THEN "receiverId"
+            ELSE "senderId"
+          END as "userId",
+          message as "lastMessage",
+          "createdAt" as "lastMessageTime",
+          ROW_NUMBER() OVER (
+            PARTITION BY CASE 
+              WHEN "senderId" = $1 THEN "receiverId"
+              ELSE "senderId"
+            END 
+            ORDER BY "createdAt" DESC
+          ) as rn
+        FROM messages
+        WHERE "senderId" = $1 OR "receiverId" = $1
+      ),
+      unread_counts AS (
+        SELECT 
+          "senderId" as "userId",
+          COUNT(*) as "unreadCount"
+        FROM messages
+        WHERE "receiverId" = $1 AND status != 'Seen'
+        GROUP BY "senderId"
+      )
+      SELECT 
+        rm."userId",
+        rm."lastMessage",
+        rm."lastMessageTime",
+        COALESCE(uc."unreadCount", 0) as "unreadCount"
+      FROM ranked_messages rm
+      LEFT JOIN unread_counts uc ON rm."userId" = uc."userId"
+      WHERE rm.rn = 1
+      ORDER BY rm."lastMessageTime" DESC
+    `, [userId])
 
     // Fetch usernames for all conversation partners
     const conversationsWithUsernames = await Promise.all(
-      conversations.map(async (conv) => {
+      conversationsRaw.map(async (conv: any) => {
         const userDetails = await fetchUserDetails(conv.userId)
         return {
           ...conv,
@@ -205,23 +207,23 @@ const markAsRead = async (
       throw new APIError(400, 'Sender ID is required')
     }
 
+    const messageRepo = AppDataSource.getRepository(Message)
+    
     // Mark all messages from senderId to the current user as read (Seen)
-    const result = await Message.updateMany(
-      {
-        senderId,
-        receiverId,
-        status: { $ne: 'Seen' }
-      },
-      {
-        $set: { status: 'Seen' }
-      }
-    )
+    const result = await messageRepo
+      .createQueryBuilder()
+      .update(Message)
+      .set({ status: MessageStatus.Seen })
+      .where('senderId = :senderId', { senderId })
+      .andWhere('receiverId = :receiverId', { receiverId })
+      .andWhere('status != :status', { status: MessageStatus.Seen })
+      .execute()
 
     return res.json({
       status: 200,
       message: 'Messages marked as read',
       data: {
-        modifiedCount: result.modifiedCount
+        modifiedCount: result.affected || 0
       }
     })
   } catch (error: unknown) {

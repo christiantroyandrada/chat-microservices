@@ -1,44 +1,40 @@
-import mongoose, { Schema, Document } from 'mongoose'
+import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, Index } from 'typeorm'
 
-enum Status {
+export enum MessageStatus {
   NotDelivered = 'NotDelivered',
   Delivered = 'Delivered',
   Seen = 'Seen',
 }
 
-export interface  IMessage extends Document {
+@Entity('messages')
+@Index(['senderId', 'receiverId']) // Composite index for conversation queries
+@Index(['senderId']) // Index for sender queries
+@Index(['receiverId']) // Index for receiver queries
+export class Message {
+  @PrimaryGeneratedColumn('uuid')
+  id: string
+
+  @Column({ type: 'varchar', length: 255 })
   senderId: string
+
+  @Column({ type: 'varchar', length: 255 })
   receiverId: string
+
+  @Column({ type: 'text' })
   message: string
-  status: Status
+
+  @Column({
+    type: 'enum',
+    enum: MessageStatus,
+    default: MessageStatus.NotDelivered
+  })
+  status: MessageStatus
+
+  @CreateDateColumn()
   createdAt: Date
+
+  @UpdateDateColumn()
   updatedAt: Date
 }
 
-const MessageSchema: Schema = new Schema(
-  {
-    senderId: {
-      type: String,
-      required: true,
-    },
-    receiverId: {
-      type: String,
-      required: true,
-    },
-    message: {
-      type: String,
-      required: true,
-    },
-    status: {
-      type: String,
-      enum: Object.values(Status),
-      default: Status.NotDelivered,
-    }
-  },
-  {
-    timestamps: true,
-  }
-)
-
-const Message = mongoose.model<IMessage>('Message', MessageSchema)
 export default Message

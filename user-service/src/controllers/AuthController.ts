@@ -1,8 +1,9 @@
 import { Request, Response, NextFunction } from 'express'
 import jwt from 'jsonwebtoken'
-import { User, IUser } from '../database'
+import { User, AppDataSource } from '../database'
 import { APIError, encryptPassword, isPasswordMatch } from '../utils'
 import config from '../config/config'
+import { Like, Not } from 'typeorm'
 
 const JWT_SECRET = config.JWT_SECRET as string
 const COOKIE_EXPIRATION_DAYS = 7
@@ -34,19 +35,21 @@ const registration = async (
 ) => {
   try {
     const { name, email, password } = req.body
-    const userExists = await User.findOne({ email})
+    const userRepo = AppDataSource.getRepository(User)
+    
+    const userExists = await userRepo.findOne({ where: { email } })
     if (userExists) {
       throw new APIError(400, 'User with this email already exists')
     }
 
-    const user = await User.create({
+    const user = await userRepo.save({
       name,
       email,
       password: await encryptPassword(password),
     })
 
     const userData = {
-      id: String(user._id),
+      id: user.id,
       name: user.name,
       email: user.email,
     }
@@ -62,14 +65,13 @@ const registration = async (
 }
 
 const createSendToken = async (
-  user: IUser,
+  user: User,
   res: Response,
 ) => {
-  // Ensure the token `id` is the MongoDB _id string for consistency
-  const { name, email } = user as any
-  const userId = String((user as any)._id ?? (user as any).id)
+  // Use TypeORM entity properties
+  const { name, email, id } = user
 
-  const token = jwt.sign({ name, email, id: userId }, JWT_SECRET, {
+  const token = jwt.sign({ name, email, id }, JWT_SECRET, {
     expiresIn: '1d',
   })
 
@@ -86,7 +88,13 @@ const login = async (
 ) => {
   try {
     const { email, password } = req.body
-    const user = await User.findOne({ email }).select('+password')
+    const userRepo = AppDataSource.getRepository(User)
+    
+    const user = await userRepo.findOne({ 
+      where: { email },
+      select: ['id', 'name', 'email', 'password', 'createdAt', 'updatedAt']
+    })
+    
     const passwordMatches = await isPasswordMatch(password, user?.password as string)
 
     if ( !user || !passwordMatches ) {
@@ -117,7 +125,11 @@ const getCurrentUser = async (
     }
 
     // Fetch full user data from database
-    const user = await User.findById(req.user.id).select('-password')
+    const userRepo = AppDataSource.getRepository(User)
+    const user = await userRepo.findOne({ 
+      where: { id: req.user.id },
+      select: ['id', 'name', 'email', 'createdAt', 'updatedAt']
+    })
     
     if (!user) {
       throw new APIError(404, 'User not found')
@@ -127,7 +139,7 @@ const getCurrentUser = async (
       status: 200,
       message: 'User retrieved successfully',
       data: {
-        id: String(user._id),
+        id: user.id,
         name: user.name,
         email: user.email,
       }
@@ -148,24 +160,22 @@ const search = async (
       return res.json({ status: 200, data: [] })
     }
 
-    // Escape special regex characters to prevent ReDoS attacks
-    const escapedQuery = q.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const regex = new RegExp(escapedQuery, 'i')
-    
     // Get current user ID from JWT token
     const currentUserId = req.user?.id
+    const userRepo = AppDataSource.getRepository(User)
 
     // Search by name or email, excluding the current logged-in user
-    const users = await User.find({
-      $and: [
-        { $or: [{ name: regex }, { email: regex }] },
-        { _id: { $ne: currentUserId } } // Exclude current user
-      ]
-    })
-      .select('-password')
+    // Using Like for case-insensitive search
+    const searchTerm = `%${q.trim()}%`
+    const users = await userRepo
+      .createQueryBuilder('user')
+      .where('user.id != :currentUserId', { currentUserId })
+      .andWhere('(user.name ILIKE :searchTerm OR user.email ILIKE :searchTerm)', { searchTerm })
+      .select(['user.id', 'user.name', 'user.email'])
       .limit(20)
+      .getMany()
 
-    const mapped = users.map((u) => ({ _id: u._id, name: u.name, email: u.email }))
+    const mapped = users.map((u: User) => ({ _id: u.id, name: u.name, email: u.email }))
 
     return res.json({ status: 200, data: mapped })
   } catch (error) {
@@ -186,7 +196,11 @@ const getUserById = async (
       throw new APIError(400, 'User ID is required')
     }
 
-    const user = await User.findById(userId).select('-password')
+    const userRepo = AppDataSource.getRepository(User)
+    const user = await userRepo.findOne({ 
+      where: { id: userId },
+      select: ['id', 'name', 'email', 'createdAt', 'updatedAt']
+    })
     
     if (!user) {
       throw new APIError(404, 'User not found')
@@ -196,7 +210,7 @@ const getUserById = async (
       status: 200,
       message: 'User retrieved successfully',
       data: {
-        id: String(user._id),
+        id: user.id,
         name: user.name,
         email: user.email,
       }

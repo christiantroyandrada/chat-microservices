@@ -1,4 +1,4 @@
 import Message from './models/MessageModel'
-import { connectDB } from './connection'
+import { connectDB, AppDataSource } from './connection'
 
-export { Message, connectDB }
+export { Message, connectDB, AppDataSource }

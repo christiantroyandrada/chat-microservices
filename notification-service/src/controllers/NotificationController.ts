@@ -1,6 +1,7 @@
 import { Response } from 'express'
-import { Notification } from '../database'
+import { Notification, AppDataSource } from '../database'
 import { APIError } from '../utils'
+import { NotificationType } from '../database/models/NotificationModel'
 
 interface AuthenticatedRequest extends Request {
   user?: {
@@ -19,11 +20,13 @@ const getNotifications = async (
     const limit = parseInt(req.query.limit || '20', 10)
     const offset = parseInt(req.query.offset || '0', 10)
 
-    const notifications = await Notification.find({ userId })
-      .sort({ createdAt: -1 })
-      .skip(offset)
-      .limit(limit)
-      .lean()
+    const notifRepo = AppDataSource.getRepository(Notification)
+    const notifications = await notifRepo.find({
+      where: { userId },
+      order: { createdAt: 'DESC' },
+      skip: offset,
+      take: limit
+    })
 
     return res.json({
       status: 200,
@@ -46,9 +49,9 @@ const getUnreadCount = async (
   try {
     const { _id: userId } = req.user!
     
-    const count = await Notification.countDocuments({
-      userId,
-      read: false
+    const notifRepo = AppDataSource.getRepository(Notification)
+    const count = await notifRepo.count({
+      where: { userId, read: false }
     })
 
     return res.json({
@@ -73,15 +76,17 @@ const markAsRead = async (
     const { _id: userId } = req.user!
     const { notificationId } = req.params
 
-    const notification = await Notification.findOneAndUpdate(
-      { _id: notificationId, userId },
-      { read: true },
-      { new: true }
-    )
+    const notifRepo = AppDataSource.getRepository(Notification)
+    const notification = await notifRepo.findOne({
+      where: { id: notificationId, userId }
+    })
 
     if (!notification) {
       throw new APIError(404, 'Notification not found')
     }
+
+    notification.read = true
+    await notifRepo.save(notification)
 
     return res.json({
       status: 200,
@@ -105,15 +110,19 @@ const markAllAsRead = async (
   try {
     const { _id: userId } = req.user!
 
-    const result = await Notification.updateMany(
-      { userId, read: false },
-      { read: true }
-    )
+    const notifRepo = AppDataSource.getRepository(Notification)
+    const result = await notifRepo
+      .createQueryBuilder()
+      .update(Notification)
+      .set({ read: true })
+      .where('userId = :userId', { userId })
+      .andWhere('read = :read', { read: false })
+      .execute()
 
     return res.json({
       status: 200,
       message: 'All notifications marked as read',
-      data: { modifiedCount: result.modifiedCount }
+      data: { modifiedCount: result.affected || 0 }
     })
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Internal Server Error'
@@ -132,14 +141,16 @@ const deleteNotification = async (
     const { _id: userId } = req.user!
     const { notificationId } = req.params
 
-    const notification = await Notification.findOneAndDelete({
-      _id: notificationId,
-      userId
+    const notifRepo = AppDataSource.getRepository(Notification)
+    const notification = await notifRepo.findOne({
+      where: { id: notificationId, userId }
     })
 
     if (!notification) {
       throw new APIError(404, 'Notification not found')
     }
+
+    await notifRepo.remove(notification)
 
     return res.json({
       status: 200,
@@ -172,9 +183,10 @@ const createNotification = async (
       throw new APIError(400, 'Invalid notification type. Must be: message, system, or alert')
     }
 
-    const notification = await Notification.create({
+    const notifRepo = AppDataSource.getRepository(Notification)
+    const notification = await notifRepo.save({
       userId,
-      type,
+      type: type as NotificationType,
       title,
       message,
       read: false

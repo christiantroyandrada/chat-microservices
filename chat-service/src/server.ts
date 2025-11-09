@@ -2,13 +2,14 @@ import { Server } from 'http'
 import { Socket, Server as SocketIOServer } from 'socket.io'
 import jwt from 'jsonwebtoken'
 import app from './app'
-import { Message, connectDB } from './database'
+import { Message, connectDB, AppDataSource } from './database'
+import { MessageStatus } from './database/models/MessageModel'
 import config from './config/config'
 import { rabbitMQService } from './services/RabbitMQService'
 
 // Validate required environment variables on startup
 const validateEnv = () => {
-  const required = ['JWT_SECRET', 'MONGO_URI', 'PORT', 'MESSAGE_BROKER_URL']
+  const required = ['JWT_SECRET', 'DATABASE_URL', 'PORT', 'MESSAGE_BROKER_URL']
   const missing = required.filter(key => !process.env[key])
   
   if (missing.length > 0) {
@@ -145,20 +146,26 @@ const start = async () => {
         let msg;
         if (_id) {
           // Message already exists - just retrieve it for broadcasting
-          msg = await Message.findById(_id);
+          const messageRepo = AppDataSource.getRepository(Message);
+          msg = await messageRepo.findOne({ where: { id: _id } });
           if (!msg) {
             ack?.({ ok: false, error: 'Message not found' });
             return;
           }
         } else {
           // Save new message (fallback for WebSocket-only clients)
-          msg = new Message({ senderId, receiverId, message: trimmedMessage })
-          await msg.save()
+          const messageRepo = AppDataSource.getRepository(Message);
+          msg = await messageRepo.save({ 
+            senderId, 
+            receiverId, 
+            message: trimmedMessage,
+            status: MessageStatus.NotDelivered 
+          });
         }
         
         // Broadcast to receiver
         io.to(receiverId).emit('receiveMessage', msg)
-        ack?.({ ok: true, id: String(msg._id) })
+        ack?.({ ok: true, id: msg.id })
       } catch (err) {
         console.error('[chat-service] socket sendMessage error:', err)
         ack?.({ ok: false, error: 'Failed to send message' })
