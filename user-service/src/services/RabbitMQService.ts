@@ -1,12 +1,9 @@
 import * as amqp from 'amqplib'
+import type { AmqpConnectionLike } from '../types'
 import config from '../config/config'
 import { User, AppDataSource } from '../database'
 import { APIError } from '../utils'
 
-type AmqpConnectionLike = {
-  createChannel: () => Promise<amqp.Channel>
-  close?: () => Promise<void>
-}
 
 const getUserDetails = async (userId:string) => {
   const userRepo = AppDataSource.getRepository(User)

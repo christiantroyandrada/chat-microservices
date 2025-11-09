@@ -38,6 +38,11 @@ userServiceRouter.get(
   AuthController.getCurrentUser
 )
 
+userServiceRouter.post(
+  '/logout',
+  AuthController.logout
+)
+
 // Search users (used by frontend for starting new conversations)
 userServiceRouter.get(
   '/search',

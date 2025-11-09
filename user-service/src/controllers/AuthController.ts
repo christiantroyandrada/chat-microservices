@@ -4,6 +4,7 @@ import { User, AppDataSource } from '../database'
 import { APIError, encryptPassword, isPasswordMatch } from '../utils'
 import config from '../config/config'
 import { Like, Not } from 'typeorm'
+import type { RegistrationBody } from '../types'
 
 const JWT_SECRET = config.JWT_SECRET as string
 const COOKIE_EXPIRATION_DAYS = 7
@@ -22,12 +23,6 @@ const getCookieOptions = () => {
     sameSite: 'strict' as const, // Maximum CSRF protection - only send cookie for same-site requests
     path: '/', // Cookie available for all paths
   }
-}
-
-type RegistrationBody = {
-  name: string
-  email: string
-  password: string
 }
 
 const registration = async (
@@ -232,10 +227,28 @@ const getUserById = async (
   }
 }
 
+const logout = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    // Clear the jwt cookie set during login/registration
+    const cookieOptions = getCookieOptions()
+    // Use clearCookie (express) with same options so browser removes it
+    res.clearCookie('jwt', { path: cookieOptions.path, httpOnly: cookieOptions.httpOnly, secure: cookieOptions.secure, sameSite: cookieOptions.sameSite as any })
+
+    return res.json({ status: 200, message: 'Logged out successfully' })
+  } catch (error: unknown) {
+    next(error)
+  }
+}
+
 export default {
   registration,
   login,
   getCurrentUser,
+  logout,
   search,
   getUserById,
 }

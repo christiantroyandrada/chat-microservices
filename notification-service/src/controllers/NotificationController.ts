@@ -2,14 +2,7 @@ import { Response } from 'express'
 import { Notification, AppDataSource } from '../database'
 import { APIError } from '../utils'
 import { NotificationType } from '../database/models/NotificationModel'
-
-interface AuthenticatedRequest extends Request {
-  user?: {
-    _id: string
-    email: string
-    name: string
-  }
-}
+import type { AuthenticatedRequest } from '../types'
 
 const getNotifications = async (
   req: AuthenticatedRequest & { query: { limit?: string; offset?: string } },

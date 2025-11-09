@@ -2,12 +2,7 @@ import { Request, Response, NextFunction } from 'express'
 import jwt from 'jsonwebtoken'
 import config from '../config/config'
 import { APIError } from '../utils'
-
-interface JwtPayload {
-  id: string
-  email: string
-  name: string
-}
+import type { JwtPayload } from '../types'
 
 // Extend Express Request type to include user
 declare global {

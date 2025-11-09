@@ -2,27 +2,7 @@ import { Request, Response, NextFunction, ErrorRequestHandler } from 'express'
 import jwt from 'jsonwebtoken'
 import { APIError } from '../utils'
 import config from '../config/config'
-
-interface TokenPayload {
-  id: string
-  name: string
-  email: string
-  iat: number
-  exp: number
-}
-
-interface IUser {
-  _id: string
-  name: string
-  email: string
-  password: string
-  createdAt: Date
-  updatedAt: Date
-}
-
-export interface AuthenticatedRequest extends Request {
-  user: IUser
-}
+import type { TokenPayload, IUser, AuthenticatedRequest } from '../types'
 
 const jwtSecret = config.JWT_SECRET as string
 
@@ -113,3 +93,6 @@ export {
   errorMiddleware,
   errorHandler,
 }
+
+// Re-export types for convenience
+export type { AuthenticatedRequest } from '../types'
