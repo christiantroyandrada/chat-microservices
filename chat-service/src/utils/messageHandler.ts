@@ -8,15 +8,20 @@ export const handleMessageReceived = async (
   senderEmail: string,
   receiverId: string,
   messageContent: string,
+  isEncrypted = false,
+  envelope?: string | object,
 ) => {
-  const receiverOffline = !userStatusStore.isUserOnline(receiverId)
+  // When messages are encrypted we must NOT include plaintext in notifications.
+  const notifyBody = isEncrypted ? '[Encrypted message]' : messageContent
 
-  if (receiverOffline) {
-    await rabbitMQService.notifyReceiver(
-      receiverId,
-      messageContent,
-      senderEmail,
-      senderName,
-    )
-  }
+  // Always create notification record in database for notification bell
+  // The notification-service will determine whether to send push/email based on online status
+  await rabbitMQService.notifyReceiver(
+    receiverId,
+    notifyBody,
+    senderEmail,
+    senderName,
+    isEncrypted,
+    envelope,
+  )
 }

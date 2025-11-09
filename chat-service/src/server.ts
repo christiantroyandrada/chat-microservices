@@ -2,13 +2,15 @@ import { Server } from 'http'
 import { Socket, Server as SocketIOServer } from 'socket.io'
 import jwt from 'jsonwebtoken'
 import app from './app'
-import { Message, connectDB } from './database'
+import { Message, connectDB, AppDataSource } from './database'
+import { MessageStatus } from './database/models/MessageModel'
 import config from './config/config'
 import { rabbitMQService } from './services/RabbitMQService'
+import { handleMessageReceived } from './utils'
 
 // Validate required environment variables on startup
 const validateEnv = () => {
-  const required = ['JWT_SECRET', 'MONGO_URI', 'PORT', 'MESSAGE_BROKER_URL']
+  const required = ['JWT_SECRET', 'DATABASE_URL', 'PORT', 'MESSAGE_BROKER_URL']
   const missing = required.filter(key => !process.env[key])
   
   if (missing.length > 0) {
@@ -73,7 +75,22 @@ const start = async () => {
   // JWT authentication middleware for Socket.IO
   io.use((socket, next) => {
     try {
-      const token = socket.handshake.auth.token;
+      // First, prefer token passed via auth payload (used by non-browser clients)
+      let token: string | undefined = socket.handshake.auth?.token;
+
+      // If no token in auth payload, try to read httpOnly cookie from handshake headers
+      // (browser clients will send the JWT in a cookie)
+      if (!token) {
+        const cookieHeader = socket.handshake.headers?.cookie as string | undefined;
+        if (cookieHeader) {
+          // simple cookie parse to extract 'jwt' value
+          const match = cookieHeader.split(';').map(s => s.trim()).find(s => s.startsWith('jwt='));
+          if (match) {
+            token = match.substring('jwt='.length);
+          }
+        }
+      }
+
       if (!token) {
         return next(new Error('Authentication required'));
       }
@@ -114,7 +131,7 @@ const start = async () => {
 
     socket.on('sendMessage', async (data, ack?: (res: { ok: boolean; id?: string; error?: string }) => void) => {
       try {
-        const { senderId, receiverId, message } = data
+        const { senderId, receiverId, message, _id } = data
         
         // Validate: authenticated user can only send as themselves
         if (senderId !== userId) {
@@ -140,10 +157,59 @@ const start = async () => {
           return;
         }
 
-        const msg = new Message({ senderId, receiverId, message: trimmedMessage })
-        await msg.save()
+        // If message has _id, it was already saved via HTTP API - just retrieve it for broadcasting
+        // Otherwise, validate envelope and save new encrypted message (no plaintext allowed)
+        let msg;
+        const messageRepo = AppDataSource.getRepository(Message);
+        if (_id) {
+          // Message already exists - just retrieve it for broadcasting
+          msg = await messageRepo.findOne({ where: { id: _id } });
+          if (!msg) {
+            ack?.({ ok: false, error: 'Message not found' });
+            return;
+          }
+          // If the stored message is not marked encrypted, reject under new policy
+          if (!msg.isEncrypted) {
+            ack?.({ ok: false, error: 'Server policy: plaintext messages are not allowed' });
+            return;
+          }
+        } else {
+          // Save new message (fallback for WebSocket-only clients)
+          // Enforce encrypted envelope JSON
+          let parsedEnvelope: any = null
+          try {
+            parsedEnvelope = JSON.parse(trimmedMessage)
+          } catch (e) {
+            ack?.({ ok: false, error: 'Messages must be end-to-end encrypted (invalid envelope)' });
+            return;
+          }
+
+          if (!parsedEnvelope || !parsedEnvelope.__encrypted || typeof parsedEnvelope.body !== 'string') {
+            ack?.({ ok: false, error: 'Messages must be end-to-end encrypted' });
+            return;
+          }
+
+          msg = await messageRepo.save({
+            senderId,
+            receiverId,
+            message: trimmedMessage,
+            isEncrypted: true,
+            status: MessageStatus.NotDelivered,
+          })
+
+          // Notify receiver (no plaintext leak)
+          const { email, name } = socket.data.user || { email: undefined, name: undefined }
+          try {
+            await handleMessageReceived(name || '', email || '', receiverId, '[Encrypted message]', true, trimmedMessage)
+          } catch (err) {
+            // Notification failures should not block message delivery
+            console.warn('[chat-service] notifyReceiver failed:', err)
+          }
+        }
+        
+        // Broadcast to receiver
         io.to(receiverId).emit('receiveMessage', msg)
-        ack?.({ ok: true, id: String(msg._id) })
+        ack?.({ ok: true, id: msg.id })
       } catch (err) {
         console.error('[chat-service] socket sendMessage error:', err)
         ack?.({ ok: false, error: 'Failed to send message' })

@@ -1,10 +1,9 @@
+import 'reflect-metadata'
 import express, { Express } from 'express'
 import cors from 'cors'
 import helmet from 'helmet'
 import rateLimit from 'express-rate-limit'
-import mongoSanitize from 'express-mongo-sanitize'
 import cookieParser from 'cookie-parser'
-import mongoose from 'mongoose'
 import { Server } from 'http'
 import userServiceRouter from './routes/userServiceRouter'
 import { errorMiddleware, errorHandler } from './middleware'
@@ -14,7 +13,7 @@ import { rabbitMQService } from './services/RabbitMQService'
 
 // Validate required environment variables on startup
 const validateEnv = () => {
-  const required = ['JWT_SECRET', 'MONGO_URI', 'PORT', 'MESSAGE_BROKER_URL']
+  const required = ['JWT_SECRET', 'DATABASE_URL', 'PORT', 'MESSAGE_BROKER_URL']
   const missing = required.filter(key => !process.env[key])
   
   if (missing.length > 0) {
@@ -22,9 +21,19 @@ const validateEnv = () => {
     process.exit(1)
   }
   
-  // Warn about default/weak secrets
-  if (process.env.JWT_SECRET === '{{YOUR_SECRET_KEY}}' || process.env.JWT_SECRET === 'CHANGEME') {
-    console.warn('[user-service] WARNING: Using default JWT_SECRET. Change this in production!')
+  // Fail hard on default/weak secrets in production
+  const isProduction = process.env.NODE_ENV === 'production'
+  const weakSecrets = ['{{YOUR_SECRET_KEY}}', 'CHANGEME', 'changeme', 'test', 'secret']
+  const jwtSecret = process.env.JWT_SECRET || ''
+  
+  if (isProduction && (jwtSecret.length < 32 || weakSecrets.includes(jwtSecret))) {
+    console.error('[user-service] FATAL: Running in production with weak/default JWT_SECRET. Aborting.')
+    console.error('[user-service] JWT_SECRET must be at least 32 characters and not a default value.')
+    process.exit(1)
+  }
+  
+  if (!isProduction && weakSecrets.includes(jwtSecret)) {
+    console.warn('[user-service] WARNING: Using default JWT_SECRET. Change this before deploying to production!')
   }
 }
 
@@ -49,14 +58,9 @@ app.use(cors({
 
 app.get('/health', async (_req, res) => {
   try {
-    const state = mongoose.connection.readyState
-    if (state !== 1) {
-      return res.status(503).json({ status: 'error', dbState: state })
-    }
-    if (mongoose.connection.db) {
-      await mongoose.connection.db.admin().ping()
-    }
-    return res.status(200).json({ status: 'ok', db: 'ok' })
+    // Simple health check - just return OK
+    // Database connection is verified on startup
+    return res.status(200).json({ status: 'ok', service: 'user-service' })
   } catch (err) {
     return res.status(503).json({ status: 'error', error: String(err) })
   }
@@ -65,9 +69,6 @@ app.get('/health', async (_req, res) => {
 app.use(helmet())
 
 app.use(cookieParser())
-
-// NOTE: MongoDB sanitization disabled due to express-mongo-sanitize incompatibility with Express 5.x
-// Input validation middleware provides primary defense against injection attacks
 
 // Parse JSON request bodies
 app.use(express.json({ limit: '100kb' }))

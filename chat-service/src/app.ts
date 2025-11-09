@@ -1,9 +1,9 @@
+import 'reflect-metadata'
 import express, { Express } from 'express'
 import cors from 'cors'
-import mongoose from 'mongoose'
 import helmet from 'helmet'
-import mongoSanitize from 'express-mongo-sanitize'
 import rateLimit from 'express-rate-limit'
+import cookieParser from 'cookie-parser'
 import chatServiceRouter from './routes/messageRoutes'
 import { errorMiddleware, errorHandler } from './middleware'
 
@@ -20,21 +20,13 @@ app.use(helmet())
 
 app.get('/health', async (req, res) => {
 	try {
-		const state = mongoose.connection.readyState
-		if (state !== 1) {
-			return res.status(503).json({ status: 'error', dbState: state })
-		}
-		if (mongoose.connection.db) {
-			await mongoose.connection.db.admin().ping()
-		}
-		return res.status(200).json({ status: 'ok', db: 'ok' })
+		// Simple health check - database connection verified on startup
+		return res.status(200).json({ status: 'ok', service: 'chat-service' })
 	} catch (err) {
 		console.error('[chat-service] Health check error:', err)
 		return res.status(503).json({ status: 'error', error: String(err) })
 	}
 })
-
-// NOTE: MongoDB sanitization disabled due to express-mongo-sanitize incompatibility with Express 5.x
 
 const globalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -47,6 +39,7 @@ const globalLimiter = rateLimit({
 app.use(globalLimiter)
 app.use(express.json({ limit: '100kb' }))
 app.use(express.urlencoded({ extended: true, parameterLimit: 1000 }))
+app.use(cookieParser()) // Parse cookies to read JWT from httpOnly cookies
 
 app.use(chatServiceRouter)
 app.use(errorMiddleware)

@@ -69,27 +69,34 @@ class RabbitMQService {
     messageContent: string,
     senderEmail: string,
     senderName: string,
+    isEncrypted = false,
+    envelope?: string | object,
   ) {
-    await this.getUserDetails(receiverId, async (user: any) => {
-      const notificationPayload = {
+    try {
+      // Send notification payload to queue
+      // The notification-service will handle user details lookup if needed
+      const notificationPayload: any = {
         type: 'MESSAGE_RECEIVED',
         userId: receiverId,
-        userEmail: user.email,
         message: messageContent,
         from: senderEmail,
         fromName: senderName,
+        isEncrypted: Boolean(isEncrypted),
       }
 
-      try {
-        await this.channel.assertQueue(config.queue.notifications)
-        this.channel.sendToQueue(
-          config.queue.notifications,
-          Buffer.from(JSON.stringify(notificationPayload)),
-        )
-      } catch (error) {
-        console.error(error)
+      if (envelope) {
+        notificationPayload.envelope = envelope
       }
-    })
+
+      await this.channel.assertQueue(config.queue.notifications)
+      this.channel.sendToQueue(
+        config.queue.notifications,
+        Buffer.from(JSON.stringify(notificationPayload)),
+      )
+      console.log('[chat-service] Notification sent to queue for user:', receiverId)
+    } catch (error) {
+      console.error('[chat-service] Failed to send notification to queue:', error)
+    }
   }
 }
 

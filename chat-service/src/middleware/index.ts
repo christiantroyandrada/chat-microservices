@@ -2,27 +2,7 @@ import { Request, Response, NextFunction, ErrorRequestHandler } from 'express'
 import jwt from 'jsonwebtoken'
 import { APIError } from '../utils'
 import config from '../config/config'
-
-interface TokenPayload {
-  id: string
-  name: string
-  email: string
-  iat: number
-  exp: number
-}
-
-interface IUser {
-  _id: string
-  name: string
-  email: string
-  password: string
-  createdAt: Date
-  updatedAt: Date
-}
-
-export interface AuthenticatedRequest extends Request {
-  user: IUser
-}
+import type { TokenPayload, IUser, AuthenticatedRequest } from '../types'
 
 const jwtSecret = config.JWT_SECRET as string
 
@@ -31,12 +11,24 @@ const authMiddleware = async (
   res: Response,
   next: NextFunction,
 ) => {
-  const authHeader = req.headers.authorization
-  if (!authHeader) {
-    return next(new APIError(401, 'Authorization header missing'))
-  }
-  const [, token] = authHeader.split(' ')
   try {
+    // Check for token in Authorization header first (backward compatibility)
+    let token: string | undefined
+    const authHeader = req.headers.authorization
+    
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      token = authHeader.substring(7)
+    }
+    
+    // Check for token in httpOnly cookie (primary method for browser clients)
+    if (!token && req.cookies?.jwt) {
+      token = req.cookies.jwt
+    }
+    
+    if (!token) {
+      return next(new APIError(401, 'Authentication required'))
+    }
+    
     const decoded = jwt.verify(token, jwtSecret) as TokenPayload
     req.user = {
       _id: decoded.id,
@@ -101,3 +93,6 @@ export {
   errorMiddleware,
   errorHandler,
 }
+
+// Re-export types for convenience
+export type { AuthenticatedRequest } from '../types'

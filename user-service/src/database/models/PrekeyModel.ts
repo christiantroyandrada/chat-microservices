@@ -1,19 +1,19 @@
 import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn } from 'typeorm'
-import validator from 'validator'
 
-@Entity('users')
-export class User {
+@Entity('prekeys')
+export class Prekey {
   @PrimaryGeneratedColumn('uuid')
   id: string
 
   @Column({ type: 'varchar', length: 255 })
-  name: string
-
-  @Column({ type: 'varchar', length: 255, unique: true })
-  email: string
+  userId: string
 
   @Column({ type: 'varchar', length: 255 })
-  password: string
+  deviceId: string
+
+  // Store the bundle as JSON (Postgres JSONB)
+  @Column({ type: 'json' })
+  bundle: any
 
   @CreateDateColumn()
   createdAt: Date
@@ -22,4 +22,4 @@ export class User {
   updatedAt: Date
 }
 
-export default User
+export default Prekey

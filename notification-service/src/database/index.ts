@@ -1,4 +1,4 @@
-import Notification, { INotification } from './models/NotificationModel'
-import { connectDB } from './connection'
+import Notification from './models/NotificationModel'
+import { connectDB, AppDataSource } from './connection'
 
-export { Notification, INotification, connectDB }
+export { Notification, connectDB, AppDataSource }

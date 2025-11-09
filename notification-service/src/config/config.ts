@@ -14,7 +14,7 @@ const {
   SMTP_PORT = 587,
   SMTP_USER,
   SMTP_PASS,
-  MONGO_URI
+  DATABASE_URL
 } = process.env
 
 const queue = { notifications: 'NOTIFICATIONS' }
@@ -26,7 +26,7 @@ export default {
   msgBrokerURL: MESSAGE_BROKER_URL,
   SENDINBLUE_APIKEY,
   EMAIL_FROM,
-  MONGO_URI,
+  DATABASE_URL,
   queue,
   smtp: {
     host: SMTP_HOST,

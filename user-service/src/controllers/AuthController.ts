@@ -1,8 +1,10 @@
 import { Request, Response, NextFunction } from 'express'
 import jwt from 'jsonwebtoken'
-import { User, IUser } from '../database'
+import { User, AppDataSource } from '../database'
 import { APIError, encryptPassword, isPasswordMatch } from '../utils'
 import config from '../config/config'
+import { Like, Not } from 'typeorm'
+import type { RegistrationBody } from '../types'
 
 const JWT_SECRET = config.JWT_SECRET as string
 const COOKIE_EXPIRATION_DAYS = 7
@@ -14,17 +16,15 @@ const getCookieOptions = () => {
   
   return {
     expires: expirationDate,
-    secure: config.env === 'production', // HTTPS only in production
-    httpOnly: true, // Prevent XSS attacks
-    sameSite: 'strict' as const, // CSRF protection
-    path: '/', // Cookie path
+    // Secure cookies in production (HTTPS required)
+    // In dev, we proxy frontend through nginx so same-origin applies even without HTTPS
+    secure: config.env === 'production',
+    httpOnly: true, // Prevent XSS attacks by blocking JavaScript access
+    // Use 'lax' instead of 'strict' to allow cookies when navigating from localhost:5173 to localhost:85
+    // 'strict' blocks cross-port requests even on localhost
+    sameSite: config.env === 'production' ? 'strict' as const : 'lax' as const,
+    path: '/', // Cookie available for all paths
   }
-}
-
-type RegistrationBody = {
-  name: string
-  email: string
-  password: string
 }
 
 const registration = async (
@@ -34,23 +34,29 @@ const registration = async (
 ) => {
   try {
     const { name, email, password } = req.body
-    const userExists = await User.findOne({ email})
+    const userRepo = AppDataSource.getRepository(User)
+    
+    const userExists = await userRepo.findOne({ where: { email } })
     if (userExists) {
       throw new APIError(400, 'User with this email already exists')
     }
 
-    const user = await User.create({
+    const user = await userRepo.save({
       name,
       email,
       password: await encryptPassword(password),
     })
 
+    // Generate JWT token for the newly registered user
+    const token = await createSendToken(user, res)
+
     const userData = {
-      id: String(user._id),
+      id: user.id,
       name: user.name,
       email: user.email,
     }
 
+    // Token is sent via httpOnly cookie only (not in response body for security)
     return res.json({
       status: 200,
       message: 'User registered successfully',
@@ -62,14 +68,13 @@ const registration = async (
 }
 
 const createSendToken = async (
-  user: IUser,
+  user: User,
   res: Response,
 ) => {
-  // Ensure the token `id` is the MongoDB _id string for consistency
-  const { name, email } = user as any
-  const userId = String((user as any)._id ?? (user as any).id)
+  // Use TypeORM entity properties
+  const { name, email, id } = user
 
-  const token = jwt.sign({ name, email, id: userId }, JWT_SECRET, {
+  const token = jwt.sign({ name, email, id }, JWT_SECRET, {
     expiresIn: '1d',
   })
 
@@ -86,18 +91,30 @@ const login = async (
 ) => {
   try {
     const { email, password } = req.body
-    const user = await User.findOne({ email }).select('+password')
-    const passwordMatches = await isPasswordMatch(password, user?.password as string)
-
-    if ( !user || !passwordMatches ) {
+    const userRepo = AppDataSource.getRepository(User)
+    
+    const user = await userRepo.findOne({ 
+      where: { email },
+      select: ['id', 'name', 'email', 'password', 'createdAt', 'updatedAt']
+    })
+    
+    // Check if user exists first before comparing passwords
+    if (!user) {
       throw new APIError(401, 'Invalid email or password')
     }
-    const token = await createSendToken(user!, res)
+    
+    const passwordMatches = await isPasswordMatch(password, user.password)
 
+    if (!passwordMatches) {
+      throw new APIError(401, 'Invalid email or password')
+    }
+    
+    const token = await createSendToken(user, res)
+
+    // Token is sent via httpOnly cookie only (not in response body for security)
     return res.json({
       status: 200,
       message: 'Login successful',
-      token,
     })
   } catch ( error: unknown ) {
     // Pass error to Express error handling middleware
@@ -117,7 +134,11 @@ const getCurrentUser = async (
     }
 
     // Fetch full user data from database
-    const user = await User.findById(req.user.id).select('-password')
+    const userRepo = AppDataSource.getRepository(User)
+    const user = await userRepo.findOne({ 
+      where: { id: req.user.id },
+      select: ['id', 'name', 'email', 'createdAt', 'updatedAt']
+    })
     
     if (!user) {
       throw new APIError(404, 'User not found')
@@ -127,7 +148,7 @@ const getCurrentUser = async (
       status: 200,
       message: 'User retrieved successfully',
       data: {
-        id: String(user._id),
+        id: user.id,
         name: user.name,
         email: user.email,
       }
@@ -148,24 +169,22 @@ const search = async (
       return res.json({ status: 200, data: [] })
     }
 
-    // Escape special regex characters to prevent ReDoS attacks
-    const escapedQuery = q.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const regex = new RegExp(escapedQuery, 'i')
-    
     // Get current user ID from JWT token
     const currentUserId = req.user?.id
+    const userRepo = AppDataSource.getRepository(User)
 
     // Search by name or email, excluding the current logged-in user
-    const users = await User.find({
-      $and: [
-        { $or: [{ name: regex }, { email: regex }] },
-        { _id: { $ne: currentUserId } } // Exclude current user
-      ]
-    })
-      .select('-password')
+    // Using Like for case-insensitive search
+    const searchTerm = `%${q.trim()}%`
+    const users = await userRepo
+      .createQueryBuilder('user')
+      .where('user.id != :currentUserId', { currentUserId })
+      .andWhere('(user.name ILIKE :searchTerm OR user.email ILIKE :searchTerm)', { searchTerm })
+      .select(['user.id', 'user.name', 'user.email'])
       .limit(20)
+      .getMany()
 
-    const mapped = users.map((u) => ({ _id: u._id, name: u.name, email: u.email }))
+    const mapped = users.map((u: User) => ({ _id: u.id, name: u.name, email: u.email }))
 
     return res.json({ status: 200, data: mapped })
   } catch (error) {
@@ -186,7 +205,11 @@ const getUserById = async (
       throw new APIError(400, 'User ID is required')
     }
 
-    const user = await User.findById(userId).select('-password')
+    const userRepo = AppDataSource.getRepository(User)
+    const user = await userRepo.findOne({ 
+      where: { id: userId },
+      select: ['id', 'name', 'email', 'createdAt', 'updatedAt']
+    })
     
     if (!user) {
       throw new APIError(404, 'User not found')
@@ -196,7 +219,7 @@ const getUserById = async (
       status: 200,
       message: 'User retrieved successfully',
       data: {
-        id: String(user._id),
+        id: user.id,
         name: user.name,
         email: user.email,
       }
@@ -206,10 +229,28 @@ const getUserById = async (
   }
 }
 
+const logout = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    // Clear the jwt cookie set during login/registration
+    const cookieOptions = getCookieOptions()
+    // Use clearCookie (express) with same options so browser removes it
+    res.clearCookie('jwt', { path: cookieOptions.path, httpOnly: cookieOptions.httpOnly, secure: cookieOptions.secure, sameSite: cookieOptions.sameSite as any })
+
+    return res.json({ status: 200, message: 'Logged out successfully' })
+  } catch (error: unknown) {
+    next(error)
+  }
+}
+
 export default {
   registration,
   login,
   getCurrentUser,
+  logout,
   search,
   getUserById,
 }
