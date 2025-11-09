@@ -3,6 +3,7 @@ import express, { Express } from 'express'
 import cors from 'cors'
 import helmet from 'helmet'
 import rateLimit from 'express-rate-limit'
+import cookieParser from 'cookie-parser'
 import chatServiceRouter from './routes/messageRoutes'
 import { errorMiddleware, errorHandler } from './middleware'
 
@@ -38,6 +39,7 @@ const globalLimiter = rateLimit({
 app.use(globalLimiter)
 app.use(express.json({ limit: '100kb' }))
 app.use(express.urlencoded({ extended: true, parameterLimit: 1000 }))
+app.use(cookieParser()) // Parse cookies to read JWT from httpOnly cookies
 
 app.use(chatServiceRouter)
 app.use(errorMiddleware)

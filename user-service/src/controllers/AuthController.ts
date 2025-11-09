@@ -15,10 +15,12 @@ const getCookieOptions = () => {
   
   return {
     expires: expirationDate,
-    secure: config.env === 'production', // HTTPS only in production
-    httpOnly: true, // Prevent XSS attacks
-    sameSite: 'strict' as const, // CSRF protection
-    path: '/', // Cookie path
+    // Secure cookies in production (HTTPS required)
+    // In dev, we proxy frontend through nginx so same-origin applies even without HTTPS
+    secure: config.env === 'production',
+    httpOnly: true, // Prevent XSS attacks by blocking JavaScript access
+    sameSite: 'strict' as const, // Maximum CSRF protection - only send cookie for same-site requests
+    path: '/', // Cookie available for all paths
   }
 }
 
@@ -48,12 +50,16 @@ const registration = async (
       password: await encryptPassword(password),
     })
 
+    // Generate JWT token for the newly registered user
+    const token = await createSendToken(user, res)
+
     const userData = {
       id: user.id,
       name: user.name,
       email: user.email,
     }
 
+    // Token is sent via httpOnly cookie only (not in response body for security)
     return res.json({
       status: 200,
       message: 'User registered successfully',
@@ -95,17 +101,23 @@ const login = async (
       select: ['id', 'name', 'email', 'password', 'createdAt', 'updatedAt']
     })
     
-    const passwordMatches = await isPasswordMatch(password, user?.password as string)
-
-    if ( !user || !passwordMatches ) {
+    // Check if user exists first before comparing passwords
+    if (!user) {
       throw new APIError(401, 'Invalid email or password')
     }
-    const token = await createSendToken(user!, res)
+    
+    const passwordMatches = await isPasswordMatch(password, user.password)
 
+    if (!passwordMatches) {
+      throw new APIError(401, 'Invalid email or password')
+    }
+    
+    const token = await createSendToken(user, res)
+
+    // Token is sent via httpOnly cookie only (not in response body for security)
     return res.json({
       status: 200,
       message: 'Login successful',
-      token,
     })
   } catch ( error: unknown ) {
     // Pass error to Express error handling middleware

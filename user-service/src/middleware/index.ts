@@ -28,6 +28,22 @@ export const errorHandler: ErrorRequestHandler = (
   let { statusCode, message } = err
   const environment = process.env.NODE_ENV ?? 'development'
 
+  // Log errors with appropriate detail based on environment
+  const safeErrorLog = {
+    message: err.message,
+    statusCode: err.statusCode,
+    isOperational: err.isOperational,
+    path: req.path,
+    method: req.method,
+  }
+  
+  console.error('[user-service] Error:', safeErrorLog)
+  
+  // Only log stack traces in non-production
+  if (environment !== 'production' && err.stack) {
+    console.error('[user-service] Stack:', err.stack)
+  }
+
   if (environment === 'production' && !err.isOperational) {
     statusCode = 500
     message = 'Internal Server Error'
@@ -39,10 +55,6 @@ export const errorHandler: ErrorRequestHandler = (
     code: statusCode,
     message,
     ...(environment === 'development' && { stack: err.stack }),
-  }
-
-  if (environment === 'development') {
-    console.error('[user-service] Error:', err)
   }
 
   res.status(statusCode).json(response)

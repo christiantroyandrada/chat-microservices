@@ -7,18 +7,20 @@
     "dev-server": "NODE_ENV=development nodemon src/server.ts",
     "dev": "node scripts/purgeQueue.js && npm run dev-server",
     "build": "rm -rf build/ && tsc -p .",
-    "start": "NODE_ENV=production node build/server.js"
+    "start": "node build/server.js"
   },
   "keywords": [],
   "author": "christiantroyandrada",
   "license": "ISC",
   "dependencies": {
     "@types/amqplib": "^0.10.8",
+    "@types/cookie-parser": "^1.4.10",
     "@types/express": "^5.0.5",
     "@types/jsonwebtoken": "^9.0.3",
     "@types/nodemailer": "^7.0.3",
     "amqplib": "^0.10.9",
     "axios": "^1.4.0",
+    "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
     "dotenv": "^17.2.3",
     "express": "^5.1.0",

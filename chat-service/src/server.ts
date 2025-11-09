@@ -74,7 +74,22 @@ const start = async () => {
   // JWT authentication middleware for Socket.IO
   io.use((socket, next) => {
     try {
-      const token = socket.handshake.auth.token;
+      // First, prefer token passed via auth payload (used by non-browser clients)
+      let token: string | undefined = socket.handshake.auth?.token;
+
+      // If no token in auth payload, try to read httpOnly cookie from handshake headers
+      // (browser clients will send the JWT in a cookie)
+      if (!token) {
+        const cookieHeader = socket.handshake.headers?.cookie as string | undefined;
+        if (cookieHeader) {
+          // simple cookie parse to extract 'jwt' value
+          const match = cookieHeader.split(';').map(s => s.trim()).find(s => s.startsWith('jwt='));
+          if (match) {
+            token = match.substring('jwt='.length);
+          }
+        }
+      }
+
       if (!token) {
         return next(new Error('Authentication required'));
       }

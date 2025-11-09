@@ -1,10 +1,11 @@
 services:
   # Setup service - generates .env files from consolidated secrets before other services start
+  # Automatically generates strong JWT secrets if missing or weak
   setup:
     image: bash:5.2
     volumes:
       - ./scripts:/scripts:ro
-      - ./docker-secrets:/docker-secrets:ro
+      - ./docker-secrets:/docker-secrets
       - ./user-service:/user-service
       - ./chat-service:/chat-service
       - ./notification-service:/notification-service
@@ -12,7 +13,7 @@ services:
     restart: "no"
 
   postgres:
-    image: postgres:16.6-alpine
+    image: postgres:17.6-trixie
     restart: unless-stopped
     volumes:
       - postgres-data:/var/lib/postgresql/data
@@ -73,7 +74,8 @@ services:
     environment:
       # build the URI from .env variables (keeps credentials out of the compose file itself)
       DATABASE_URL: postgresql://${ADMIN_USERNAME}:${ADMIN_PASSWORD}@postgres:5432/chat_db
-      NODE_ENV: production
+      # For local development use 'development', for production deployment use 'production'
+      NODE_ENV: development
     secrets:
       - app_secrets
     depends_on:
@@ -100,7 +102,7 @@ services:
       - ./chat-service/.env
     environment:
       DATABASE_URL: postgresql://${ADMIN_USERNAME}:${ADMIN_PASSWORD}@postgres:5432/chat_db
-      NODE_ENV: production
+      NODE_ENV: development
     secrets:
       - app_secrets
     depends_on:
@@ -126,7 +128,7 @@ services:
     env_file:
       - ./notification-service/.env
     environment:
-      NODE_ENV: production
+      NODE_ENV: development
       DATABASE_URL: postgresql://${ADMIN_USERNAME}:${ADMIN_PASSWORD}@postgres:5432/chat_db
     depends_on:
       setup:
@@ -149,6 +151,9 @@ services:
       dockerfile: Dockerfile
     ports:
       - "127.0.0.1:85:8080"  # map host 85 to container 8080 (non-root port)
+    extra_hosts:
+      # Allow nginx container to reach the host's frontend dev server at localhost:5173
+      - "host.docker.internal:host-gateway"
     depends_on:
       user:
         condition: service_healthy

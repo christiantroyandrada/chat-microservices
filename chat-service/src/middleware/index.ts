@@ -31,12 +31,24 @@ const authMiddleware = async (
   res: Response,
   next: NextFunction,
 ) => {
-  const authHeader = req.headers.authorization
-  if (!authHeader) {
-    return next(new APIError(401, 'Authorization header missing'))
-  }
-  const [, token] = authHeader.split(' ')
   try {
+    // Check for token in Authorization header first (backward compatibility)
+    let token: string | undefined
+    const authHeader = req.headers.authorization
+    
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      token = authHeader.substring(7)
+    }
+    
+    // Check for token in httpOnly cookie (primary method for browser clients)
+    if (!token && req.cookies?.jwt) {
+      token = req.cookies.jwt
+    }
+    
+    if (!token) {
+      return next(new APIError(401, 'Authentication required'))
+    }
+    
     const decoded = jwt.verify(token, jwtSecret) as TokenPayload
     req.user = {
       _id: decoded.id,

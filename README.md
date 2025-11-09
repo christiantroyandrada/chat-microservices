@@ -101,6 +101,14 @@ The secret file is mounted into containers at `/run/secrets/app_secrets` (dotenv
 - ✅ Services work in Docker Compose (using the consolidated secrets)
 - ✅ Services work locally in VS Code (using generated `.env` files)
 - ✅ No manual `.env` copying needed
+- ✅ **JWT secrets auto-generated** if missing or weak (< 32 chars or default values)
+
+**Automatic JWT Secret Generation**: The setup script detects weak or missing JWT secrets and automatically generates cryptographically secure 64-byte random values. Weak secrets include:
+- Empty or missing values
+- Default placeholders: `{{YOUR_SECRET_KEY}}`, `CHANGEME`, `changeme`, `test`, `secret`
+- Any secret shorter than 32 characters
+
+This ensures production deployments never use weak secrets accidentally.
 
 **To manually regenerate `.env` files** (useful for local development):
 
@@ -108,6 +116,8 @@ The secret file is mounted into containers at `/run/secrets/app_secrets` (dotenv
 ./scripts/generate-envs.sh         # Creates .env files if they don't exist
 ./scripts/generate-envs.sh --force # Overwrites existing .env files
 ```
+
+Both commands will check and auto-generate strong JWT secrets if needed.
 
 ## Secrets Guidance (CI / Production)
 

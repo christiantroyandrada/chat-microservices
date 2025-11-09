@@ -1,6 +1,7 @@
 import express, { Express } from 'express'
 import cors from 'cors'
 import helmet from 'helmet'
+import cookieParser from 'cookie-parser'
 import { Server } from 'http'
 import { errorMiddleware, errorHandler } from './middleware'
 import config from './config/config'
@@ -60,6 +61,7 @@ app.use(helmet())
 // Limit body size
 app.use(express.json({ limit: '100kb' }))
 app.use(express.urlencoded({ extended: true, parameterLimit: 1000 }))
+app.use(cookieParser()) // Parse cookies to read JWT from httpOnly cookies
 
 // Health check endpoint for Docker and monitoring
 app.get('/health', (_req, res) => res.status(200).json({ status: 'ok' }))
@@ -98,7 +100,7 @@ start().catch(err => {
 const exitHandler = () => {
   if (server) {
     server.close(() => {
-      console.info('server closed')
+      console.info('[notification-service] Server closed')
       process.exit(1)
     })
   } else {

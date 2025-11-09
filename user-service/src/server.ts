@@ -21,9 +21,19 @@ const validateEnv = () => {
     process.exit(1)
   }
   
-  // Warn about default/weak secrets
-  if (process.env.JWT_SECRET === '{{YOUR_SECRET_KEY}}' || process.env.JWT_SECRET === 'CHANGEME') {
-    console.warn('[user-service] WARNING: Using default JWT_SECRET. Change this in production!')
+  // Fail hard on default/weak secrets in production
+  const isProduction = process.env.NODE_ENV === 'production'
+  const weakSecrets = ['{{YOUR_SECRET_KEY}}', 'CHANGEME', 'changeme', 'test', 'secret']
+  const jwtSecret = process.env.JWT_SECRET || ''
+  
+  if (isProduction && (jwtSecret.length < 32 || weakSecrets.includes(jwtSecret))) {
+    console.error('[user-service] FATAL: Running in production with weak/default JWT_SECRET. Aborting.')
+    console.error('[user-service] JWT_SECRET must be at least 32 characters and not a default value.')
+    process.exit(1)
+  }
+  
+  if (!isProduction && weakSecrets.includes(jwtSecret)) {
+    console.warn('[user-service] WARNING: Using default JWT_SECRET. Change this before deploying to production!')
   }
 }
 
