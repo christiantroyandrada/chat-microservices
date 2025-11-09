@@ -35,11 +35,11 @@ jobs:
           cache-dependency-path: '${{ matrix.service }}/package-lock.json'
 
       - name: Install dependencies
-        working-directory: ./${{ matrix.service }}
+        working-directory: ${{ matrix.service }}
         run: npm ci --ignore-scripts
 
       - name: Run npm audit
-        working-directory: ./${{ matrix.service }}
+        working-directory: ${{ matrix.service }}
         run: |
           # Fail on high and critical vulnerabilities
           npm audit --audit-level=high
@@ -47,7 +47,7 @@ jobs:
 
       - name: Generate audit report (JSON)
         if: always()
-        working-directory: ./${{ matrix.service }}
+        working-directory: ${{ matrix.service }}
         run: npm audit --json > audit-report-${{ matrix.service }}.json || true
 
       - name: Upload audit report
@@ -55,7 +55,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: audit-report-${{ matrix.service }}
-          path: ./${{ matrix.service }}/audit-report-${{ matrix.service }}.json
+          path: ${{ matrix.service }}/audit-report-${{ matrix.service }}.json
           retention-days: 30
 
   trivy-scan:
@@ -73,9 +73,9 @@ jobs:
       - name: Build Docker image
         run: |
           if [ "${{ matrix.service }}" = "nginx" ]; then
-            docker build -t ${{ matrix.service }}:test -f ./nginx/Dockerfile ./nginx
+            docker build -t ${{ matrix.service }}:test -f nginx/Dockerfile nginx
           else
-            docker build -t ${{ matrix.service }}:test ./${{ matrix.service }}
+            docker build -t ${{ matrix.service }}:test ${{ matrix.service }}
           fi
 
       - name: Run Trivy vulnerability scanner
