@@ -64,8 +64,8 @@ app.use(express.urlencoded({ extended: true, parameterLimit: 1000 }))
 // Health check endpoint for Docker and monitoring
 app.get('/health', (_req, res) => res.status(200).json({ status: 'ok' }))
 
-// Mount notification routes
-app.use('/notification', notificationRouter)
+// Mount notification routes (use plural `/notifications` prefix for consistency)
+app.use('/notifications', notificationRouter)
 
 app.use(errorMiddleware)
 app.use(errorHandler)

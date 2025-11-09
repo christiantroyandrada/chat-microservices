@@ -1,0 +1,65 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: [18.x]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Use Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+
+      - name: Install frontend deps
+        working-directory: ./chat-microservices-frontend
+        run: |
+          npm ci
+
+      - name: Frontend lint (Prettier + ESLint)
+        working-directory: ./chat-microservices-frontend
+        run: |
+          npm run format --if-present
+          npm run lint
+
+      - name: Frontend typecheck (svelte-check)
+        working-directory: ./chat-microservices-frontend
+        run: npm run check
+
+      - name: Build user-service
+        working-directory: ./chat-microservices/user-service
+        run: |
+          npm ci
+          npm run build
+
+      - name: Build chat-service
+        working-directory: ./chat-microservices/chat-service
+        run: |
+          npm ci
+          npm run build
+
+      - name: Build notification-service
+        working-directory: ./chat-microservices/notification-service
+        run: |
+          npm ci
+          npm run build
+
+      - name: Audit backends
+        working-directory: ./chat-microservices
+        run: |
+          npm audit --prefix user-service --audit-level=moderate || true
+          npm audit --prefix chat-service --audit-level=moderate || true
+          npm audit --prefix notification-service --audit-level=moderate || true
+
+      - name: Summary
+        run: echo "CI completed"
