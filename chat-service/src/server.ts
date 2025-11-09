@@ -114,7 +114,7 @@ const start = async () => {
 
     socket.on('sendMessage', async (data, ack?: (res: { ok: boolean; id?: string; error?: string }) => void) => {
       try {
-        const { senderId, receiverId, message } = data
+        const { senderId, receiverId, message, _id } = data
         
         // Validate: authenticated user can only send as themselves
         if (senderId !== userId) {
@@ -140,8 +140,23 @@ const start = async () => {
           return;
         }
 
-        const msg = new Message({ senderId, receiverId, message: trimmedMessage })
-        await msg.save()
+        // If message has _id, it was already saved via HTTP API - just broadcast it
+        // Otherwise, save new message (for WebSocket-only clients)
+        let msg;
+        if (_id) {
+          // Message already exists - just retrieve it for broadcasting
+          msg = await Message.findById(_id);
+          if (!msg) {
+            ack?.({ ok: false, error: 'Message not found' });
+            return;
+          }
+        } else {
+          // Save new message (fallback for WebSocket-only clients)
+          msg = new Message({ senderId, receiverId, message: trimmedMessage })
+          await msg.save()
+        }
+        
+        // Broadcast to receiver
         io.to(receiverId).emit('receiveMessage', msg)
         ack?.({ ok: true, id: String(msg._id) })
       } catch (err) {

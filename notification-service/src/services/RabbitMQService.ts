@@ -3,6 +3,7 @@ import config from '../config/config'
 import { FCMService } from './FCMService'
 import { SecureEmailService } from './SecureEmailService'
 import { UserStatusStore } from '../utils'
+import { Notification } from '../database'
 
 class RabbitMQService {
   private channel!: Channel
@@ -38,6 +39,15 @@ class RabbitMQService {
           this.channel.ack(msg)
           return
         }
+
+        // Create notification record in database
+        await Notification.create({
+          userId,
+          type: 'message',
+          title: `New message from ${fromName || 'Unknown'}`,
+          message: message || 'You have a new message',
+          read: false
+        })
 
         const online = this.userStatusStore.isUserOnline(userId)
 

@@ -9,14 +9,12 @@ export const handleMessageReceived = async (
   receiverId: string,
   messageContent: string,
 ) => {
-  const receiverOffline = !userStatusStore.isUserOnline(receiverId)
-
-  if (receiverOffline) {
-    await rabbitMQService.notifyReceiver(
-      receiverId,
-      messageContent,
-      senderEmail,
-      senderName,
-    )
-  }
+  // Always create notification record in database for notification bell
+  // The notification-service will determine whether to send push/email based on online status
+  await rabbitMQService.notifyReceiver(
+    receiverId,
+    messageContent,
+    senderEmail,
+    senderName,
+  )
 }
