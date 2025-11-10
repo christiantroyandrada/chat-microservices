@@ -23,6 +23,9 @@ export class Message {
   @Column({ type: 'text' })
   message: string
 
+  @Column({ type: 'boolean', default: false })
+  isEncrypted: boolean
+
   @Column({
     type: 'enum',
     enum: MessageStatus,

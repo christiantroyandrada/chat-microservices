@@ -3,7 +3,32 @@
 ## Overview
 This document outlines the security measures implemented in the chat-microservices stack and provides guidelines for maintaining a secure development and production environment.
 
-## 🔒 Latest Security Audit (November 9, 2025) - PostgreSQL Migration
+## 🔒 Latest Security Updates (November 2025)
+
+### End-to-End Encryption (E2EE) ✅
+
+**Implementation**: Signal Protocol for client-side message encryption
+
+- **Client-side encryption**: All messages encrypted on sender's device before transmission
+- **Signal Protocol**: Industry-standard E2EE protocol used by Signal, WhatsApp
+- **Prekey bundles**: Automatic generation and publishing of encryption keys
+- **Session management**: Secure session establishment between users
+- **Backend agnostic**: Server cannot read message content (stores encrypted data)
+
+**Key Features**:
+- Messages encrypted with Signal Protocol before sending
+- Server stores only encrypted message content
+- Recipients automatically decrypt messages in browser
+- IndexedDB-based key storage for persistence
+- Automatic prekey bundle generation on registration/login
+
+**Implementation Details**:
+- Library: `@privacyresearch/libsignal-protocol-typescript`
+- Storage: IndexedDB for identity keys, prekeys, and sessions
+- Key generation: Automatic on user registration with device ID
+- Session bootstrapping: Automatic on first message to new contact
+
+### PostgreSQL Migration ✅
 
 **Database Migration:** Successfully migrated from MongoDB to PostgreSQL with TypeORM
 

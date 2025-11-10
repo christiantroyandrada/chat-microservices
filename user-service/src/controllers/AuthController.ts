@@ -20,7 +20,9 @@ const getCookieOptions = () => {
     // In dev, we proxy frontend through nginx so same-origin applies even without HTTPS
     secure: config.env === 'production',
     httpOnly: true, // Prevent XSS attacks by blocking JavaScript access
-    sameSite: 'strict' as const, // Maximum CSRF protection - only send cookie for same-site requests
+    // Use 'lax' instead of 'strict' to allow cookies when navigating from localhost:5173 to localhost:85
+    // 'strict' blocks cross-port requests even on localhost
+    sameSite: config.env === 'production' ? 'strict' as const : 'lax' as const,
     path: '/', // Cookie available for all paths
   }
 }

@@ -6,6 +6,7 @@ import { Message, connectDB, AppDataSource } from './database'
 import { MessageStatus } from './database/models/MessageModel'
 import config from './config/config'
 import { rabbitMQService } from './services/RabbitMQService'
+import { handleMessageReceived } from './utils'
 
 // Validate required environment variables on startup
 const validateEnv = () => {
@@ -156,26 +157,54 @@ const start = async () => {
           return;
         }
 
-        // If message has _id, it was already saved via HTTP API - just broadcast it
-        // Otherwise, save new message (for WebSocket-only clients)
+        // If message has _id, it was already saved via HTTP API - just retrieve it for broadcasting
+        // Otherwise, validate envelope and save new encrypted message (no plaintext allowed)
         let msg;
+        const messageRepo = AppDataSource.getRepository(Message);
         if (_id) {
           // Message already exists - just retrieve it for broadcasting
-          const messageRepo = AppDataSource.getRepository(Message);
           msg = await messageRepo.findOne({ where: { id: _id } });
           if (!msg) {
             ack?.({ ok: false, error: 'Message not found' });
             return;
           }
+          // If the stored message is not marked encrypted, reject under new policy
+          if (!msg.isEncrypted) {
+            ack?.({ ok: false, error: 'Server policy: plaintext messages are not allowed' });
+            return;
+          }
         } else {
           // Save new message (fallback for WebSocket-only clients)
-          const messageRepo = AppDataSource.getRepository(Message);
-          msg = await messageRepo.save({ 
-            senderId, 
-            receiverId, 
+          // Enforce encrypted envelope JSON
+          let parsedEnvelope: any = null
+          try {
+            parsedEnvelope = JSON.parse(trimmedMessage)
+          } catch (e) {
+            ack?.({ ok: false, error: 'Messages must be end-to-end encrypted (invalid envelope)' });
+            return;
+          }
+
+          if (!parsedEnvelope || !parsedEnvelope.__encrypted || typeof parsedEnvelope.body !== 'string') {
+            ack?.({ ok: false, error: 'Messages must be end-to-end encrypted' });
+            return;
+          }
+
+          msg = await messageRepo.save({
+            senderId,
+            receiverId,
             message: trimmedMessage,
-            status: MessageStatus.NotDelivered 
-          });
+            isEncrypted: true,
+            status: MessageStatus.NotDelivered,
+          })
+
+          // Notify receiver (no plaintext leak)
+          const { email, name } = socket.data.user || { email: undefined, name: undefined }
+          try {
+            await handleMessageReceived(name || '', email || '', receiverId, '[Encrypted message]', true, trimmedMessage)
+          } catch (err) {
+            // Notification failures should not block message delivery
+            console.warn('[chat-service] notifyReceiver failed:', err)
+          }
         }
         
         // Broadcast to receiver

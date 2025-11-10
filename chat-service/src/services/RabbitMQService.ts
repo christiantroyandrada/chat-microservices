@@ -69,16 +69,23 @@ class RabbitMQService {
     messageContent: string,
     senderEmail: string,
     senderName: string,
+    isEncrypted = false,
+    envelope?: string | object,
   ) {
     try {
       // Send notification payload to queue
       // The notification-service will handle user details lookup if needed
-      const notificationPayload = {
+      const notificationPayload: any = {
         type: 'MESSAGE_RECEIVED',
         userId: receiverId,
         message: messageContent,
         from: senderEmail,
         fromName: senderName,
+        isEncrypted: Boolean(isEncrypted),
+      }
+
+      if (envelope) {
+        notificationPayload.envelope = envelope
       }
 
       await this.channel.assertQueue(config.queue.notifications)

@@ -8,3 +8,7 @@ docker-secrets/*
 **/node_modules
 **/.env
 **/build
+
+# OS
+.DS_Store
+Thumbs.db

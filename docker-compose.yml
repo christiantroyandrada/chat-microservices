@@ -2,7 +2,7 @@ services:
   # Setup service - generates .env files from consolidated secrets before other services start
   # Automatically generates strong JWT secrets if missing or weak
   setup:
-    image: bash:5.2
+    image: node:22-bullseye-slim
     volumes:
       - ./scripts:/scripts:ro
       - ./docker-secrets:/docker-secrets

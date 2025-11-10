@@ -13,6 +13,11 @@ fi
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 SECRETS_FILE="$ROOT_DIR/docker-secrets/app_secrets"
 
+# Hold a generated JWT secret at runtime so we don't need to persist it into
+# the checked-in `docker-secrets/app_secrets` file. This keeps secrets out of
+# repo while still allowing `setup` to populate per-service .env files.
+GENERATED_JWT_SECRET=""
+
 if [ ! -f "$SECRETS_FILE" ]; then
   echo "Secrets file not found: $SECRETS_FILE"
   echo "Copy docker-secrets/app_secrets.example to docker-secrets/app_secrets and populate it first."
@@ -21,7 +26,14 @@ fi
 
 get_value() {
   local key="$1"
-  grep "^${key}=" "$SECRETS_FILE" 2>/dev/null | head -1 | cut -d'=' -f2- | sed -e 's/^"//' -e 's/"$//' -e "s/^'//" -e "s/'$//"
+  # If we generated a JWT secret at runtime, return it when asked for JWT_SECRET
+  if [ "$key" = "JWT_SECRET" ] && [ -n "$GENERATED_JWT_SECRET" ]; then
+    printf "%s" "$GENERATED_JWT_SECRET"
+    return
+  fi
+
+  # Use a safe grep invocation that doesn't fail under 'set -euo pipefail'
+  (grep -m1 "^${key}=" "$SECRETS_FILE" 2>/dev/null || true) | head -1 | cut -d'=' -f2- | sed -e 's/^"//' -e 's/"$//' -e "s/^'//" -e "s/'$//"
 }
 
 generate_jwt_secret() {
@@ -62,25 +74,16 @@ ensure_jwt_secrets() {
     echo "Generating strong shared JWT secret..."
     local new_secret
     new_secret=$(generate_jwt_secret)
-    # Update the secrets file
-    if grep -q "^${key}=" "$SECRETS_FILE"; then
-      # Replace existing line (macOS and Linux compatible)
-      if sed --version >/dev/null 2>&1; then
-        # GNU sed
-        sed -i "s|^${key}=.*|${key}=${new_secret}|" "$SECRETS_FILE"
-      else
-        # BSD sed (macOS)
-        sed -i '' "s|^${key}=.*|${key}=${new_secret}|" "$SECRETS_FILE"
-      fi
-    else
-      # Append if not found
-      echo "${key}=${new_secret}" >> "$SECRETS_FILE"
-    fi
+    # Do NOT persist the generated secret back into the checked-in
+    # docker-secrets file. Instead, store it in memory for use when
+    # writing per-service .env files. This avoids hardcoding secrets
+    # into repository files while keeping the setup flow functional.
+    GENERATED_JWT_SECRET="$new_secret"
     needs_update=true
   fi
   
   if [ "$needs_update" = true ]; then
-    echo "✓ Updated app_secrets with strong shared JWT secret"
+    echo "✓ Generated strong shared JWT secret (not persisted to app_secrets)"
     echo ""
   fi
 }

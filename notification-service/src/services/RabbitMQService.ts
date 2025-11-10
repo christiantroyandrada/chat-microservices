@@ -28,43 +28,67 @@ class RabbitMQService {
     this.channel.consume(config.queue.notifications, async (msg) => {
       if (!msg) return
       try {
+        const payload = JSON.parse(msg.content.toString())
         const {
           type,
           userId,
           message,
+          envelope,
+          isEncrypted,
           userEmail,
           userToken,
           fromName,
-        } = JSON.parse(msg.content.toString())
+        } = payload
 
         if (type !== 'MESSAGE_RECEIVED') {
           this.channel.ack(msg)
           return
         }
 
-        // Create notification record in database
+        // Create notification record in database. For encrypted messages do not
+        // persist plaintext — store a generic placeholder instead.
         const notificationRepo = AppDataSource.getRepository(Notification)
+        const storedMessage = isEncrypted ? '[Encrypted message]' : (message || 'You have a new message')
         await notificationRepo.save({
           userId,
           type: NotificationType.MESSAGE,
           title: `New message from ${fromName || 'Unknown'}`,
-          message: message || 'You have a new message',
+          message: storedMessage,
           read: false
         })
 
         const online = this.userStatusStore.isUserOnline(userId)
 
+        // If the recipient is online, send a push. For encrypted messages we
+        // must not include decrypted plaintext in the visible body. Instead we
+        // include a generic body and attach the ciphertext in the data payload
+        // so the client can decrypt locally if it supports it.
         if (online && userToken) {
-          await this.fcmService.sendPushNotification(userToken, message)
+          if (isEncrypted) {
+            const dataPayload: Record<string, string> = {}
+            if (envelope) dataPayload.envelope = typeof envelope === 'string' ? envelope : JSON.stringify(envelope)
+            else if (message) dataPayload.envelope = message
+
+            await this.fcmService.sendPushNotification(userToken, '[Encrypted message]', dataPayload)
+            this.channel.ack(msg)
+            return
+          }
+
+          // Not encrypted — send plaintext in push body
+          await this.fcmService.sendPushNotification(userToken, message || 'You have a new message')
           this.channel.ack(msg)
           return
         }
 
+        // If the user has an email configured, send a transactional email.
+        // For encrypted messages do not include plaintext; include a generic
+        // notice instead.
         if (userEmail) {
+          const emailBody = isEncrypted ? 'You have a new encrypted message. Open the app to view it.' : (message || '')
           await this.emailService.sendEmail(
             userEmail,
             `New message from ${fromName}`,
-            message,
+            emailBody,
           )
           this.channel.ack(msg)
           return

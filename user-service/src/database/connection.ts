@@ -2,13 +2,14 @@ import 'reflect-metadata'
 import { DataSource } from 'typeorm'
 import config from '../config/config'
 import { User } from './models/UserModel'
+import { Prekey } from './models/PrekeyModel'
 
 export const AppDataSource = new DataSource({
   type: 'postgres',
   url: config.DATABASE_URL,
   synchronize: config.env !== 'production', // ✅ SAFE: Only auto-sync in development
   logging: config.env === 'development',
-  entities: [User],
+  entities: [User, Prekey],
   migrations: [],
   subscribers: [],
   // Connection pooling for better performance and reliability

@@ -1,60 +1,68 @@
 # Chat Microservices
 
-This repository contains a small set of Node.js + TypeScript microservices for a chat system: an API Gateway, a User (auth) service, a Chat (messages) service, and a Notification service. Services communicate via RabbitMQ and use MongoDB where applicable.
+A modern, secure chat system built with Node.js, TypeScript, PostgreSQL, and real-time WebSocket communication. This repository contains microservices for user authentication, real-time messaging with end-to-end encryption (E2EE), and notifications.
 
-## Repository layout
+## ✨ Key Features
 
-- `gateway/` — HTTP gateway that proxies requests to internal services (runs standalone, not in docker-compose).
-- `user-service/` — authentication and user management (port 8081).
-- `chat-service/` — message storage and messages API + socket support (port 8082).
-- `notification-service/` — email / push notification sender and queue consumer (port 8083).
-- `docker-compose.yml` — orchestrates MongoDB, Nosqlclient (Mongoclient), user/chat/notification services, and nginx.
-- `scripts/` — helper scripts including `generate-envs.sh` for automatic .env generation.
-- `docker-secrets/` — consolidated secrets file (not committed) and example file.
+- 🔐 **End-to-End Encryption**: Signal Protocol implementation for secure messaging
+- 🔒 **JWT Authentication**: Secure httpOnly cookie-based authentication
+- ⚡ **Real-time Communication**: WebSocket support via Socket.IO
+- 💾 **PostgreSQL Database**: Type-safe database queries with TypeORM
+- 🐰 **RabbitMQ Messaging**: Inter-service communication via message queues
+- 🐳 **Docker Support**: Full containerization with docker-compose
+- 🛡️ **Security First**: Helmet.js, rate limiting, input validation, CSRF protection
+- 📊 **Admin Tools**: pgAdmin web UI for database management
 
-## Quick overview
+## Repository Layout
 
-**Note**: The gateway is currently a standalone service and is **not included** in the docker-compose stack. To use it, run it separately with `npm run dev` in the gateway folder.
+- `user-service/` — Authentication and user management (port 8081)
+- `chat-service/` — Real-time messaging with Socket.IO support (port 8082)
+- `notification-service/` — Email and push notifications (port 8083)
+- `nginx/` — Reverse proxy for all services (host port 85)
+- `docker-compose.yml` — Orchestrates PostgreSQL, pgAdmin, all microservices, and nginx
+- `scripts/` — Helper scripts including `generate-envs.sh` for automatic .env generation
+- `docker-secrets/` — Consolidated secrets file (gitignored) and example template
+- `k8s/` — Kubernetes deployment configurations (optional)
+- `gateway/` — Standalone HTTP gateway (not used in docker-compose, development only)
 
-- Gateway routes (when running standalone):
-  - `/api/user` -> user-service (http://localhost:8081)
-  - `/api/chat` -> chat-service (http://localhost:8082)
-  - `/api/notifications` -> notification-service (http://localhost:8083)
+## Architecture Overview
 
-- Inter-service messaging: RabbitMQ (services read `MESSAGE_BROKER_URL`)
-- Databases: MongoDB used by `user-service`, `chat-service`, and `notification-service` (services read `MONGO_URI` built from secrets)
+- **Database**: PostgreSQL 17.6 with TypeORM (shared by all services)
+- **Message Queue**: RabbitMQ for inter-service communication (external)
+- **Reverse Proxy**: Nginx on port 85 routes requests to appropriate services
+- **API Routes**:
+  - `/api/user/*` → user-service (port 8081)
+  - `/api/chat/*` → chat-service (port 8082)
+  - `/api/notifications/*` → notification-service (port 8083)
 
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│  Docker Compose Stack                                       │
-│                                                              │
-│  ┌──────────┐  ┌──────────────┐  ┌────────────────────┐   │
-│  │  setup   │→ │  mongodb     │  │  nosqlclient       │   │
-│  │ (one-run)│  │  :27017      │  │  localhost:8088    │   │
-│  └──────────┘  └──────────────┘  └────────────────────┘   │
-│                       ↓                                      │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────────┐ │
-│  │ user-service │  │ chat-service │  │ notification-svc │ │
-│  │   :8081      │  │   :8082      │  │     :8083        │ │
-│  └──────────────┘  └──────────────┘  └──────────────────┘ │
-│         ↓                  ↓                  ↓             │
-│  ┌─────────────────────────────────────────────────────┐  │
-│  │           nginx (reverse proxy)                     │  │
-│  │           localhost:85                              │  │
-│  └─────────────────────────────────────────────────────┘  │
-└─────────────────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────┐
+│  Docker Compose Stack                                      │
+│                                                             │
+│  ┌──────────┐  ┌──────────────┐  ┌───────────────────┐   │
+│  │  setup   │→ │  postgres    │  │  pgadmin          │   │
+│  │ (one-run)│  │  :5432       │  │  localhost:8088   │   │
+│  └──────────┘  └──────────────┘  └───────────────────┘   │
+│                       ↓                                     │
+│  ┌──────────────┐  ┌──────────────┐  ┌─────────────────┐ │
+│  │ user-service │  │ chat-service │  │ notification    │ │
+│  │   :8081      │  │   :8082      │  │   service       │ │
+│  │              │  │ + Socket.IO  │  │   :8083         │ │
+│  └──────────────┘  └──────────────┘  └─────────────────┘ │
+│         ↓                  ↓                  ↓            │
+│  ┌──────────────────────────────────────────────────────┐ │
+│  │           nginx (reverse proxy)                      │ │
+│  │           localhost:85                               │ │
+│  └──────────────────────────────────────────────────────┘ │
+└────────────────────────────────────────────────────────────┘
 
-    External (not in compose):
+    External Services (not in compose):
     ┌──────────────┐
-    │   gateway    │  ← Run separately with npm
-    │   :8080      │
+    │  RabbitMQ    │  ← MESSAGE_BROKER_URL
+    │  (CloudAMQP) │
     └──────────────┘
-
-    External services (cloud or local):
-    - RabbitMQ (MESSAGE_BROKER_URL)
-    - SMTP server (for notifications)
 ```
 
 ## Prerequisites
@@ -130,15 +138,17 @@ When deploying locally with `docker-compose`, copy the example file to `docker-s
 ## Docker / docker-compose (Local Development)
 
 The compose file brings up the following services:
-- `setup` — one-time service that generates `.env` files from consolidated secrets
-- `mongodb` (mongo:8.2.1) — database for user, chat, and notification services
-- `nosqlclient` (Mongoclient 4.0.1, web UI, host port 8088) — modern MongoDB admin interface
+- `setup` — One-time service that generates `.env` files from consolidated secrets
+- `postgres` (postgres:17.6-trixie) — PostgreSQL database for all services
+- `pgadmin` (dpage/pgadmin4, web UI, host port 8088) — PostgreSQL admin interface
 - `user`, `chat`, `notification` services (Node.js microservices)
 - `nginx` (reverse proxy, host port 85)
 
-**Note**: The `gateway` service is **not** included in docker-compose and runs standalone. Services are accessible directly or via nginx.
+**Note**: RabbitMQ and SMTP are external services configured via environment variables.
 
-Basic start (rebuild images):
+### Basic Commands
+
+Start all services (rebuild images):
 
 ```bash
 docker-compose up -d --build
@@ -147,45 +157,75 @@ docker-compose up -d --build
 Recreate a single service without affecting others:
 
 ```bash
-# Example: recreate nosqlclient only
-docker-compose up -d --no-deps --force-recreate nosqlclient
+# Example: recreate user service only
+docker-compose up -d --no-deps --force-recreate user
 ```
 
 Check status and logs:
 
 ```bash
 docker-compose ps
-docker-compose logs --tail 200 nosqlclient
-docker-compose logs --tail 200 mongodb
-docker-compose logs --tail 200 user
+docker-compose logs -f user
+docker-compose logs -f chat
+docker-compose logs -f notification
+docker-compose logs -f postgres
 ```
 
-Nosqlclient (Mongoclient) is available at http://localhost:8088/ — a modern web interface for MongoDB with query history, aggregation pipeline builder, and more features than mongo-express.
+pgAdmin web interface is available at http://localhost:8088/ — a powerful PostgreSQL administration and management tool with query editor, schema browser, and performance monitoring.
+
+**Note**: On first run, you'll need to add a server connection in pgAdmin:
+- Host: `postgres` (Docker service name)
+- Port: `5432`
+- Username: Value from `ADMIN_USERNAME` in `.env`
+- Password: Value from `ADMIN_PASSWORD` in `.env`
+- Database: `chat_db`
 
 ## Healthchecks
 
-- `nosqlclient` includes a healthcheck that verifies the web UI is responding on port 3000
-- `mongodb` has a healthcheck that runs a ping command via mongosh
-- Backend services expose simple HTTP `/health` endpoints used by compose healthchecks
+All services include comprehensive health checks:
+- `postgres` — Runs `pg_isready` to verify database availability
+- `pgadmin` — HTTP ping check on the web UI
+- `user`, `chat`, `notification` — HTTP `/health` endpoints checked by Docker
+- `nginx` — Curl check on proxy health
 
-## Security & recent enhancements (November 2025)
+## Security & Recent Enhancements (November 2025)
 
-The project has undergone a security-focused audit and several enhancements to improve production readiness. For a complete and detailed list of changes, see `SECURITY.md`.
+The project has undergone comprehensive security audits and major enhancements. For complete details, see `SECURITY.md`.
 
-Highlights:
+### Major Improvements:
 
-- Migrated primary storage from MongoDB to PostgreSQL (TypeORM) with stricter schema control; `synchronize` is disabled in production.
-- JWT-based authentication hardened: tokens are issued as httpOnly cookies and accepted by HTTP endpoints and Socket.IO handshakes.
-- Socket.IO now enforces JWT authentication on connection; unauthenticated socket connections are rejected.
-- Input validation and sanitization added across services (express-validator); message and user inputs have strict length and format checks.
-- SQL-injection protection via TypeORM parameterized queries and entity-level protections.
-- Connection pooling and query execution monitoring added for improved performance and reliability.
-- Database composite indexes added for message and notification queries.
-- Global and auth-specific rate limiting implemented; consider Redis-backed rate limiting for multi-instance deployments.
-- HTTP hardening: Helmet headers, body size limits, and secure cookie flags (HttpOnly, Secure, SameSite) are applied.
-- CI/CD security: automated npm audits, container image scanning (Trivy), and scheduled security scans.
+✅ **Database Migration**: MongoDB → PostgreSQL with TypeORM
+- Type-safe queries with parameterized SQL
+- Connection pooling and query monitoring
+- Database indexes for optimal performance
+- `synchronize: false` in production for schema safety
 
-Production checklist and additional recommendations are available in `SECURITY.md`.
+✅ **End-to-End Encryption**: Signal Protocol implementation
+- Client-side encryption/decryption
+- Prekey bundle management
+- Session establishment for secure messaging
+
+✅ **Authentication & Authorization**:
+- JWT-based authentication with httpOnly cookies
+- Socket.IO authentication middleware
+- Sender validation on all messages
+- bcrypt password hashing (cost factor 12)
+
+✅ **Security Hardening**:
+- Input validation with express-validator
+- Helmet.js security headers
+- Global and auth-specific rate limiting
+- CORS with explicit origins
+- SQL injection protection via TypeORM
+- WebSocket message size limits
+
+✅ **CI/CD Security**:
+- Automated npm security audits
+- Container image scanning with Trivy
+- TypeScript type checking
+- Weekly scheduled security scans
+
+Production deployment checklist and additional recommendations are in `SECURITY.md`.
 
 ## How to Run Services (Development Without Docker)
 
@@ -198,66 +238,67 @@ npm install
 npm run dev
 ```
 
-Repeat the steps above for `chat-service` and `notification-service` when working on them individually.
+Repeat for `chat-service` and `notification-service` when working on them individually.
 
-### Running the Gateway (Standalone)
-
-The gateway is not part of docker-compose. To run it separately:
-
-```bash
-cd gateway
-npm install
-npm run dev  # starts on port 8080
-```
-
-The gateway proxies requests to the backend services:
-- `http://localhost:8080/api/user` → user-service (port 8081)
-- `http://localhost:8080/api/chat` → chat-service (port 8082)
-- `http://localhost:8080/api/notifications` → notification-service (port 8083)
+**Note**: Services require PostgreSQL and RabbitMQ to be accessible. Configure `DATABASE_URL` and `MESSAGE_BROKER_URL` in your `.env` files.
 
 ## Helper Scripts
 
+### Generate Environment Files
+
+Automatically generate `.env` files from consolidated secrets:
+
+```bash
+./scripts/generate-envs.sh         # Creates .env files if they don't exist
+./scripts/generate-envs.sh --force # Overwrites existing .env files
+```
+
+The script also auto-generates strong JWT secrets if missing or weak.
+
 ### Purge Notification Queue
 
-The notification service includes a script to purge the RabbitMQ queue:
+Clear the RabbitMQ notification queue:
 
 ```bash
 cd notification-service
 node scripts/purgeQueue.js
 ```
 
-This script connects to RabbitMQ using `MESSAGE_BROKER_URL` and purges the `NOTIFICATIONS_QUEUE` (defaults to "NOTIFICATIONS"). This is useful for clearing test messages during development.
+Useful for clearing test messages during development.
 
 ## Troubleshooting
 
-### MongoDB Authentication Issues
+### PostgreSQL Connection Issues
 
-If services fail to authenticate to MongoDB, ensure that:
-- Your `.env` values (`MONGO_URI`) are correct, or
-- `docker-secrets/app_secrets` contains the correct `ADMIN_USERNAME` and `ADMIN_PASSWORD`, and the compose stack has been recreated
+If services fail to connect to PostgreSQL:
+1. Verify `DATABASE_URL` in `.env` files or `docker-secrets/app_secrets`
+2. Check PostgreSQL is running: `docker-compose ps postgres`
+3. Verify credentials match between services and database
+4. Check PostgreSQL logs: `docker-compose logs postgres`
 
-### Verify Nosqlclient Connectivity
+### Verify pgAdmin Connectivity
 
 ```bash
 curl -I http://localhost:8088/ || true
-# Expected: HTTP/1.1 200 OK (Nosqlclient UI is up)
+# Expected: HTTP/1.1 200 OK (pgAdmin UI is up)
 ```
 
-Alternatively, open http://localhost:8088/ in your browser to access the Mongoclient interface.
+Alternatively, open http://localhost:8088/ in your browser to access the pgAdmin interface.
 
 ### General Debugging
 
 - Check service health: `docker-compose ps`
 - View logs: `docker-compose logs --tail 200 <service>`
 - Restart a service: `docker-compose restart <service>`
-- Verify `.env` files were generated: `ls -la */service/.env`
+- Verify `.env` files were generated: `ls -la *-service/.env`
+- Access PostgreSQL directly: `docker-compose exec postgres psql -U admin -d chat_db`
 
 ### Services Not Connecting to RabbitMQ
 
 If services cannot connect to RabbitMQ:
 - Verify `MESSAGE_BROKER_URL` in your consolidated secrets or `.env` files
-- Check that RabbitMQ is accessible (if using an external instance)
-- Review service logs for connection errors: `docker-compose logs --tail 100 user chat notification`
+- Check that RabbitMQ is accessible (if using CloudAMQP or local instance)
+- Review service logs: `docker-compose logs -f user chat notification`
 
 ## Security
 

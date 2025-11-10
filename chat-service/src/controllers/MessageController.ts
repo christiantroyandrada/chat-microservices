@@ -34,7 +34,7 @@ const sendMessage = async (
     
     validateReceiver(_id, receiverId)
 
-    // Validate message content
+    // Validate message content - enforce end-to-end encrypted envelope
     if (!message || typeof message !== 'string') {
       throw new APIError(400, 'Invalid message content')
     }
@@ -48,19 +48,39 @@ const sendMessage = async (
       throw new APIError(400, 'Message exceeds maximum length of 5000 characters')
     }
 
+    // Expect the client to send a Signal-style encrypted envelope encoded as JSON:
+    // { __encrypted: true, type: number, body: <base64-string> }
+    let parsedEnvelope: any = null
+    try {
+      parsedEnvelope = JSON.parse(trimmedMessage)
+    } catch (e) {
+      throw new APIError(400, 'Messages must be end-to-end encrypted (invalid envelope)')
+    }
+
+    if (!parsedEnvelope || !parsedEnvelope.__encrypted || typeof parsedEnvelope.body !== 'string') {
+      throw new APIError(400, 'Messages must be end-to-end encrypted')
+    }
+
     const messageRepo = AppDataSource.getRepository(Message)
+    // Store the encrypted envelope as-is and mark as encrypted
     const newMessage = await messageRepo.save({
       senderId: _id,
       receiverId,
       message: trimmedMessage,
+      isEncrypted: true,
       status: MessageStatus.NotDelivered,
     })
 
+    // Notify receiver but avoid sending plaintext. Indicate an encrypted message
+    // and include the envelope so the notification service can forward ciphertext
+    // to the client if desired (still no server-side decryption).
     await handleMessageReceived(
       name,
       email,
       receiverId,
-      trimmedMessage
+      '[Encrypted message]',
+      true,
+      trimmedMessage,
     )
 
     return res.json({
