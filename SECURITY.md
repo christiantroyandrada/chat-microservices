@@ -266,4 +266,9 @@ If you discover a security vulnerability, please:
 ## Contact
 For security concerns, contact: [Add your security contact]
 
-Last updated: 2025-11-09 (PostgreSQL migration security audit completed)
+Last updated: 2025-11-10 (Security improvements and configuration updates)
+
+Minor updates (2025-11-10):
+- Frontend authentication updated to rely on httpOnly cookies; backend and Socket.IO handshake accept cookies for authentication.
+- Nginx gateway configuration hardened for WebSocket proxying (ensures Upgrade/Connection headers are forwarded and cookies preserved).
+- Clarified cookie flags to enforce `HttpOnly`, `SameSite` and `Secure` in production.

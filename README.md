@@ -168,6 +168,25 @@ Nosqlclient (Mongoclient) is available at http://localhost:8088/ — a modern we
 - `mongodb` has a healthcheck that runs a ping command via mongosh
 - Backend services expose simple HTTP `/health` endpoints used by compose healthchecks
 
+## Security & recent enhancements (November 2025)
+
+The project has undergone a security-focused audit and several enhancements to improve production readiness. For a complete and detailed list of changes, see `SECURITY.md`.
+
+Highlights:
+
+- Migrated primary storage from MongoDB to PostgreSQL (TypeORM) with stricter schema control; `synchronize` is disabled in production.
+- JWT-based authentication hardened: tokens are issued as httpOnly cookies and accepted by HTTP endpoints and Socket.IO handshakes.
+- Socket.IO now enforces JWT authentication on connection; unauthenticated socket connections are rejected.
+- Input validation and sanitization added across services (express-validator); message and user inputs have strict length and format checks.
+- SQL-injection protection via TypeORM parameterized queries and entity-level protections.
+- Connection pooling and query execution monitoring added for improved performance and reliability.
+- Database composite indexes added for message and notification queries.
+- Global and auth-specific rate limiting implemented; consider Redis-backed rate limiting for multi-instance deployments.
+- HTTP hardening: Helmet headers, body size limits, and secure cookie flags (HttpOnly, Secure, SameSite) are applied.
+- CI/CD security: automated npm audits, container image scanning (Trivy), and scheduled security scans.
+
+Production checklist and additional recommendations are available in `SECURITY.md`.
+
 ## How to Run Services (Development Without Docker)
 
 For quick local development of an individual service (example: `user-service`):
