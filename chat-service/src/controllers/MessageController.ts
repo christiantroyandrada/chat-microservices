@@ -158,6 +158,7 @@ const getConversations = async (
             WHEN "senderId" = $1 THEN "receiverId"
             ELSE "senderId"
           END as "userId",
+          "senderId" as "lastMessageSenderId",
           message as "lastMessage",
           "createdAt" as "lastMessageTime",
           ROW_NUMBER() OVER (
@@ -180,6 +181,7 @@ const getConversations = async (
       )
       SELECT 
         rm."userId",
+        rm."lastMessageSenderId",
         rm."lastMessage",
         rm."lastMessageTime",
         COALESCE(uc."unreadCount", 0) as "unreadCount"
