@@ -1,12 +1,13 @@
 import amqp, { Channel } from 'amqplib'
 import { v4 as uuid_v4 } from 'uuid'
 import config from '../config/config'
+import type { NotificationPayload, UserDetails, UserDetailsCallback } from '../types'
 
 class RabbitMQService {
   private requestQueue = 'USER_DETAILS_REQUEST'
   private responseQueue = 'USER_DETAILS_RESPONSE'
   // store callback + timeout so we can clean up if no response arrives
-  private correlationMap = new Map<string, { callback: Function; timer: NodeJS.Timeout }>()
+  private correlationMap = new Map<string, { callback: UserDetailsCallback; timer: NodeJS.Timeout }>()
   private channel!: Channel
 
   constructor () {
@@ -25,7 +26,7 @@ class RabbitMQService {
         if (!msg) return
         try {
           const correlationId = msg.properties.correlationId
-          const user = JSON.parse(msg.content.toString())
+          const user = JSON.parse(msg.content.toString()) as UserDetails
 
           const entry = this.correlationMap.get(correlationId)
           if (entry) {
@@ -41,7 +42,7 @@ class RabbitMQService {
     )
   }
 
-  async getUserDetails (userId: string, callback: Function) {
+  async getUserDetails (userId: string, callback: UserDetailsCallback) {
     const correlationId = uuid_v4()
     const timer = setTimeout(() => {
       const entry = this.correlationMap.get(correlationId)
@@ -75,7 +76,7 @@ class RabbitMQService {
     try {
       // Send notification payload to queue
       // The notification-service will handle user details lookup if needed
-      const notificationPayload: any = {
+      const notificationPayload: NotificationPayload = {
         type: 'MESSAGE_RECEIVED',
         userId: receiverId,
         message: messageContent,

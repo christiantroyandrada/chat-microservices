@@ -1,6 +1,7 @@
 import { Server } from 'http'
 import { Socket, Server as SocketIOServer } from 'socket.io'
 import jwt from 'jsonwebtoken'
+import type { TokenPayload } from './types'
 import app from './app'
 import { Message, connectDB, AppDataSource } from './database'
 import { MessageStatus } from './database/models/MessageModel'
@@ -96,7 +97,7 @@ const start = async () => {
       }
 
       // Verify JWT token
-      const decoded = jwt.verify(token, config.JWT_SECRET as string) as any;
+  const decoded = jwt.verify(token, config.JWT_SECRET as string) as TokenPayload;
       
       // Attach user to socket
       socket.data.user = {
@@ -176,7 +177,7 @@ const start = async () => {
         } else {
           // Save new message (fallback for WebSocket-only clients)
           // Enforce encrypted envelope JSON
-          let parsedEnvelope: any = null
+          let parsedEnvelope: unknown = null
           try {
             parsedEnvelope = JSON.parse(trimmedMessage)
           } catch (e) {
@@ -184,7 +185,8 @@ const start = async () => {
             return;
           }
 
-          if (!parsedEnvelope || !parsedEnvelope.__encrypted || typeof parsedEnvelope.body !== 'string') {
+          const envelopeCandidate = parsedEnvelope as { __encrypted?: boolean; body?: unknown } | null
+          if (!envelopeCandidate || envelopeCandidate.__encrypted !== true || typeof envelopeCandidate.body !== 'string') {
             ack?.({ ok: false, error: 'Messages must be end-to-end encrypted' });
             return;
           }

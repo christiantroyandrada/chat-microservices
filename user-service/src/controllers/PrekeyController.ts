@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express'
 import { AppDataSource, Prekey } from '../database'
 import { APIError } from '../utils'
+import type { PrekeyBundle } from '../types'
 
 /**
  * Publish prekey: requires authentication. The router should attach the
@@ -9,8 +10,8 @@ import { APIError } from '../utils'
  */
 const publishPrekey = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const publisherId = req.user?.id as string | undefined
-    const { deviceId, bundle } = req.body as { deviceId?: string; bundle?: any }
+  const publisherId = req.user?.id as string | undefined
+  const { deviceId, bundle } = req.body as { deviceId?: string; bundle?: PrekeyBundle }
     if (!publisherId) throw new APIError(401, 'Authentication required')
     if (!deviceId || !bundle) throw new APIError(400, 'deviceId and bundle are required')
 
@@ -24,7 +25,7 @@ const publishPrekey = async (req: Request, res: Response, next: NextFunction) =>
       return res.json({ status: 200, message: 'Prekey bundle updated' })
     }
 
-    const record = prekeyRepo.create({ userId: publisherId, deviceId, bundle })
+  const record = prekeyRepo.create({ userId: publisherId, deviceId, bundle })
     await prekeyRepo.save(record)
 
     return res.json({ status: 200, message: 'Prekey bundle published' })
