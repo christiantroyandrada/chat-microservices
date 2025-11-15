@@ -39,6 +39,32 @@ export interface PrekeyBundle {
 }
 // Stored in `prekeys` table and used by `PrekeyController` and other Signal helpers
 
+// Complete Signal Protocol key set (including private keys)
+// Used to backup and restore all Signal keys for a user
+export interface SignalKeySet {
+  identityKeyPair: {
+    pubKey: string  // base64
+    privKey: string // base64
+  }
+  registrationId: number
+  signedPreKeyPair: {
+    keyId: number
+    keyPair: {
+      pubKey: string
+      privKey: string
+    }
+    signature: string
+  }
+  preKeys: Array<{
+    keyId: number
+    keyPair: {
+      pubKey: string
+      privKey: string
+    }
+  }>
+}
+// Complete key set that can be stored on backend and restored to IndexedDB
+
 // Cookie options type for clearCookie/cookie operations
 export type CookieOptions = ExpressCookieOptions
 // Re-exported/used by AuthController when setting/clearing cookies for login/logout
