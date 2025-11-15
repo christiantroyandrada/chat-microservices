@@ -1,4 +1,5 @@
 import { Response } from 'express'
+import type { ConversationRow } from '../types'
 import { AuthenticatedRequest } from '../middleware'
 import { Message, AppDataSource } from '../database'
 import { APIError, handleMessageReceived } from '../utils'
@@ -50,14 +51,16 @@ const sendMessage = async (
 
     // Expect the client to send a Signal-style encrypted envelope encoded as JSON:
     // { __encrypted: true, type: number, body: <base64-string> }
-    let parsedEnvelope: any = null
+    let parsedEnvelope: unknown = null
     try {
       parsedEnvelope = JSON.parse(trimmedMessage)
     } catch (e) {
       throw new APIError(400, 'Messages must be end-to-end encrypted (invalid envelope)')
     }
 
-    if (!parsedEnvelope || !parsedEnvelope.__encrypted || typeof parsedEnvelope.body !== 'string') {
+    // Narrow the parsed value and validate shape
+    const envelopeCandidate = parsedEnvelope as { __encrypted?: boolean; body?: unknown } | null
+    if (!envelopeCandidate || envelopeCandidate.__encrypted !== true || typeof envelopeCandidate.body !== 'string') {
       throw new APIError(400, 'Messages must be end-to-end encrypted')
     }
 
@@ -192,8 +195,9 @@ const getConversations = async (
     `, [userId])
 
     // Fetch usernames for all conversation partners
+    // Use the shared ConversationRow type from src/types.ts
     const conversationsWithUsernames = await Promise.all(
-      conversationsRaw.map(async (conv: any) => {
+      (conversationsRaw as ConversationRow[]).map(async (conv) => {
         const userDetails = await fetchUserDetails(conv.userId)
         return {
           ...conv,

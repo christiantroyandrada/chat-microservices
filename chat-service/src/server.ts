@@ -1,6 +1,7 @@
 import { Server } from 'http'
 import { Socket, Server as SocketIOServer } from 'socket.io'
 import jwt from 'jsonwebtoken'
+import type { TokenPayload } from './types'
 import app from './app'
 import { Message, connectDB, AppDataSource } from './database'
 import { MessageStatus } from './database/models/MessageModel'
@@ -96,7 +97,7 @@ const start = async () => {
       }
 
       // Verify JWT token
-      const decoded = jwt.verify(token, config.JWT_SECRET as string) as any;
+  const decoded = jwt.verify(token, config.JWT_SECRET as string) as TokenPayload;
       
       // Attach user to socket
       socket.data.user = {
@@ -119,6 +120,9 @@ const start = async () => {
     const userId = socket.data.user?.id;
     if (userId) {
       socket.join(userId);
+      console.log('[chat-service] User joined room:', userId, 'socket:', socket.id);
+    } else {
+      console.warn('[chat-service] No userId found for socket:', socket.id);
     }
 
     socket.on('disconnect', () => {
@@ -176,7 +180,7 @@ const start = async () => {
         } else {
           // Save new message (fallback for WebSocket-only clients)
           // Enforce encrypted envelope JSON
-          let parsedEnvelope: any = null
+          let parsedEnvelope: unknown = null
           try {
             parsedEnvelope = JSON.parse(trimmedMessage)
           } catch (e) {
@@ -184,7 +188,8 @@ const start = async () => {
             return;
           }
 
-          if (!parsedEnvelope || !parsedEnvelope.__encrypted || typeof parsedEnvelope.body !== 'string') {
+          const envelopeCandidate = parsedEnvelope as { __encrypted?: boolean; body?: unknown } | null
+          if (!envelopeCandidate || envelopeCandidate.__encrypted !== true || typeof envelopeCandidate.body !== 'string') {
             ack?.({ ok: false, error: 'Messages must be end-to-end encrypted' });
             return;
           }
@@ -207,8 +212,29 @@ const start = async () => {
           }
         }
         
+        // Format message for frontend consumption (normalize field names)
+        // Frontend expects: _id, senderId, senderUsername, receiverId, content (not message), timestamp
+        const { email, name } = socket.data.user || { email: undefined, name: undefined }
+        const formattedMsg = {
+          _id: msg.id,
+          id: msg.id,
+          senderId: msg.senderId,
+          senderUsername: name || undefined,
+          senderName: name || undefined,
+          receiverId: msg.receiverId,
+          content: msg.message, // Frontend uses 'content', backend DB uses 'message'
+          message: msg.message, // Include both for compatibility
+          timestamp: msg.createdAt,
+          createdAt: msg.createdAt,
+          updatedAt: msg.updatedAt,
+          read: false,
+          isRead: false
+        }
+        
+        console.log('[chat-service] Broadcasting message to receiver:', receiverId, 'content length:', msg.message?.length)
+        
         // Broadcast to receiver
-        io.to(receiverId).emit('receiveMessage', msg)
+        io.to(receiverId).emit('receiveMessage', formattedMsg)
         ack?.({ ok: true, id: msg.id })
       } catch (err) {
         console.error('[chat-service] socket sendMessage error:', err)

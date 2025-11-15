@@ -2,16 +2,49 @@
 
 A modern, secure chat system built with Node.js, TypeScript, PostgreSQL, and real-time WebSocket communication. This repository contains microservices for user authentication, real-time messaging with end-to-end encryption (E2EE), and notifications.
 
+## 🤖 Development Philosophy
+
+This project follows a **hybrid AI-assisted development approach** where human expertise and AI capabilities work together:
+
+### Division of Labor
+
+**👨‍💻 Developer's Primary Role:**
+- **System Architecture Design**: Designing the overall system architecture, microservices structure, and technology stack decisions
+- **Code Review & Guidance**: Reviewing AI-generated code for correctness, security, and adherence to best practices
+- **Strategic Direction**: Defining project requirements, features, and technical direction
+- **Quality Assurance**: Ensuring code meets production standards and business requirements
+
+**🤖 AI's Primary Role:**
+- **Code Scaffolding**: Generating boilerplate code, project structures, and initial implementations
+- **Code Integration**: Integrating libraries, frameworks, and third-party services
+- **Local Deployment**: Setting up Docker environments, configuration files, and deployment scripts
+- **Troubleshooting**: Debugging issues, analyzing logs, and implementing fixes
+- **Documentation**: Creating and maintaining comprehensive documentation
+
+### Best Practices Guidance
+
+The AI tool is guided by the developer to follow:
+- Industry-standard coding patterns and practices
+- Security-first development principles
+- TypeScript type safety and strict mode
+- Comprehensive error handling and logging
+- Docker containerization and orchestration
+- Automated testing and CI/CD pipelines
+
+This collaborative approach combines the **strategic thinking and domain expertise of human developers** with the **rapid scaffolding and implementation capabilities of AI**, resulting in faster development cycles while maintaining high code quality and security standards.
+
 ## ✨ Key Features
 
-- 🔐 **End-to-End Encryption**: Signal Protocol implementation for secure messaging
-- 🔒 **JWT Authentication**: Secure httpOnly cookie-based authentication
+- 🔐 **End-to-End Encryption**: Signal Protocol (X3DH + Double Ratchet) with client-side key encryption
+- 🔒 **Zero-Knowledge Architecture**: Stores encrypted key bundles only - server never sees plaintext keys
+- 🛡️ **Security Hardening**: AES-256-GCM encryption, PBKDF2 (100k iterations), rate limiting, audit logging
+- � **JWT Authentication**: Secure httpOnly cookie-based authentication
 - ⚡ **Real-time Communication**: WebSocket support via Socket.IO
 - 💾 **PostgreSQL Database**: Type-safe database queries with TypeORM
 - 🐰 **RabbitMQ Messaging**: Inter-service communication via message queues
 - 🐳 **Docker Support**: Full containerization with docker-compose
-- 🛡️ **Security First**: Helmet.js, rate limiting, input validation, CSRF protection
-- 📊 **Admin Tools**: pgAdmin web UI for database management
+- � **Admin Tools**: pgAdmin web UI for database management
+- � **Audit Logging**: Comprehensive logging of all key operations for security monitoring
 
 ## Repository Layout
 

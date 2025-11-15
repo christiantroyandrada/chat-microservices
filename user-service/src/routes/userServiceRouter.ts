@@ -72,6 +72,12 @@ userServiceRouter.post('/api/user/prekeys', prekeyPostLimiter, authenticated, pu
 // Get prekey bundle (public) - consumption is handled atomically in the controller
 userServiceRouter.get('/api/user/prekeys/:userId', prekeyGetLimiter, PrekeyController.getPrekeyBundle)
 
+// Store complete Signal key set (authenticated) - uses /user prefix like other auth routes
+userServiceRouter.post('/signal-keys', prekeyPostLimiter, authenticated, PrekeyController.storeSignalKeys)
+
+// Get stored Signal key set (authenticated) - uses /user prefix like other auth routes
+userServiceRouter.get('/signal-keys', prekeyGetLimiter, authenticated, PrekeyController.getSignalKeys)
+
 // Search users (used by frontend for starting new conversations)
 userServiceRouter.get(
   '/search',

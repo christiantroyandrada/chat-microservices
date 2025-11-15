@@ -1,4 +1,5 @@
 import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn } from 'typeorm'
+import type { PrekeyBundle } from '../../types'
 
 @Entity('prekeys')
 export class Prekey {
@@ -13,7 +14,11 @@ export class Prekey {
 
   // Store the bundle as JSON (Postgres JSONB)
   @Column({ type: 'json' })
-  bundle: any
+  bundle: PrekeyBundle
+
+  // Track last backup time for rate limiting (CVE-008)
+  @Column({ type: 'timestamp', nullable: true })
+  lastBackupTimestamp?: Date
 
   @CreateDateColumn()
   createdAt: Date

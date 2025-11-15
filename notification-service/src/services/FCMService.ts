@@ -1,4 +1,5 @@
 import admin from 'firebase-admin'
+import type { FCMMessagePayload } from '../types'
 
 admin.initializeApp({
   credential: admin.credential.applicationDefault(),
@@ -11,7 +12,7 @@ export const FCMService = {
    * The visible `body` should never contain decrypted plaintext for E2EE messages.
    */
   sendPushNotification: async (token: string, message: string, data?: Record<string, string>) => {
-    const payload: any = {
+    const payload: FCMMessagePayload = {
       notification: {
         title: 'New Message',
         body: message,

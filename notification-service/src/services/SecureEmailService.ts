@@ -1,5 +1,6 @@
 import axios, { AxiosInstance } from 'axios'
 import config from '../config/config'
+import type { BrevoEmailPayload, BrevoAccountInfo, AxiosErrorResponse } from '../types'
 
 /**
  * SecureEmailService — a thin, secure wrapper around the Brevo (SendinBlue)
@@ -44,7 +45,7 @@ export class SecureEmailService {
     }
 
     try {
-      const payload = {
+      const payload: BrevoEmailPayload = {
         sender: {
           email: config.EMAIL_FROM,
           name: 'Chat Service'
@@ -59,36 +60,43 @@ export class SecureEmailService {
 
       console.log('[SecureEmailService] Email sent successfully:', response.data.messageId)
       return { messageId: response.data.messageId }
-    } catch (error: any) {
-      if (error.response) {
-        // API returned an error response
-        console.error('[SecureEmailService] API error:', {
-          status: error.response.status,
-          data: error.response.data
-        })
-        throw new Error(`SendinBlue API error: ${error.response.status} - ${JSON.stringify(error.response.data)}`)
-      } else if (error.request) {
-        // Request made but no response received
-        console.error('[SecureEmailService] Network error:', error.message)
-        throw new Error(`SendinBlue network error: ${error.message}`)
-      } else {
-        // Something else happened
-        console.error('[SecureEmailService] Unexpected error:', error.message)
-        throw error
+    } catch (err: unknown) {
+      // Use axios helper type guard when available
+      if (axios.isAxiosError(err)) {
+        if (err.response) {
+          // API returned an error response
+          const errorResponse = err.response as AxiosErrorResponse
+          console.error('[SecureEmailService] API error:', {
+            status: errorResponse.status,
+            data: errorResponse.data
+          })
+          throw new Error(`SendinBlue API error: ${errorResponse.status} - ${JSON.stringify(errorResponse.data)}`)
+        } else if (err.request) {
+          // Request made but no response received
+          console.error('[SecureEmailService] Network error:', err.message)
+          throw new Error(`SendinBlue network error: ${err.message}`)
+        }
       }
+      // Fallback for non-axios errors
+      console.error('[SecureEmailService] Unexpected error:', err)
+      throw err
     }
   }
 
   /**
    * Check account info to verify API key is valid
    */
-  async getAccount(): Promise<any> {
+  async getAccount(): Promise<BrevoAccountInfo> {
     try {
       const response = await this.client.get('/account')
-      return response.data
-    } catch (error: any) {
-      console.error('[SecureEmailService] Failed to get account info:', error.message)
-      throw error
+      return response.data as BrevoAccountInfo
+    } catch (err: unknown) {
+      if (axios.isAxiosError(err)) {
+        console.error('[SecureEmailService] Failed to get account info:', err.message)
+      } else {
+        console.error('[SecureEmailService] Failed to get account info:', err)
+      }
+      throw err
     }
   }
 

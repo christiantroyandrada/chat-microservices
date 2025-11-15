@@ -238,7 +238,7 @@ const logout = async (
     // Clear the jwt cookie set during login/registration
     const cookieOptions = getCookieOptions()
     // Use clearCookie (express) with same options so browser removes it
-    res.clearCookie('jwt', { path: cookieOptions.path, httpOnly: cookieOptions.httpOnly, secure: cookieOptions.secure, sameSite: cookieOptions.sameSite as any })
+    res.clearCookie('jwt', { path: cookieOptions.path, httpOnly: cookieOptions.httpOnly, secure: cookieOptions.secure, sameSite: cookieOptions.sameSite })
 
     return res.json({ status: 200, message: 'Logged out successfully' })
   } catch (error: unknown) {

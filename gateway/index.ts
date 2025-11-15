@@ -1,4 +1,4 @@
-import express from 'express'
+import express, { Request } from 'express'
 import proxy from 'express-http-proxy'
 import { URL } from 'url'
 
@@ -8,20 +8,23 @@ app.use(express.urlencoded({ extended: true }))
 
 // proxy options to forward parsed JSON bodies from the gateway to the target service
 const proxyOptions = {
-  proxyReqOptDecorator: (proxyReqOpts: any, srcReq: any) => {
+  proxyReqOptDecorator: (proxyReqOpts: Record<string, unknown>, srcReq: Request) => {
     // ensure content-type is forwarded
-    proxyReqOpts.headers['Content-Type'] = srcReq.headers['content-type'] || 'application/json'
+    const headers = proxyReqOpts.headers as Record<string, string> | undefined
+    if (headers) {
+      headers['Content-Type'] = (srcReq.headers['content-type'] as string) || 'application/json'
+    }
     return proxyReqOpts
   },
-  proxyReqPathResolver: (req: any) => {
+  proxyReqPathResolver: (req: Request) => {
     // forward the original path and querystring
-    const urlObj = new URL(req.url, `http://${req.headers.host}`)
+    const urlObj = new URL(req.url || '', `http://${req.headers.host}`)
     return urlObj.pathname + urlObj.search
   },
-  proxyReqBodyDecorator: (bodyContent: any, srcReq: any) => {
+  proxyReqBodyDecorator: (bodyContent: unknown, srcReq: Request) => {
     // express.json() parsed body will be available here as an object.
     // Return a stringified body to be sent to the proxied service.
-    if (!bodyContent || Object.keys(bodyContent).length === 0) {
+    if (!bodyContent || (typeof bodyContent === 'object' && Object.keys(bodyContent as Record<string, unknown>).length === 0)) {
       return ''
     }
     return JSON.stringify(bodyContent)

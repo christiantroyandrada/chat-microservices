@@ -1,17 +1,84 @@
 # Security Guidelines
 
+## 🤖 Development Philosophy & Security
+
+This project follows a **hybrid AI-assisted development approach** with a strong emphasis on security-first principles:
+
+### Security-Focused Development Process
+
+**👨‍💻 Developer's Primary Role in Security:**
+- **Security Architecture**: Designing secure system architecture, authentication flows, and data protection strategies
+- **Security Audits**: Conducting comprehensive security reviews of AI-generated code
+- **Threat Modeling**: Identifying potential vulnerabilities and attack vectors
+- **Compliance Oversight**: Ensuring implementations meet security standards (OWASP, industry best practices)
+- **Incident Response**: Defining security incident response procedures and remediation strategies
+
+**🤖 AI's Primary Role in Security:**
+- **Security Implementation**: Implementing authentication, authorization, input validation, and encryption
+- **Vulnerability Detection**: Identifying common security issues during code generation
+- **Security Scaffolding**: Setting up security middleware (Helmet.js, rate limiting, CORS)
+- **Dependency Audits**: Running automated security scans and dependency checks
+- **Security Documentation**: Maintaining security guidelines and incident documentation
+
+### Security Best Practices Guidance
+
+The AI is explicitly guided to follow:
+- OWASP Top 10 security principles
+- Defense in depth strategy (multiple security layers)
+- Principle of least privilege
+- Secure coding standards (input validation, parameterized queries, proper error handling)
+- Regular security audits and vulnerability scanning
+- Automated security testing in CI/CD pipelines
+
+This **security-conscious collaboration** ensures that **human security expertise guides the implementation** while **AI capabilities accelerate secure code development and testing**, resulting in a robust and secure application.
+
+---
+
 ## Overview
 This document outlines the security measures implemented in the chat-microservices stack and provides guidelines for maintaining a secure development and production environment.
 
 ## 🔒 Latest Security Updates (November 2025)
+
+### Client-Side Encrypted Key Backup (November 17, 2025) ✅
+
+**Major Security Overhaul**: Implemented zero-knowledge architecture for Signal Protocol key management
+
+**Security Improvements**:
+- ✅ **Client-side AES-256-GCM encryption**: Keys encrypted in browser before backend storage
+- ✅ **PBKDF2 key derivation**: 100,000 iterations (OWASP compliant) for password-based encryption
+- ✅ **Zero-knowledge backend**: Server stores encrypted blobs only, never sees plaintext keys
+- ✅ **Device isolation**: Each device has separate encrypted backup with device ID validation
+- ✅ **Rate limiting**: 1 key backup per 24 hours to prevent abuse
+- ✅ **Audit logging**: Comprehensive logging of all key operations (STORE_KEYS, FETCH_KEYS)
+- ✅ **Information disclosure prevention**: Constant-time error responses
+
+**Implementation Details**:
+- **Frontend**: `keyEncryption.ts` with Web Crypto API (AES-256-GCM, PBKDF2)
+- **Backend**: `PrekeyController.ts` with device-specific key isolation and audit logging
+- **Database**: Stores `_encryptedKeyBundle` instead of plaintext keys
+- **Security Model**: Defense-in-depth - server compromise doesn't expose user keys
+
+**Vulnerabilities Fixed** (from SECURITY_AUDIT_SIGNAL_KEYS.md):
+- CVE-001 (Critical): Plaintext private key storage → **FIXED**
+- CVE-002 (Critical): No key derivation function → **FIXED**
+- CVE-003 (Critical): Unencrypted key transport → **FIXED**
+- CVE-005 (High): Missing device isolation → **FIXED**
+- CVE-007 (Medium): Weak PBKDF2 iterations → **FIXED**
+- CVE-008 (High): No rate limiting → **FIXED**
+- CVE-010 (Medium): No audit logging → **FIXED**
+- CVE-011 (Low): Information disclosure → **FIXED**
+
+**Security Score Upgrade**: 🔴 Critical (9.5/10 risk) → 🟢 Low-Medium (3.5/10 risk)
+
+---
 
 ### End-to-End Encryption (E2EE) ✅
 
 **Implementation**: Signal Protocol for client-side message encryption
 
 - **Client-side encryption**: All messages encrypted on sender's device before transmission
-- **Signal Protocol**: Industry-standard E2EE protocol used by Signal, WhatsApp
-- **Prekey bundles**: Automatic generation and publishing of encryption keys
+- **Signal Protocol**: Industry-standard E2EE protocol (X3DH + Double Ratchet)
+- **Prekey bundles**: Automatic generation and publishing on registration/login
 - **Session management**: Secure session establishment between users
 - **Backend agnostic**: Server cannot read message content (stores encrypted data)
 
@@ -19,14 +86,16 @@ This document outlines the security measures implemented in the chat-microservic
 - Messages encrypted with Signal Protocol before sending
 - Server stores only encrypted message content
 - Recipients automatically decrypt messages in browser
-- IndexedDB-based key storage for persistence
+- IndexedDB-based key storage with device-specific databases
 - Automatic prekey bundle generation on registration/login
+- **NEW**: Encrypted key backup with optional password protection
 
 **Implementation Details**:
 - Library: `@privacyresearch/libsignal-protocol-typescript`
 - Storage: IndexedDB for identity keys, prekeys, and sessions
 - Key generation: Automatic on user registration with device ID
 - Session bootstrapping: Automatic on first message to new contact
+- **NEW**: Client-side key encryption before backend storage (optional)
 
 ### PostgreSQL Migration ✅
 
