@@ -1,5 +1,39 @@
 # Security Guidelines
 
+## 🤖 Development Philosophy & Security
+
+This project follows a **hybrid AI-assisted development approach** with a strong emphasis on security-first principles:
+
+### Security-Focused Development Process
+
+**👨‍💻 Developer's Primary Role in Security:**
+- **Security Architecture**: Designing secure system architecture, authentication flows, and data protection strategies
+- **Security Audits**: Conducting comprehensive security reviews of AI-generated code
+- **Threat Modeling**: Identifying potential vulnerabilities and attack vectors
+- **Compliance Oversight**: Ensuring implementations meet security standards (OWASP, industry best practices)
+- **Incident Response**: Defining security incident response procedures and remediation strategies
+
+**🤖 AI's Primary Role in Security:**
+- **Security Implementation**: Implementing authentication, authorization, input validation, and encryption
+- **Vulnerability Detection**: Identifying common security issues during code generation
+- **Security Scaffolding**: Setting up security middleware (Helmet.js, rate limiting, CORS)
+- **Dependency Audits**: Running automated security scans and dependency checks
+- **Security Documentation**: Maintaining security guidelines and incident documentation
+
+### Security Best Practices Guidance
+
+The AI is explicitly guided to follow:
+- OWASP Top 10 security principles
+- Defense in depth strategy (multiple security layers)
+- Principle of least privilege
+- Secure coding standards (input validation, parameterized queries, proper error handling)
+- Regular security audits and vulnerability scanning
+- Automated security testing in CI/CD pipelines
+
+This **security-conscious collaboration** ensures that **human security expertise guides the implementation** while **AI capabilities accelerate secure code development and testing**, resulting in a robust and secure application.
+
+---
+
 ## Overview
 This document outlines the security measures implemented in the chat-microservices stack and provides guidelines for maintaining a secure development and production environment.
 
