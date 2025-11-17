@@ -1,0 +1,29 @@
+name: CI - Unit Tests
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  unit-tests:
+    name: Unit tests - ${{ matrix.service }}
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        service: ["user-service", "notification-service", "chat-service"]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Use Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies for service
+        run: npm ci --prefix ${{ matrix.service }}
+
+      - name: Run unit tests for service
+        run: npm run test:unit --prefix ${{ matrix.service }}

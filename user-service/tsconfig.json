@@ -9,13 +9,15 @@
     "experimentalDecorators": true,
     "emitDecoratorMetadata": true,
     "strictPropertyInitialization": false
+    ,
+    "types": ["node", "jest"]
   },
   "include": [
-    "**/*"
+    "src/**/*",
+    "tests/**/*"
   ],
   "exclude": [
     "node_modules",
-    "tests",
     "build"
   ]
 }

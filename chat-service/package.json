@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "NODE_ENV=development nodemon src/server.ts",
     "build": "rm -rf build/ && tsc -p .",
-    "start": "node build/server.js"
+    "start": "node build/server.js",
+    "test": "npm run test:unit -- --run && playwright test"
   },
   "keywords": [],
   "author": "",
@@ -36,6 +37,10 @@
     "uuid": "^13.0.0"
   },
   "devDependencies": {
-    "@types/cors": "^2.8.17"
+    "@types/cors": "^2.8.17",
+    "@types/jest": "^30.0.0",
+    "@types/node": "^24.10.1",
+    "jest": "^30.2.0",
+    "ts-jest": "^29.4.5"
   }
 }

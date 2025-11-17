@@ -6,6 +6,7 @@
   "scripts": {
     "dev-server": "NODE_ENV=development nodemon src/server.ts",
     "dev": "node scripts/purgeQueue.js && npm run dev-server",
+    "test:unit": "jest tests/unit",
     "build": "rm -rf build/ && tsc -p .",
     "start": "node build/server.js"
   },
@@ -37,6 +38,9 @@
     "typescript": "^5.9.3"
   },
   "devDependencies": {
-    "@types/cors": "^2.8.17"
+    "@types/cors": "^2.8.17",
+    "@types/jest": "^30.0.0",
+    "jest": "^30.2.0",
+    "ts-jest": "^29.4.5"
   }
 }
