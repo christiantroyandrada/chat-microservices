@@ -35,14 +35,16 @@ This collaborative approach combines the **strategic thinking and domain experti
 
 ## ✨ Key Features
 
-- 🔐 **End-to-End Encryption**: Signal Protocol implementation for secure messaging
-- 🔒 **JWT Authentication**: Secure httpOnly cookie-based authentication
+- 🔐 **End-to-End Encryption**: Signal Protocol (X3DH + Double Ratchet) with client-side key encryption
+- 🔒 **Zero-Knowledge Architecture**: Stores encrypted key bundles only - server never sees plaintext keys
+- 🛡️ **Security Hardening**: AES-256-GCM encryption, PBKDF2 (100k iterations), rate limiting, audit logging
+- � **JWT Authentication**: Secure httpOnly cookie-based authentication
 - ⚡ **Real-time Communication**: WebSocket support via Socket.IO
 - 💾 **PostgreSQL Database**: Type-safe database queries with TypeORM
 - 🐰 **RabbitMQ Messaging**: Inter-service communication via message queues
 - 🐳 **Docker Support**: Full containerization with docker-compose
-- 🛡️ **Security First**: Helmet.js, rate limiting, input validation, CSRF protection
-- 📊 **Admin Tools**: pgAdmin web UI for database management
+- � **Admin Tools**: pgAdmin web UI for database management
+- � **Audit Logging**: Comprehensive logging of all key operations for security monitoring
 
 ## Repository Layout
 
