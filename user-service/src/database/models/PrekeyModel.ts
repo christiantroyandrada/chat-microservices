@@ -16,6 +16,10 @@ export class Prekey {
   @Column({ type: 'json' })
   bundle: PrekeyBundle
 
+  // Track last backup time for rate limiting (CVE-008)
+  @Column({ type: 'timestamp', nullable: true })
+  lastBackupTimestamp?: Date
+
   @CreateDateColumn()
   createdAt: Date
 

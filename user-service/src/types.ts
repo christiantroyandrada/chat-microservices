@@ -65,6 +65,17 @@ export interface SignalKeySet {
 }
 // Complete key set that can be stored on backend and restored to IndexedDB
 
+// Encrypted Signal Protocol key bundle for client-side encryption
+// Keys are encrypted on the CLIENT before transmission - server never sees plaintext
+export interface EncryptedKeyBundle {
+  encrypted: string   // base64 encrypted data
+  iv: string         // base64 initialization vector
+  salt: string       // base64 salt for key derivation
+  version: number    // encryption version for future-proofing
+  deviceId: string   // device identifier for key isolation
+}
+// Used for secure key backup - server stores encrypted blobs only
+
 // Cookie options type for clearCookie/cookie operations
 export type CookieOptions = ExpressCookieOptions
 // Re-exported/used by AuthController when setting/clearing cookies for login/logout

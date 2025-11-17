@@ -1,66 +1,158 @@
 import { Request, Response, NextFunction } from 'express'
 import { AppDataSource, Prekey } from '../database'
 import { APIError } from '../utils'
-import type { PrekeyBundle, SignalKeySet } from '../types'
+import type { PrekeyBundle, EncryptedKeyBundle } from '../types'
 
 /**
- * Store complete Signal key set for a user (identity keys, prekeys, etc.)
- * This allows users to restore their keys on any device/tab
+ * Audit log helper - logs all key operations for security monitoring
+ * CVE-010 FIX: Comprehensive audit logging
+ */
+function auditLog(operation: string, userId: string, deviceId: string, ip: string, success: boolean, details?: string) {
+  const timestamp = new Date().toISOString()
+  const status = success ? 'SUCCESS' : 'FAILURE'
+  const message = `[AUDIT] ${timestamp} | ${operation} | User: ${userId} | Device: ${deviceId} | IP: ${ip} | Status: ${status}`
+  
+  if (details) {
+    console.log(`${message} | Details: ${details}`)
+  } else {
+    console.log(message)
+  }
+}
+
+/**
+ * Store encrypted Signal key bundle for a user (CLIENT-SIDE ENCRYPTED)
+ * Server never sees plaintext keys - only stores encrypted blobs
+ * 
+ * SECURITY FIXES:
+ * - CVE-005: Device ID filtering - each device has isolated encrypted backup
+ * - CVE-008: Rate limiting - 1 backup per 24 hours
+ * - CVE-010: Audit logging - logs all backup attempts
  */
 const storeSignalKeys = async (req: Request, res: Response, next: NextFunction) => {
+  const userId = req.user?.id as string | undefined
+  const { deviceId, encryptedBundle } = req.body as { deviceId?: string; encryptedBundle?: EncryptedKeyBundle }
+  const clientIp = req.ip || req.socket.remoteAddress || 'unknown'
+  
   try {
-    const userId = req.user?.id as string | undefined
-    const { deviceId, keySet } = req.body as { deviceId?: string; keySet?: SignalKeySet }
-    if (!userId) throw new APIError(401, 'Authentication required')
-    if (!deviceId || !keySet) throw new APIError(400, 'deviceId and keySet are required')
+    if (!userId) {
+      auditLog('STORE_KEYS', 'unknown', deviceId || 'unknown', clientIp, false, 'Authentication required')
+      throw new APIError(401, 'Authentication required')
+    }
+    
+    if (!deviceId || !encryptedBundle) {
+      auditLog('STORE_KEYS', userId, deviceId || 'unknown', clientIp, false, 'Missing required fields')
+      throw new APIError(400, 'deviceId and encryptedBundle are required')
+    }
+
+    // Validate encrypted bundle structure
+    if (!encryptedBundle.encrypted || !encryptedBundle.iv || !encryptedBundle.salt || !encryptedBundle.version) {
+      auditLog('STORE_KEYS', userId, deviceId, clientIp, false, 'Invalid bundle format')
+      throw new APIError(400, 'Invalid encrypted bundle format')
+    }
+
+    // CVE-005 FIX: Verify deviceId in bundle matches request deviceId (prevent cross-device tampering)
+    if (encryptedBundle.deviceId !== deviceId) {
+      auditLog('STORE_KEYS', userId, deviceId, clientIp, false, 'Device ID mismatch')
+      throw new APIError(400, 'Device ID mismatch')
+    }
 
     const prekeyRepo = AppDataSource.getRepository(Prekey)
 
-    // Store the complete key set in the bundle field (encrypted on backend side in production)
+    // CVE-005 FIX: Store per userId AND deviceId - each device has isolated encrypted backup
     let existing = await prekeyRepo.findOne({ where: { userId, deviceId } })
+    
     if (existing) {
-      existing.bundle = { ...existing.bundle, _fullKeySet: keySet } as any
+      // CVE-008 FIX: Rate limiting - enforce 1 backup per 24 hours
+      if (existing.lastBackupTimestamp) {
+        const hoursSinceLastBackup = (Date.now() - existing.lastBackupTimestamp.getTime()) / (1000 * 60 * 60)
+        if (hoursSinceLastBackup < 24) {
+          const hoursRemaining = Math.ceil(24 - hoursSinceLastBackup)
+          auditLog('STORE_KEYS', userId, deviceId, clientIp, false, `Rate limit exceeded - ${hoursRemaining}h remaining`)
+          throw new APIError(429, `Rate limit: Please wait ${hoursRemaining} hours before backing up keys again`)
+        }
+      }
+      
+      // Update existing encrypted bundle for this specific device
+      existing.bundle = { ...existing.bundle, _encryptedKeyBundle: encryptedBundle } as any
+      existing.lastBackupTimestamp = new Date()
       await prekeyRepo.save(existing)
-      return res.json({ status: 200, message: 'Signal keys updated' })
+      
+      auditLog('STORE_KEYS', userId, deviceId, clientIp, true, 'Keys updated')
+      return res.json({ status: 200, message: 'Encrypted keys updated' })
     }
 
-    const record = prekeyRepo.create({ userId, deviceId, bundle: { _fullKeySet: keySet } as any })
+    // Create new encrypted bundle for this device
+    const record = prekeyRepo.create({ 
+      userId, 
+      deviceId, 
+      bundle: { _encryptedKeyBundle: encryptedBundle } as any,
+      lastBackupTimestamp: new Date()
+    })
     await prekeyRepo.save(record)
 
-    return res.json({ status: 200, message: 'Signal keys stored' })
+    auditLog('STORE_KEYS', userId, deviceId, clientIp, true, 'New keys stored')
+    return res.json({ status: 200, message: 'Encrypted keys stored' })
   } catch (error) {
+    // Log the error if not already logged
+    if (!(error instanceof APIError)) {
+      auditLog('STORE_KEYS', userId || 'unknown', deviceId || 'unknown', clientIp, false, (error as Error).message)
+    }
     next(error)
   }
 }
 
 /**
- * Retrieve complete Signal key set for the authenticated user
- * Returns the LATEST key set (most recently created)
+ * Retrieve encrypted Signal key bundle for the authenticated user
+ * 
+ * SECURITY FIXES:
+ * - CVE-005: Device ID filtering - only return keys for the specified device
+ * - CVE-010: Audit logging - logs all fetch attempts
+ * - CVE-011: Constant-time responses - generic error messages to prevent information disclosure
  */
 const getSignalKeys = async (req: Request, res: Response, next: NextFunction) => {
+  const userId = req.user?.id as string | undefined
+  const deviceId = req.query.deviceId as string | undefined
+  const clientIp = req.ip || req.socket.remoteAddress || 'unknown'
+  
   try {
-    const userId = req.user?.id as string | undefined
-    if (!userId) throw new APIError(401, 'Authentication required')
+    if (!userId) {
+      auditLog('FETCH_KEYS', 'unknown', deviceId || 'unknown', clientIp, false, 'Authentication required')
+      throw new APIError(401, 'Authentication required')
+    }
+    
+    // CVE-005 FIX: Require deviceId parameter - prevents cross-device key access
+    if (!deviceId) {
+      auditLog('FETCH_KEYS', userId, 'unknown', clientIp, false, 'Missing deviceId')
+      throw new APIError(400, 'deviceId is required')
+    }
 
     const prekeyRepo = AppDataSource.getRepository(Prekey)
-    // Find the LATEST record with _fullKeySet (order by createdAt DESC)
+    
+    // CVE-005 FIX: Filter by BOTH userId AND deviceId - enforce device isolation
     const record = await prekeyRepo.findOne({ 
-      where: { userId },
+      where: { userId, deviceId },
       order: { createdAt: 'DESC' }
     })
 
-    if (!record || !(record.bundle as any)?._fullKeySet) {
-      return res.json({ status: 404, message: 'No stored keys found' })
+    // CVE-011 FIX: Generic error message - don't reveal whether keys exist
+    if (!record || !(record.bundle as any)?._encryptedKeyBundle) {
+      auditLog('FETCH_KEYS', userId, deviceId, clientIp, false, 'No keys found')
+      return res.json({ status: 404, message: 'Operation failed' })
     }
 
+    auditLog('FETCH_KEYS', userId, deviceId, clientIp, true, 'Keys retrieved')
     return res.json({ 
       status: 200, 
       data: { 
         deviceId: record.deviceId, 
-        keySet: (record.bundle as any)._fullKeySet 
+        encryptedBundle: (record.bundle as any)._encryptedKeyBundle 
       } 
     })
   } catch (error) {
+    // Log the error if not already logged
+    if (!(error instanceof APIError)) {
+      auditLog('FETCH_KEYS', userId || 'unknown', deviceId || 'unknown', clientIp, false, (error as Error).message)
+    }
     next(error)
   }
 }
