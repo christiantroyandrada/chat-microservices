@@ -1,5 +1,6 @@
 import axios, { AxiosInstance } from 'axios'
 import config from '../config/config'
+import { logInfo, logWarn, logError } from '../utils/logger'
 import type { BrevoEmailPayload, BrevoAccountInfo, AxiosErrorResponse } from '../types'
 
 /**
@@ -13,7 +14,7 @@ export class SecureEmailService {
 
   constructor() {
     if (!config.SENDINBLUE_APIKEY) {
-      console.warn('[SecureEmailService] No SENDINBLUE_APIKEY found. Email via SendinBlue will be disabled.')
+      logWarn('[SecureEmailService] No SENDINBLUE_APIKEY found. Email via SendinBlue will be disabled.')
     }
 
     this.client = axios.create({
@@ -58,7 +59,7 @@ export class SecureEmailService {
 
       const response = await this.client.post('/smtp/email', payload)
 
-      console.log('[SecureEmailService] Email sent successfully:', response.data.messageId)
+  logInfo('[SecureEmailService] Email sent successfully:', response.data.messageId)
       return { messageId: response.data.messageId }
     } catch (err: unknown) {
       // Use axios helper type guard when available
@@ -66,19 +67,19 @@ export class SecureEmailService {
         if (err.response) {
           // API returned an error response
           const errorResponse = err.response as AxiosErrorResponse
-          console.error('[SecureEmailService] API error:', {
+          logError('[SecureEmailService] API error:', {
             status: errorResponse.status,
             data: errorResponse.data
           })
           throw new Error(`SendinBlue API error: ${errorResponse.status} - ${JSON.stringify(errorResponse.data)}`)
         } else if (err.request) {
           // Request made but no response received
-          console.error('[SecureEmailService] Network error:', err.message)
+          logError('[SecureEmailService] Network error:', err.message)
           throw new Error(`SendinBlue network error: ${err.message}`)
         }
       }
       // Fallback for non-axios errors
-      console.error('[SecureEmailService] Unexpected error:', err)
+  logError('[SecureEmailService] Unexpected error:', err)
       throw err
     }
   }
@@ -92,9 +93,9 @@ export class SecureEmailService {
       return response.data as BrevoAccountInfo
     } catch (err: unknown) {
       if (axios.isAxiosError(err)) {
-        console.error('[SecureEmailService] Failed to get account info:', err.message)
+        logError('[SecureEmailService] Failed to get account info:', err.message)
       } else {
-        console.error('[SecureEmailService] Failed to get account info:', err)
+        logError('[SecureEmailService] Failed to get account info:', err)
       }
       throw err
     }
@@ -105,7 +106,7 @@ export class SecureEmailService {
    */
   async sendEmail(to: string, subject: string, content: string) {
     await this.sendTransactionalEmail(to, subject, content).catch((err) => {
-      console.error('[SecureEmailService] sendEmail failed:', err)
+      logError('[SecureEmailService] sendEmail failed:', err)
       throw err
     })
   }

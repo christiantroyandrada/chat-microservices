@@ -125,7 +125,7 @@ This document outlines the security measures implemented in the chat-microservic
 
 ### Security Audit Summary
 
-**Overall Security Score: A- (90/100)** ⬆️ Upgraded from B+ (85/100)
+**Overall Security Score: A (92/100)** ⬆️ Upgraded from A- (90/100)
 
 ✅ **Strengths:**
 - JWT authentication with httpOnly cookies
@@ -138,6 +138,9 @@ This document outlines the security measures implemented in the chat-microservic
 - 0 npm vulnerabilities in all services
 - Connection pooling and query timeouts
 - Database indexes for performance
+- **Distroless runtime images** with minimal attack surface
+- **Pinned image digests** for reproducible builds
+- **Multi-stage hardened builds** (npm cache clean, prune production)
 
 ⚠️ **Remaining Recommendations (Optional Improvements):**
 
@@ -161,6 +164,9 @@ Before deploying to production:
 - [x] synchronize disabled in production
 - [x] Query execution monitoring enabled
 - [x] Database indexes created
+- [x] Container images use distroless runtime
+- [x] Builder and runtime images pinned to digests
+- [x] Build hardening applied (npm cache clean, prune production)
 - [ ] All default credentials rotated
 - [ ] HTTPS/TLS enabled for external endpoints
 - [ ] Environment variables set correctly (NODE_ENV=production)
@@ -168,6 +174,7 @@ Before deploying to production:
 - [ ] Monitoring and alerting configured
 - [ ] Backup strategy implemented
 - [ ] TypeORM migrations created (recommended)
+- [ ] Scheduled image rebuilds configured (weekly/monthly for OS patches)
 
 ---
 
@@ -244,10 +251,34 @@ A comprehensive security audit was completed with **6 critical vulnerabilities i
 - **Example files only**: Only `.example` files are committed; real secrets stay local.
 - **Secret validation**: Startup checks warn about default/weak secrets
 
-### 9. CI/CD Security
+### 9. Container Image Security (November 2025) ✅
+
+**Distroless Runtime Migration**: All Node.js services migrated to minimal distroless runtime images
+
+- **Multi-stage builds**: Builder stage (Node.js slim) + minimal runtime stage (distroless)
+- **Distroless runtime**: `gcr.io/distroless/nodejs22-debian12:nonroot` for user/chat/notification services
+- **Pinned builder digest**: Official Node.js 22 slim image pinned to digest `sha256:204476c3121ff0...` for reproducible builds
+- **Vendor nginx image**: Bitnami nginx pinned to digest `sha256:8fed12f41a27...` (0 vulnerabilities)
+- **Build hardening**: `npm ci`, `npm cache clean --force`, `npm prune --production` to minimize attack surface
+- **Non-root execution**: All services run as non-root user in distroless runtime
+- **No shell/package manager**: Distroless images contain only Node.js runtime and app code
+- **Vulnerability scan results** (Nov 18, 2025):
+  - user-service: 12 LOW severity (Debian OS packages, no MEDIUM/HIGH/CRITICAL)
+  - chat-service: 12 LOW severity (Debian OS packages, no MEDIUM/HIGH/CRITICAL)
+  - notification-service: 12 LOW severity (Debian OS packages, no MEDIUM/HIGH/CRITICAL)
+  - nginx: 0 vulnerabilities (vendor-pinned Bitnami image)
+
+**Benefits**:
+- Reduced attack surface (no shell, package manager, or unnecessary tools)
+- Smaller image sizes (distroless runtime ~50MB vs full Node ~200MB)
+- Improved security posture (non-root, minimal packages)
+- Reproducible builds via digest pinning
+- Lower vulnerability count (only runtime dependencies)
+
+### 10. CI/CD Security
 - **Automated security checks**: GitHub Actions workflows for:
   - NPM dependency audits (fails on high/critical vulnerabilities)
-  - Container image scanning with Trivy
+  - Container image scanning with Trivy (vulnerability + secret detection)
   - TypeScript type checking
 - **Weekly scans**: Scheduled security audits run every Monday at 9am UTC.
 

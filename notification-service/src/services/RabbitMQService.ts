@@ -6,6 +6,7 @@ import { UserStatusStore } from '../utils'
 import { Notification } from '../database'
 import { NotificationType } from '../database/models/NotificationModel'
 import { AppDataSource } from '../database/connection'
+import { logError } from '../utils/logger'
 
 class RabbitMQService {
   private channel!: Channel
@@ -97,12 +98,12 @@ class RabbitMQService {
         // nothing to do for this message, acknowledge to remove from queue
         this.channel.ack(msg)
       } catch (err) {
-        console.error('[notification-service] consumeNotification error:', err)
+        logError('[notification-service] consumeNotification error:', err)
         // avoid infinite requeues on failure — nack and drop the message
         try {
           this.channel.nack(msg, false, false)
         } catch (e) {
-          console.error('[notification-service] failed to nack message:', e)
+          logError('[notification-service] failed to nack message:', e)
         }
       }
     })

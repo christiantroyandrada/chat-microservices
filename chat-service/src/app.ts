@@ -6,6 +6,7 @@ import rateLimit from 'express-rate-limit'
 import cookieParser from 'cookie-parser'
 import chatServiceRouter from './routes/messageRoutes'
 import { errorMiddleware, errorHandler } from './middleware'
+import { logError } from './utils/logger'
 
 const app: Express = express()
 
@@ -23,7 +24,7 @@ app.get('/health', async (req, res) => {
 		// Simple health check - database connection verified on startup
 		return res.status(200).json({ status: 'ok', service: 'chat-service' })
 	} catch (err) {
-		console.error('[chat-service] Health check error:', err)
+    logError('[chat-service] Health check error:', err)
 		return res.status(503).json({ status: 'error', error: String(err) })
 	}
 })

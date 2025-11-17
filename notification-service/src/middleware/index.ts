@@ -1,5 +1,6 @@
 import { ErrorRequestHandler } from 'express'
 import { APIError } from '../utils'
+import { logError } from '../utils/logger'
 
 export const errorMiddleware: ErrorRequestHandler = (
   err,
@@ -42,7 +43,7 @@ export const errorHandler: ErrorRequestHandler = (
   }
 
   if (environment === 'development') {
-    console.error(err)
+    logError(err)
   }
 
   res.status(statusCode).json(response)

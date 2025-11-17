@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express'
 import { AppDataSource, Prekey } from '../database'
 import { APIError } from '../utils'
+import { logInfo } from '../utils/logger'
 import type { PrekeyBundle, EncryptedKeyBundle } from '../types'
 
 /**
@@ -13,9 +14,9 @@ function auditLog(operation: string, userId: string, deviceId: string, ip: strin
   const message = `[AUDIT] ${timestamp} | ${operation} | User: ${userId} | Device: ${deviceId} | IP: ${ip} | Status: ${status}`
   
   if (details) {
-    console.log(`${message} | Details: ${details}`)
+    logInfo(`${message} | Details: ${details}`)
   } else {
-    console.log(message)
+    logInfo(message)
   }
 }
 

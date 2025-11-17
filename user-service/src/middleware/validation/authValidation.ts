@@ -1,14 +1,15 @@
 import { body, ValidationChain } from 'express-validator'
 
 export const registrationValidation: ValidationChain[] = [
-  body('name')
+  // Validate username (forum-style handle). No spaces allowed; allow letters, numbers, underscores and hyphens.
+  body('username')
     .trim()
     .notEmpty()
-    .withMessage('Name is required')
-    .isLength({ min: 2, max: 50 })
-    .withMessage('Name must be between 2 and 50 characters')
-    .matches(/^[a-zA-Z\s'-]+$/)
-    .withMessage('Name can only contain letters, spaces, hyphens, and apostrophes'),
+    .withMessage('Username is required')
+    .isLength({ min: 3, max: 30 })
+    .withMessage('Username must be between 3 and 30 characters')
+    .matches(/^[A-Za-z0-9_-]+$/)
+    .withMessage('Username must contain only letters, numbers, underscores (_) or hyphens (-); no spaces'),
 
   body('email')
     .trim()

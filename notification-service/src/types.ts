@@ -1,14 +1,14 @@
 export interface JwtPayload {
   id: string
   email: string
-  name: string
+  username: string
 }
 // JWT payload used by notification-service auth middleware (if applicable)
 
 export interface AuthenticatedUser {
   _id: string
   email: string
-  name: string
+  username: string
 }
 
 export interface AuthenticatedRequest extends Express.Request {

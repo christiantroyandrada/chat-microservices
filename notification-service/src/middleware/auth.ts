@@ -44,7 +44,7 @@ export const authMiddleware = async (
     req.user = {
       _id: decoded.id,
       email: decoded.email,
-      name: decoded.name
+      username: decoded.username
     }
     next()
   } catch (error: unknown) {

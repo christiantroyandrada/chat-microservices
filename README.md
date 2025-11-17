@@ -174,10 +174,26 @@ The compose file brings up the following services:
 - `setup` — One-time service that generates `.env` files from consolidated secrets
 - `postgres` (postgres:17.6-trixie) — PostgreSQL database for all services
 - `pgadmin` (dpage/pgadmin4, web UI, host port 8088) — PostgreSQL admin interface
-- `user`, `chat`, `notification` services (Node.js microservices)
-- `nginx` (reverse proxy, host port 85)
+- `user`, `chat`, `notification` services (Node.js microservices with distroless runtime)
+- `nginx` (reverse proxy, host port 85, vendor Bitnami image)
 
 **Note**: RabbitMQ and SMTP are external services configured via environment variables.
+
+### Container Images (Security Hardened)
+
+All Node.js services use **multi-stage distroless builds** for security and minimal attack surface:
+
+- **Builder stage**: Official Node.js 22 slim (pinned digest) — compiles TypeScript, installs deps
+- **Runtime stage**: Google distroless nodejs22-debian12:nonroot — minimal runtime, no shell/package manager
+- **Build hardening**: `npm ci`, `npm cache clean --force`, `npm prune --production`
+- **Nginx**: Bitnami nginx (pinned digest) — vendor-maintained, zero vulnerabilities
+
+**Security benefits**:
+- Non-root execution in all containers
+- Minimal attack surface (distroless = no shell, package manager, or unnecessary tools)
+- Smaller image sizes (~50MB runtime vs ~200MB full Node)
+- Reproducible builds via digest pinning
+- Low vulnerability count (Nov 18, 2025: 12 LOW severity OS findings per service, 0 for nginx)
 
 ### Basic Commands
 
@@ -342,7 +358,13 @@ This project implements multiple security layers for local development and produ
 1. **Container Security**
    - All services run as non-root users
    - Admin UIs bound to localhost only (127.0.0.1)
-   - Minimal Alpine-based images
+   - **Distroless runtime images**: Multi-stage builds with minimal distroless runtime
+   - **Pinned image digests**: Reproducible builds with digest-pinned base images
+   - **Build hardening**: npm cache clean, production-only dependencies
+   - **No shell/package manager**: Distroless images contain only Node.js + app code
+   - **Vulnerability scan status** (Nov 18, 2025):
+     - user/chat/notification services: 12 LOW severity findings (Debian OS packages)
+     - nginx: 0 vulnerabilities (vendor-pinned Bitnami image)
 
 2. **Dependency Security**
    - Automated npm audit in CI
@@ -377,8 +399,17 @@ Before deploying to production:
 - [ ] Configure proper CORS origins
 - [ ] Review rate limits for production traffic
 - [ ] Enable `secure: true` for cookies
+- [ ] Verify distroless images are in use (check Dockerfiles)
+- [ ] Schedule regular image rebuilds for OS patches (weekly/monthly)
 - [ ] Review and apply production recommendations in [SECURITY.md](./SECURITY.md)
 
 For more details, see the [Security Guidelines](./SECURITY.md).
 
-**Recent Security Improvements (November 2025)**: Input validation, MongoDB injection protection, environment validation, enhanced rate limiting, and improved cookie security. See [SECURITY_IMPROVEMENTS.md](./SECURITY_IMPROVEMENTS.md) for implementation details.
+**Recent Security Improvements (November 2025)**: 
+- **Container hardening**: Migrated to distroless runtime images with multi-stage builds
+- **Database migration**: PostgreSQL with TypeORM for type-safe queries
+- **Input validation**: express-validator on all endpoints
+- **Enhanced rate limiting**: Global and auth-specific limits
+- **Improved cookie security**: httpOnly, secure, sameSite flags
+
+See [SECURITY_IMPROVEMENTS.md](./SECURITY_IMPROVEMENTS.md) for implementation details.

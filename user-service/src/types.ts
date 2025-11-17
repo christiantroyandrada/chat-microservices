@@ -2,7 +2,7 @@ import type * as amqp from 'amqplib'
 import type { CookieOptions as ExpressCookieOptions } from 'express'
 
 export type RegistrationBody = {
-  name: string
+  username: string
   email: string
   password: string
 }
@@ -17,7 +17,7 @@ export type AmqpConnectionLike = {
 export interface JwtPayload {
   id: string
   email: string
-  name: string
+  username: string
 }
 // JWT payload shape used when issuing/verifying tokens in AuthController
 

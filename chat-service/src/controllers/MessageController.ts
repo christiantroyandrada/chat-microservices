@@ -3,24 +3,26 @@ import type { ConversationRow } from '../types'
 import { AuthenticatedRequest } from '../middleware'
 import { Message, AppDataSource } from '../database'
 import { APIError, handleMessageReceived } from '../utils'
+import { logWarn, logError } from '../utils/logger'
 import { MessageStatus } from '../database/models/MessageModel'
 import { Not } from 'typeorm'
 
 // Helper to fetch user details from user service
-const fetchUserDetails = async (userId: string): Promise<{ name: string } | null> => {
+const fetchUserDetails = async (userId: string): Promise<{ username?: string } | null> => {
   try {
     const userServiceUrl = process.env.USER_SERVICE_URL || 'http://user:8081'
     const response = await fetch(`${userServiceUrl}/users/${userId}`)
     
     if (!response.ok) {
-      console.warn(`Failed to fetch user ${userId}: ${response.status}`)
+      logWarn(`Failed to fetch user ${userId}: ${response.status}`)
       return null
     }
     
     const data = await response.json()
+    // user-service now returns { data: { id, username, email } }
     return data?.data || data || null
   } catch (error) {
-    console.error(`Error fetching user ${userId}:`, error)
+    logError(`Error fetching user ${userId}:`, error)
     return null
   }
 }
@@ -30,8 +32,8 @@ const sendMessage = async (
   res: Response,
 ) => {
   try {
-    const { receiverId, message } = req.body
-    const { _id, email, name } = req.user
+  const { receiverId, message } = req.body
+  const { _id, email, username } = req.user
     
     validateReceiver(_id, receiverId)
 
@@ -78,7 +80,7 @@ const sendMessage = async (
     // and include the envelope so the notification service can forward ciphertext
     // to the client if desired (still no server-side decryption).
     await handleMessageReceived(
-      name,
+      username,
       email,
       receiverId,
       '[Encrypted message]',
@@ -201,7 +203,7 @@ const getConversations = async (
         const userDetails = await fetchUserDetails(conv.userId)
         return {
           ...conv,
-          username: userDetails?.name || 'Unknown User'
+          username: userDetails?.username || 'Unknown User'
         }
       })
     )

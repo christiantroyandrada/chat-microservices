@@ -1,5 +1,6 @@
 import admin from 'firebase-admin'
 import type { FCMMessagePayload } from '../types'
+import { logInfo, logError } from '../utils/logger'
 
 admin.initializeApp({
   credential: admin.credential.applicationDefault(),
@@ -26,9 +27,9 @@ export const FCMService = {
 
     try {
       await admin.messaging().send(payload)
-      console.log('Push notification sent successfully')
+      logInfo('Push notification sent successfully')
     } catch (err) {
-      console.error('Error sending notification', err)
+      logError('Error sending notification', err)
     }
   },
 }

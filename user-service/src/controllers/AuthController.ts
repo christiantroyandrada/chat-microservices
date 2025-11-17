@@ -33,16 +33,27 @@ const registration = async (
   _next: NextFunction
 ) => {
   try {
-    const { name, email, password } = req.body
+    const { username, email, password } = req.body
     const userRepo = AppDataSource.getRepository(User)
-    
-    const userExists = await userRepo.findOne({ where: { email } })
-    if (userExists) {
-      throw new APIError(400, 'User with this email already exists')
+
+    // Basic username validation: allow letters, numbers, underscores, hyphens; 3-30 chars
+    const uname = String(username || '').trim().toLowerCase()
+    const usernameRegex = /^[a-z0-9_-]{3,30}$/
+    if (!usernameRegex.test(uname)) {
+      throw new APIError(400, 'Invalid username. Use 3-30 characters: letters, numbers, _ or -')
+    }
+
+    // Check uniqueness for email and username
+    const existing = await userRepo.findOne({ where: [ { email }, { username: uname } ] })
+    if (existing) {
+      if (existing.email === email) {
+        throw new APIError(400, 'User with this email already exists')
+      }
+      throw new APIError(400, 'Username already taken')
     }
 
     const user = await userRepo.save({
-      name,
+      username: uname,
       email,
       password: await encryptPassword(password),
     })
@@ -52,7 +63,7 @@ const registration = async (
 
     const userData = {
       id: user.id,
-      name: user.name,
+      username: user.username,
       email: user.email,
     }
 
@@ -72,9 +83,9 @@ const createSendToken = async (
   res: Response,
 ) => {
   // Use TypeORM entity properties
-  const { name, email, id } = user
+  const { username, email, id } = user
 
-  const token = jwt.sign({ name, email, id }, JWT_SECRET, {
+  const token = jwt.sign({ username, email, id }, JWT_SECRET, {
     expiresIn: '1d',
   })
 
@@ -95,7 +106,7 @@ const login = async (
     
     const user = await userRepo.findOne({ 
       where: { email },
-      select: ['id', 'name', 'email', 'password', 'createdAt', 'updatedAt']
+      select: ['id', 'username', 'email', 'password', 'createdAt', 'updatedAt']
     })
     
     // Check if user exists first before comparing passwords
@@ -137,7 +148,7 @@ const getCurrentUser = async (
     const userRepo = AppDataSource.getRepository(User)
     const user = await userRepo.findOne({ 
       where: { id: req.user.id },
-      select: ['id', 'name', 'email', 'createdAt', 'updatedAt']
+      select: ['id', 'username', 'email', 'createdAt', 'updatedAt']
     })
     
     if (!user) {
@@ -149,7 +160,7 @@ const getCurrentUser = async (
       message: 'User retrieved successfully',
       data: {
         id: user.id,
-        name: user.name,
+        username: user.username,
         email: user.email,
       }
     })
@@ -173,18 +184,18 @@ const search = async (
     const currentUserId = req.user?.id
     const userRepo = AppDataSource.getRepository(User)
 
-    // Search by name or email, excluding the current logged-in user
-    // Using Like for case-insensitive search
+    // Search by username or email, excluding the current logged-in user
+    // Using ILIKE for case-insensitive search
     const searchTerm = `%${q.trim()}%`
     const users = await userRepo
       .createQueryBuilder('user')
       .where('user.id != :currentUserId', { currentUserId })
-      .andWhere('(user.name ILIKE :searchTerm OR user.email ILIKE :searchTerm)', { searchTerm })
-      .select(['user.id', 'user.name', 'user.email'])
+      .andWhere('(user.username ILIKE :searchTerm OR user.email ILIKE :searchTerm)', { searchTerm })
+      .select(['user.id', 'user.username', 'user.email'])
       .limit(20)
       .getMany()
 
-    const mapped = users.map((u: User) => ({ _id: u.id, name: u.name, email: u.email }))
+    const mapped = users.map((u: User) => ({ _id: u.id, username: u.username, email: u.email }))
 
     return res.json({ status: 200, data: mapped })
   } catch (error) {
@@ -208,7 +219,7 @@ const getUserById = async (
     const userRepo = AppDataSource.getRepository(User)
     const user = await userRepo.findOne({ 
       where: { id: userId },
-      select: ['id', 'name', 'email', 'createdAt', 'updatedAt']
+      select: ['id', 'username', 'email', 'createdAt', 'updatedAt']
     })
     
     if (!user) {
@@ -220,7 +231,7 @@ const getUserById = async (
       message: 'User retrieved successfully',
       data: {
         id: user.id,
-        name: user.name,
+        username: user.username,
         email: user.email,
       }
     })

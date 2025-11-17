@@ -10,6 +10,7 @@ import { errorMiddleware, errorHandler } from './middleware'
 import { connectDB } from './database'
 import config from './config/config'
 import { rabbitMQService } from './services/RabbitMQService'
+import { logDebug, logInfo, logWarn, logError } from './utils/logger'
 
 // Validate required environment variables on startup
 const validateEnv = () => {
@@ -17,7 +18,7 @@ const validateEnv = () => {
   const missing = required.filter(key => !process.env[key])
   
   if (missing.length > 0) {
-    console.error(`[user-service] FATAL: Missing required environment variables: ${missing.join(', ')}`)
+    logError(`[user-service] FATAL: Missing required environment variables: ${missing.join(', ')}`)
     process.exit(1)
   }
   
@@ -27,13 +28,13 @@ const validateEnv = () => {
   const jwtSecret = process.env.JWT_SECRET || ''
   
   if (isProduction && (jwtSecret.length < 32 || weakSecrets.includes(jwtSecret))) {
-    console.error('[user-service] FATAL: Running in production with weak/default JWT_SECRET. Aborting.')
-    console.error('[user-service] JWT_SECRET must be at least 32 characters and not a default value.')
+    logError('[user-service] FATAL: Running in production with weak/default JWT_SECRET. Aborting.')
+    logError('[user-service] JWT_SECRET must be at least 32 characters and not a default value.')
     process.exit(1)
   }
   
   if (!isProduction && weakSecrets.includes(jwtSecret)) {
-    console.warn('[user-service] WARNING: Using default JWT_SECRET. Change this before deploying to production!')
+    logWarn('[user-service] WARNING: Using default JWT_SECRET. Change this before deploying to production!')
   }
 }
 
@@ -90,15 +91,15 @@ app.use(errorHandler)
 connectDB()
 
 server = app.listen(config.PORT, () => {
-  console.log(`User Service is running on port ${config.PORT}`)
+  logInfo(`User Service is running on port ${config.PORT}`)
 })
 
 const initRabbitMQClient = async () => {
   try {
     await rabbitMQService.connect()
-    console.log('[user-service] RabbitMQ client initialized. now listening...')
+    logInfo('[user-service] RabbitMQ client initialized. now listening...')
   } catch (e) {
-    console.error(`[user-service] Failed to initialize RabbitMQ client: ${e}`)
+    logError(`[user-service] Failed to initialize RabbitMQ client: ${e}`)
   }
 }
 initRabbitMQClient()
@@ -106,7 +107,7 @@ initRabbitMQClient()
 const exitHandler = () => {
   if (server) {
     server.close(() => {
-      console.info('server closed')
+      logInfo('server closed')
       process.exit(1)
     })
   } else {
@@ -115,7 +116,7 @@ const exitHandler = () => {
 }
 
 const unexpectedErrorHandler = (error: unknown) => {
-  console.error('[user-service]: Uncaught Exception', error)
+  logError('[user-service]: Uncaught Exception', error)
   exitHandler()
 }
 
