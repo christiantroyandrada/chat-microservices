@@ -3,6 +3,7 @@ import type { AmqpConnectionLike } from '../types'
 import config from '../config/config'
 import { User, AppDataSource } from '../database'
 import { APIError } from '../utils'
+import { logError } from '../utils/logger'
 
 
 const getUserDetails = async (userId:string) => {
@@ -61,7 +62,7 @@ class RabbitMQService {
               { correlationId: msg.properties.correlationId }
             )
           } catch (parseError) {
-            console.error('[user-service] RabbitMQ message parse error:', parseError)
+            logError('[user-service] RabbitMQ message parse error:', parseError)
             // Send error response
             this.channel.sendToQueue(
               msg.properties.replyTo,

@@ -1,6 +1,7 @@
 import 'reflect-metadata'
 import { DataSource } from 'typeorm'
 import config from '../config/config'
+import { logInfo, logError } from '../utils/logger'
 import { User } from './models/UserModel'
 import { Prekey } from './models/PrekeyModel'
 
@@ -24,11 +25,11 @@ export const AppDataSource = new DataSource({
 
 export const connectDB = async () => {
   try {
-    console.info('[user-service] Connecting to PostgreSQL...')
+    logInfo('[user-service] Connecting to PostgreSQL...')
     await AppDataSource.initialize()
-    console.info('[user-service] PostgreSQL connected successfully')
+    logInfo('[user-service] PostgreSQL connected successfully')
   } catch (error) {
-    console.error('[user-service] Error connecting to PostgreSQL:', error)
+    logError('[user-service] Error connecting to PostgreSQL:', error)
     process.exit(1)
   }
 }

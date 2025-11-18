@@ -9,19 +9,21 @@ import config from './config/config'
 import { rabbitMQService } from './services/RabbitMQService'
 import { handleMessageReceived } from './utils'
 
+import { logDebug, logInfo, logWarn, logError } from './utils/logger'
+
 // Validate required environment variables on startup
 const validateEnv = () => {
   const required = ['JWT_SECRET', 'DATABASE_URL', 'PORT', 'MESSAGE_BROKER_URL']
   const missing = required.filter(key => !process.env[key])
   
   if (missing.length > 0) {
-    console.error(`[chat-service] FATAL: Missing required environment variables: ${missing.join(', ')}`)
+    logError(`[chat-service] FATAL: Missing required environment variables: ${missing.join(', ')}`)
     process.exit(1)
   }
   
   // Warn about default/weak secrets
   if (process.env.JWT_SECRET === '{{YOUR_SECRET_KEY}}' || process.env.JWT_SECRET === 'CHANGEME') {
-    console.warn('[chat-service] WARNING: Using default JWT_SECRET. Change this in production!')
+    logWarn('[chat-service] WARNING: Using default JWT_SECRET. Change this in production!')
   }
 }
 
@@ -35,13 +37,13 @@ const start = async () => {
   // ensure the RPC/notification client is connected before handling messages
   try {
     await rabbitMQService.connect()
-    console.log('[chat-service] RabbitMQ client connected')
+    logInfo('[chat-service] RabbitMQ client connected')
   } catch (err) {
-    console.error('[chat-service] Failed to connect RabbitMQ client:', err)
+    logError('[chat-service] Failed to connect RabbitMQ client:', err)
   }
 
   server = app.listen(config.PORT, () => {
-    console.log(`[chat-service]: Server is running at port ${config.PORT}`)
+    logInfo(`[chat-service]: Server is running at port ${config.PORT}`)
   })
 
   // after `server = app.listen(...)`
@@ -113,25 +115,122 @@ const start = async () => {
   });
 
 
+  // Track active user connections (userId -> Set of socket IDs)
+  const activeUsers = new Map<string, Set<string>>();
+  
+  // Track typing status with timeout (userId -> timeout reference)
+  const typingTimeouts = new Map<string, NodeJS.Timeout>();
+
   io.on('connection', (socket: Socket) => {
-    console.log('[chat-service] New client connected: ', socket.id)
+    logDebug('[chat-service] New client connected:', socket.id)
 
     // Use authenticated user ID from JWT (already verified by middleware)
     const userId = socket.data.user?.id;
     if (userId) {
-      socket.join(userId);
-      console.log('[chat-service] User joined room:', userId, 'socket:', socket.id);
+  socket.join(userId);
+  logDebug('[chat-service] User joined room:', userId, 'socket:', socket.id);
+
+      // Track this user as online
+      if (!activeUsers.has(userId)) {
+        activeUsers.set(userId, new Set());
+      }
+      activeUsers.get(userId)!.add(socket.id);
+
+      // If this is the user's first connection, broadcast online status to all clients
+      if (activeUsers.get(userId)!.size === 1) {
+        logInfo('[chat-service] User came online:', userId);
+        io.emit('presence', {
+          userId,
+          online: true
+        });
+      }
+
+      // Send current online status of all other users to the newly connected client
+      // This ensures they get the initial presence state
+      activeUsers.forEach((sockets, onlineUserId) => {
+        if (onlineUserId !== userId && sockets.size > 0) {
+          socket.emit('presence', {
+            userId: onlineUserId,
+            online: true
+          });
+        }
+      });
+      logDebug('[chat-service] Sent initial presence state to:', userId, 'for', activeUsers.size - 1, 'other users');
     } else {
-      console.warn('[chat-service] No userId found for socket:', socket.id);
+      logWarn('[chat-service] No userId found for socket:', socket.id);
     }
 
     socket.on('disconnect', () => {
-      console.log('[chat-service] Client disconnected: ', socket.id)
+      logDebug('[chat-service] Client disconnected:', socket.id)
+
+      // Clear typing timeout if user had one active
+      if (userId && typingTimeouts.has(userId)) {
+        clearTimeout(typingTimeouts.get(userId)!);
+        typingTimeouts.delete(userId);
+      }
+
+      // Update presence tracking
+      if (userId && activeUsers.has(userId)) {
+        const userSockets = activeUsers.get(userId)!;
+        userSockets.delete(socket.id);
+
+        // If user has no more active connections, mark as offline
+        if (userSockets.size === 0) {
+          activeUsers.delete(userId);
+          const lastSeen = new Date().toISOString();
+          logInfo('[chat-service] User went offline:', userId, 'lastSeen:', lastSeen);
+          io.emit('presence', {
+            userId,
+            online: false,
+            lastSeen
+          });
+        }
+      }
     })
 
     socket.on('receiveMessage', (message) => {
       io.emit('receiveMessage', message)
     })
+
+    // Handle typing indicator with auto-timeout
+    socket.on('typing', (data: { receiverId: string; isTyping: boolean }) => {
+      if (!userId) return;
+      
+  const { receiverId, isTyping } = data;
+  logDebug('[chat-service] Typing event:', { userId, receiverId, isTyping });
+      
+      // Clear existing timeout for this user
+      if (typingTimeouts.has(userId)) {
+        clearTimeout(typingTimeouts.get(userId)!);
+        typingTimeouts.delete(userId);
+      }
+      
+      if (isTyping) {
+        // Broadcast typing status to the receiver
+        io.to(receiverId).emit('typing', {
+          userId,
+          isTyping: true
+        });
+        
+        // Set auto-timeout: if no activity for 3 seconds, auto-stop typing
+        const timeout = setTimeout(() => {
+          logDebug('[chat-service] Typing timeout for user:', userId);
+          io.to(receiverId).emit('typing', {
+            userId,
+            isTyping: false
+          });
+          typingTimeouts.delete(userId);
+        }, 3000); // 3 seconds timeout
+        
+        typingTimeouts.set(userId, timeout);
+      } else {
+        // User stopped typing - broadcast immediately
+        io.to(receiverId).emit('typing', {
+          userId,
+          isTyping: false
+        });
+      }
+    });
 
     socket.on('sendMessage', async (data, ack?: (res: { ok: boolean; id?: string; error?: string }) => void) => {
       try {
@@ -208,7 +307,7 @@ const start = async () => {
             await handleMessageReceived(name || '', email || '', receiverId, '[Encrypted message]', true, trimmedMessage)
           } catch (err) {
             // Notification failures should not block message delivery
-            console.warn('[chat-service] notifyReceiver failed:', err)
+            logWarn('[chat-service] notifyReceiver failed:', err)
           }
         }
         
@@ -231,13 +330,24 @@ const start = async () => {
           isRead: false
         }
         
-        console.log('[chat-service] Broadcasting message to receiver:', receiverId, 'content length:', msg.message?.length)
+  logDebug('[chat-service] Broadcasting message to receiver:', receiverId, 'content length:', msg.message?.length)
+        
+        // Clear typing indicator for sender when message is sent
+        if (typingTimeouts.has(userId)) {
+          clearTimeout(typingTimeouts.get(userId)!);
+          typingTimeouts.delete(userId);
+        }
+        // Notify receiver that sender stopped typing
+        io.to(receiverId).emit('typing', {
+          userId,
+          isTyping: false
+        });
         
         // Broadcast to receiver
         io.to(receiverId).emit('receiveMessage', formattedMsg)
         ack?.({ ok: true, id: msg.id })
       } catch (err) {
-        console.error('[chat-service] socket sendMessage error:', err)
+        logError('[chat-service] socket sendMessage error:', err)
         ack?.({ ok: false, error: 'Failed to send message' })
         // Prefer a namespaced error event vs. 'error' (which Socket.IO also uses internally)
         socket.emit('server:error', { message: 'Failed to send message' })
@@ -247,14 +357,14 @@ const start = async () => {
 }
 
 start().catch(err => {
-  console.error('[chat-service] Failed to start:', err)
+  logError('[chat-service] Failed to start:', err)
   process.exit(1)
 })
 
 const exitHandler = () => {
   if (server) {
     server.close(() => {
-      console.log('[chat-service]: Server closed')
+      logInfo('[chat-service]: Server closed')
       process.exit(1)
     })
   } else {
@@ -263,7 +373,7 @@ const exitHandler = () => {
 }
 
 const unexpectedErrorHandler = (error: unknown) => {
-  console.error('[chat-service]: Uncaught Exception', error)
+  logError('[chat-service]: Uncaught Exception', error)
   exitHandler()
 }
 

@@ -2,6 +2,7 @@ import amqp, { Channel } from 'amqplib'
 import { v4 as uuid_v4 } from 'uuid'
 import config from '../config/config'
 import type { NotificationPayload, UserDetails, UserDetailsCallback } from '../types'
+import { logInfo, logError } from '../utils/logger'
 
 class RabbitMQService {
   private requestQueue = 'USER_DETAILS_REQUEST'
@@ -34,8 +35,9 @@ class RabbitMQService {
             entry.callback(user)
             this.correlationMap.delete(correlationId)
           }
-        } catch (parseError) {
-          console.error('[chat-service] RabbitMQ response parse error:', parseError)
+          } catch (parseError) {
+          // parse errors are unexpected - surface via logger
+          logError('[chat-service] RabbitMQ response parse error:', parseError)
         }
       },
       { noAck: true },
@@ -51,7 +53,8 @@ class RabbitMQService {
         try {
           entry.callback(null)
         } catch (e) {
-          console.error('[chat-service] getUserDetails callback error after timeout', e)
+          // callback threw during timeout handling — log via centralized logger
+          logError('[chat-service] getUserDetails callback error after timeout', e)
         }
         this.correlationMap.delete(correlationId)
       }
@@ -73,7 +76,7 @@ class RabbitMQService {
     isEncrypted = false,
     envelope?: string | object,
   ) {
-    try {
+  try {
       // Send notification payload to queue
       // The notification-service will handle user details lookup if needed
       const notificationPayload: NotificationPayload = {
@@ -94,9 +97,10 @@ class RabbitMQService {
         config.queue.notifications,
         Buffer.from(JSON.stringify(notificationPayload)),
       )
-      console.log('[chat-service] Notification sent to queue for user:', receiverId)
+    // use centralized logger for server-side ops
+    logInfo('[chat-service] Notification sent to queue for user:', receiverId)
     } catch (error) {
-      console.error('[chat-service] Failed to send notification to queue:', error)
+    logError('[chat-service] Failed to send notification to queue:', error)
     }
   }
 }

@@ -39,14 +39,16 @@ app.use('/api/user', user)
 app.use('/api/chat', chat)
 app.use('/api/notifications', notifications)
 
+import { logInfo, logError } from './src/utils/logger'
+
 const server = app.listen(8080, () => {
-  console.log('API Gateway running on port 8080')
+  logInfo('API Gateway running on port 8080')
 })
 
 const exitHandler = () => {
   if (server) {
     server.close(() => {
-      console.info('API Gateway server closed')
+      logInfo('API Gateway server closed')
       process.exit(1)
     })
   } else {
@@ -55,7 +57,7 @@ const exitHandler = () => {
 }
 
 const unexpectedErrorHandler = (error: unknown) => {
-  console.error('[api-gateway]: Uncaught Exception', error)
+  logError('[api-gateway]: Uncaught Exception', error)
   exitHandler()
 }
 

@@ -2,6 +2,7 @@ import { Request, Response, NextFunction, ErrorRequestHandler } from 'express'
 import jwt from 'jsonwebtoken'
 import { APIError } from '../utils'
 import config from '../config/config'
+import { logError } from '../utils/logger'
 import type { TokenPayload, IUser, AuthenticatedRequest } from '../types'
 
 const jwtSecret = config.JWT_SECRET as string
@@ -41,7 +42,7 @@ const authMiddleware = async (
     // proceed to next middleware / route handler
     return next()
   } catch (error) {
-    console.error('[chat-service] Error in auth middleware:', error)
+    logError('[chat-service] Error in auth middleware:', error)
     return next(new APIError(401, 'Invalid or expired token'))
   }
 }
@@ -82,7 +83,7 @@ const errorHandler: ErrorRequestHandler = (
   }
 
   if (environment === 'development') {
-    console.error('[chat-service] Error Handler:', err)
+    logError('[chat-service] Error Handler:', err)
   }
 
   res.status(statusCode).json(response)

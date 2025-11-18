@@ -1,5 +1,6 @@
 import { ErrorRequestHandler } from 'express'
 import { APIError } from '../utils'
+import { logError } from '../utils/logger'
 
 export const errorMiddleware: ErrorRequestHandler = (
   err,
@@ -37,11 +38,11 @@ export const errorHandler: ErrorRequestHandler = (
     method: req.method,
   }
   
-  console.error('[user-service] Error:', safeErrorLog)
+  logError('[user-service] Error:', safeErrorLog)
   
   // Only log stack traces in non-production
   if (environment !== 'production' && err.stack) {
-    console.error('[user-service] Stack:', err.stack)
+  logError('[user-service] Stack:', err.stack)
   }
 
   if (environment === 'production' && !err.isOperational) {

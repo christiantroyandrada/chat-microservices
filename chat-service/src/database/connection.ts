@@ -1,6 +1,7 @@
 import 'reflect-metadata'
 import { DataSource } from 'typeorm'
 import config from '../config/config'
+import { logInfo, logError } from '../utils/logger'
 import { Message } from './models/MessageModel'
 
 export const AppDataSource = new DataSource({
@@ -23,11 +24,11 @@ export const AppDataSource = new DataSource({
 
 export const connectDB = async () => {
   try {
-    console.info('[chat-service] Connecting to PostgreSQL...')
+    logInfo('[chat-service] Connecting to PostgreSQL...')
     await AppDataSource.initialize()
-    console.info('[chat-service] PostgreSQL connected successfully')
+    logInfo('[chat-service] PostgreSQL connected successfully')
   } catch (error) {
-    console.error('[chat-service] Error connecting to PostgreSQL:', error)
+    logError('[chat-service] Error connecting to PostgreSQL:', error)
     process.exit(1)
   }
 }

@@ -1,6 +1,7 @@
 import 'reflect-metadata'
 import { DataSource } from 'typeorm'
 import config from '../config/config'
+import { logInfo, logError } from '../utils/logger'
 import { Notification } from './models/NotificationModel'
 
 export const AppDataSource = new DataSource({
@@ -23,11 +24,11 @@ export const AppDataSource = new DataSource({
 
 export const connectDB = async () => {
   try {
-    console.info('[notification-service] Connecting to PostgreSQL...')
+    logInfo('[notification-service] Connecting to PostgreSQL...')
     await AppDataSource.initialize()
-    console.info('[notification-service] PostgreSQL connected successfully')
+    logInfo('[notification-service] PostgreSQL connected successfully')
   } catch (error) {
-    console.error('[notification-service] Error connecting to PostgreSQL:', error)
+    logError('[notification-service] Error connecting to PostgreSQL:', error)
     process.exit(1)
   }
 }

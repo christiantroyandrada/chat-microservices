@@ -6,6 +6,7 @@ import { Server } from 'http'
 import { errorMiddleware, errorHandler } from './middleware'
 import config from './config/config'
 import { rabbitMQService } from './services/RabbitMQService'
+import { logInfo, logWarn, logError } from './utils/logger'
 import { connectDB } from './database'
 import notificationRouter from './routes/notificationRoutes'
 
@@ -15,13 +16,13 @@ const validateEnv = () => {
   const missing = required.filter(key => !process.env[key])
   
   if (missing.length > 0) {
-    console.error(`[notification-service] FATAL: Missing required environment variables: ${missing.join(', ')}`)
+    logError(`[notification-service] FATAL: Missing required environment variables: ${missing.join(', ')}`)
     process.exit(1)
   }
   
   // Warn if email credentials are missing (optional but recommended)
   if (!process.env.SMTP_HOST && !process.env.SENDINBLUE_APIKEY) {
-    console.warn('[notification-service] WARNING: No email credentials configured (SMTP or SendinBlue)')
+    logWarn('[notification-service] WARNING: No email credentials configured (SMTP or SendinBlue)')
   }
 }
 
@@ -43,7 +44,7 @@ app.use(cors({
     if (allowedOrigins.indexOf(origin) !== -1) {
       callback(null, true)
     } else {
-      console.warn(`[notification-service] CORS blocked origin: ${origin}`)
+      logWarn(`[notification-service] CORS blocked origin: ${origin}`)
       callback(null, false)
     }
   },
@@ -76,7 +77,7 @@ const start = async () => {
   await connectDB()
 
   server = app.listen(config.PORT, () => {
-    console.log(`[notification-service] Server is running on port ${config.PORT}`)
+    logInfo(`[notification-service] Server is running on port ${config.PORT}`)
   })
 
   // Initialize RabbitMQ client for message queue consumption
@@ -86,21 +87,21 @@ const start = async () => {
 const initializeRabbitMQClient = async () => {
   try {
     await rabbitMQService.connect()
-    console.log('[notification-service] RabbitMQ client initialized. now listening...')
+    logInfo('[notification-service] RabbitMQ client initialized. now listening...')
   } catch (e) {
-    console.error(`[notification-service] Failed to initialize RabbitMQ client: ${e}`)
+    logError(`[notification-service] Failed to initialize RabbitMQ client: ${e}`)
   }
 }
 
 start().catch(err => {
-  console.error('[notification-service] Failed to start:', err)
+  logError('[notification-service] Failed to start:', err)
   process.exit(1)
 })
 
 const exitHandler = () => {
   if (server) {
     server.close(() => {
-      console.info('[notification-service] Server closed')
+      logInfo('[notification-service] Server closed')
       process.exit(1)
     })
   } else {
@@ -109,7 +110,7 @@ const exitHandler = () => {
 }
 
 const unexpectedErrorHandler = (error: unknown) => {
-  console.error('[notification-service]: Uncaught Exception', error)
+  logError('[notification-service]: Uncaught Exception', error)
   exitHandler()
 }
 

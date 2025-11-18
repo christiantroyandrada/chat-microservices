@@ -3,6 +3,7 @@ import type { ConversationRow } from '../types'
 import { AuthenticatedRequest } from '../middleware'
 import { Message, AppDataSource } from '../database'
 import { APIError, handleMessageReceived } from '../utils'
+import { logWarn, logError } from '../utils/logger'
 import { MessageStatus } from '../database/models/MessageModel'
 import { Not } from 'typeorm'
 
@@ -13,14 +14,14 @@ const fetchUserDetails = async (userId: string): Promise<{ name: string } | null
     const response = await fetch(`${userServiceUrl}/users/${userId}`)
     
     if (!response.ok) {
-      console.warn(`Failed to fetch user ${userId}: ${response.status}`)
+      logWarn(`Failed to fetch user ${userId}: ${response.status}`)
       return null
     }
     
     const data = await response.json()
     return data?.data || data || null
   } catch (error) {
-    console.error(`Error fetching user ${userId}:`, error)
+    logError(`Error fetching user ${userId}:`, error)
     return null
   }
 }
