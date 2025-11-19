@@ -105,7 +105,7 @@ const start = async () => {
       socket.data.user = {
         id: decoded.id,
         email: decoded.email,
-        name: decoded.name
+        username: decoded.username
       };
       
       next();
@@ -302,9 +302,9 @@ const start = async () => {
           })
 
           // Notify receiver (no plaintext leak)
-          const { email, name } = socket.data.user || { email: undefined, name: undefined }
+          const { email, username } = socket.data.user || { email: undefined, username: undefined }
           try {
-            await handleMessageReceived(name || '', email || '', receiverId, '[Encrypted message]', true, trimmedMessage)
+            await handleMessageReceived(username || '', email || '', receiverId, '[Encrypted message]', true, trimmedMessage)
           } catch (err) {
             // Notification failures should not block message delivery
             logWarn('[chat-service] notifyReceiver failed:', err)
@@ -313,13 +313,13 @@ const start = async () => {
         
         // Format message for frontend consumption (normalize field names)
         // Frontend expects: _id, senderId, senderUsername, receiverId, content (not message), timestamp
-        const { email, name } = socket.data.user || { email: undefined, name: undefined }
+        const { email, username } = socket.data.user || { email: undefined, username: undefined }
         const formattedMsg = {
           _id: msg.id,
           id: msg.id,
           senderId: msg.senderId,
-          senderUsername: name || undefined,
-          senderName: name || undefined,
+          senderUsername: username || undefined,
+          senderName: username || undefined,
           receiverId: msg.receiverId,
           content: msg.message, // Frontend uses 'content', backend DB uses 'message'
           message: msg.message, // Include both for compatibility

@@ -33,7 +33,7 @@ const authMiddleware = async (
     const decoded = jwt.verify(token, jwtSecret) as TokenPayload
     req.user = {
       _id: decoded.id,
-      name: decoded.name,
+      username: decoded.username,
       email: decoded.email,
       password: '',
       createdAt: new Date(decoded.iat * 1000),

@@ -2,7 +2,7 @@ import type { Request } from 'express'
 
 export interface TokenPayload {
   id: string
-  name: string
+  username: string
   email: string
   iat: number
   exp: number
@@ -11,7 +11,7 @@ export interface TokenPayload {
 
 export interface IUser {
   _id: string
-  name: string
+  username: string
   email: string
   password: string
   createdAt: Date
@@ -50,7 +50,7 @@ export interface NotificationPayload {
 // User details response from RabbitMQ user service
 export interface UserDetails {
   id: string
-  name: string
+  username: string
   email: string
 }
 // User details shape expected from the user-service over RPC (RabbitMQ)

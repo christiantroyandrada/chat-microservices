@@ -238,7 +238,7 @@ describe('MessageController', () => {
 			const mockConversations = [
 				{
 					userId: mockReceiver._id,
-					username: mockReceiver.name,
+					username: mockReceiver.username,
 					lastMessage: '[Encrypted message]',
 					lastMessageTime: new Date(),
 					unreadCount: 2

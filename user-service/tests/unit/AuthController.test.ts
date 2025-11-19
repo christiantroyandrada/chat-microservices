@@ -3,7 +3,7 @@ import { AppDataSource } from '../../src/database'
 
 describe('AuthController.registration', () => {
   it('should return 400 if user exists', async () => {
-    const req: any = { body: { name: 'test', email: 'a@b.com', password: 'pw' } }
+    const req: any = { body: { username: 'test', email: 'a@b.com', password: 'pw' } }
     const res: any = { json: jest.fn() }
     const next = jest.fn()
 
@@ -19,11 +19,11 @@ describe('AuthController.registration', () => {
   })
 
   it('should register a new user and return 200', async () => {
-    const req: any = { body: { name: 'new', email: 'new@b.com', password: 'pw' } }
+    const req: any = { body: { username: 'new', email: 'new@b.com', password: 'pw' } }
     const res: any = { json: jest.fn(), cookie: jest.fn() }
     const next = jest.fn()
 
-    const savedUser = { id: 'u1', name: 'new', email: 'new@b.com' }
+    const savedUser = { id: 'u1', username: 'new', email: 'new@b.com' }
     const repo = {
       findOne: jest.fn().mockResolvedValue(null),
       save: jest.fn().mockResolvedValue(savedUser)
@@ -46,7 +46,7 @@ describe('AuthController.login', () => {
     const res: any = { json: jest.fn(), cookie: jest.fn() }
     const next = jest.fn()
 
-    const user = { id: 'u1', name: 'user', email: 'a@b.com', password: 'hashed' }
+  const user = { id: 'u1', username: 'user', email: 'a@b.com', password: 'hashed' }
     const repo = { findOne: jest.fn().mockResolvedValue(user) }
 
     jest.spyOn(AppDataSource, 'getRepository').mockReturnValue(repo as any)

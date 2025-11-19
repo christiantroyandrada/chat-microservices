@@ -3,7 +3,7 @@
 export const mockUser = {
 	_id: 'user-123',
 	email: 'test@example.com',
-	name: 'Test User',
+	username: 'testuser',
 	password: 'hashedpassword',
 	createdAt: new Date('2025-11-17T09:00:00Z'),
 	updatedAt: new Date('2025-11-17T09:00:00Z')
@@ -12,7 +12,7 @@ export const mockUser = {
 export const mockReceiver = {
 	_id: 'user-456',
 	email: 'receiver@example.com',
-	name: 'Receiver User'
+	username: 'receiveruser'
 }
 
 export const mockMessage = {
@@ -47,7 +47,7 @@ export const mockMessages = [
 
 export const mockConversation = {
 	userId: mockReceiver._id,
-	username: mockReceiver.name,
+	username: mockReceiver.username,
 	lastMessage: '[Encrypted message]',
 	lastMessageTime: new Date('2025-11-17T10:00:00Z'),
 	unreadCount: 2
