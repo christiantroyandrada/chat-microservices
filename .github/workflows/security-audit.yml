@@ -78,14 +78,23 @@ jobs:
             docker build -t ${{ matrix.service }}:test ${{ matrix.service }}
           fi
 
-      - name: Run Trivy vulnerability scanner
-        uses: aquasecurity/trivy-action@master
+      - name: Setup Trivy (install CLI, no cache)
+        uses: aquasecurity/setup-trivy@v0.2.4
         with:
-          image-ref: '${{ matrix.service }}:test'
-          format: 'sarif'
-          output: 'trivy-results-${{ matrix.service }}.sarif'
-          severity: 'CRITICAL,HIGH'
-          exit-code: '1'  # Fail the build if vulnerabilities found
+          version: 'v0.67.2'
+          cache: false
+
+      - name: "Debug: Trivy version"
+        run: |
+          echo "Trivy info:"
+          trivy --version || true
+          which trivy || true
+
+      - name: Run Trivy vulnerability scanner (CLI, SARIF)
+        run: |
+          echo "Running trivy (SARIF) against ${{ matrix.service }}:test"
+          # Fail the step if Trivy finds HIGH/CRITICAL vulnerabilities (exit code 1)
+          trivy image --exit-code 1 --severity CRITICAL,HIGH --format sarif --output "trivy-results-${{ matrix.service }}.sarif" "${{ matrix.service }}:test"
 
       - name: Upload Trivy results to GitHub Security tab
         # Upload SARIF only for non-fork runs. Forked PRs do not have permission to call the
@@ -99,12 +108,10 @@ jobs:
 
       - name: Generate Trivy report (JSON)
         if: always()
-        uses: aquasecurity/trivy-action@master
-        with:
-          image-ref: '${{ matrix.service }}:test'
-          format: 'json'
-          output: 'trivy-report-${{ matrix.service }}.json'
-          severity: 'CRITICAL,HIGH,MEDIUM,LOW'
+        run: |
+          echo "Generating trivy JSON report for ${{ matrix.service }}:test"
+          # Always attempt to produce the JSON report; don't fail this step on findings
+          trivy image --format json --output "trivy-report-${{ matrix.service }}.json" --severity CRITICAL,HIGH,MEDIUM,LOW "${{ matrix.service }}:test" || true
 
       - name: Upload Trivy report
         if: always()
