@@ -5,7 +5,11 @@ WORKDIR /usr/src/app
 
 # Copy package files and install all dependencies (including devDeps needed for build)
 COPY package*.json ./
-RUN npm ci
+# Update OS packages in the build stage to reduce known vulnerabilities
+RUN apt-get update \
+	&& apt-get upgrade -y \
+	&& rm -rf /var/lib/apt/lists/* \
+	&& npm ci
 
 # Copy source and build
 COPY . .

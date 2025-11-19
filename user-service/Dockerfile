@@ -1,13 +1,17 @@
 # Build stage — vendor-hardened Node (Bitnami) as a PoC
-FROM node:22-bullseye-slim@sha256:204476c3121ff0222e53b2cdf6f90d5c2997bfbb7f8285ad278ba4555de3a087 AS builder
+FROM node:22-bullseye-slim AS builder
 
 WORKDIR /usr/src/app
 
 # Copy package files
 COPY package*.json ./
 
-# Install dependencies (including devDependencies for build) and clean cache
-RUN npm ci \
+# Install OS updates and dependencies (including devDependencies for build)
+# Keeping this in the builder stage allows picking up OS-level security fixes
+RUN apt-get update \
+	&& apt-get upgrade -y \
+	&& rm -rf /var/lib/apt/lists/* \
+	&& npm ci \
 	&& npm cache clean --force
 
 # Copy source code

@@ -1,3 +1,7 @@
+// Ensure tests have a JWT secret so importing AuthController (which reads config)
+// won't cause jwt.sign to throw when creating tokens during tests.
+process.env.JWT_SECRET = process.env.JWT_SECRET || 'test_jwt_secret_which_is_long_enough_32_chars'
+
 import AuthController from '../../src/controllers/AuthController'
 import { AppDataSource } from '../../src/database'
 
