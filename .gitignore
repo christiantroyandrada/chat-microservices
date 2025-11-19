@@ -12,3 +12,4 @@ docker-secrets/*
 # OS
 .DS_Store
 Thumbs.db
+**/coverage

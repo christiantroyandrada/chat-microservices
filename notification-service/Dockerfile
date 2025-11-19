@@ -5,7 +5,11 @@ WORKDIR /usr/src/app
 
 # Copy package files and install all dependencies (including devDeps needed for build)
 COPY package*.json ./
-RUN npm ci
+# Update OS packages in the build stage to reduce known vulnerabilities
+RUN apt-get update \
+	&& apt-get upgrade -y \
+	&& rm -rf /var/lib/apt/lists/* \
+	&& npm ci
 
 # Copy source and build
 COPY . .
@@ -14,8 +18,8 @@ RUN npm run build
 # Remove devDependencies to keep final image small
 RUN npm prune --production
 
-# Final stage: use distroless Node runtime (nonroot)
-FROM gcr.io/distroless/nodejs22-debian12:nonroot
+# Final stage: use latest pinned distroless Node runtime (nonroot)
+FROM gcr.io/distroless/nodejs22-debian12:nonroot@sha256:1014312994b734e9f3bba23bb96fab389119750a98f14bc76936dc2a7e72c3da
 
 WORKDIR /usr/src/app
 

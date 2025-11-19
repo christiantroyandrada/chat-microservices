@@ -10,8 +10,8 @@ const getNotifications = async (
 ) => {
   try {
     const { _id: userId } = req.user!
-    const limit = parseInt(req.query.limit || '20', 10)
-    const offset = parseInt(req.query.offset || '0', 10)
+    const limit = Number.parseInt(req.query.limit || '20', 10)
+    const offset = Number.parseInt(req.query.offset || '0', 10)
 
     const notifRepo = AppDataSource.getRepository(Notification)
     const notifications = await notifRepo.find({

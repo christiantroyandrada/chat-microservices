@@ -1,13 +1,17 @@
-# Build stage — official Node slim pinned to digest (hardened PoC)
-FROM node:22-bullseye-slim@sha256:204476c3121ff0222e53b2cdf6f90d5c2997bfbb7f8285ad278ba4555de3a087 AS builder
+# Build stage — use Debian 12 (bookworm) for better security updates
+FROM node:22-bookworm-slim AS builder
 
 WORKDIR /usr/src/app
 
 # Copy package files
 COPY package*.json ./
 
-# Install dependencies (including devDependencies for build) and clean cache
-RUN npm ci \
+# Install OS updates and dependencies (including devDependencies for build)
+# Keeping this in the builder stage allows picking up OS-level security fixes
+RUN apt-get update \
+	&& apt-get upgrade -y \
+	&& rm -rf /var/lib/apt/lists/* \
+	&& npm ci \
 	&& npm cache clean --force
 
 # Copy source code
@@ -18,8 +22,8 @@ RUN npm run build \
 	&& npm prune --production \
 	&& rm -rf /root/.npm /tmp/*
 
-# Production stage
-FROM gcr.io/distroless/nodejs22-debian12:nonroot
+# Production stage - use latest pinned distroless image
+FROM gcr.io/distroless/nodejs22-debian12:nonroot@sha256:1014312994b734e9f3bba23bb96fab389119750a98f14bc76936dc2a7e72c3da
 
 WORKDIR /usr/src/app
 

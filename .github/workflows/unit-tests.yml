@@ -1,10 +1,14 @@
+---
 name: CI - Unit Tests
 
 on:
-  push:
-    branches: [ main ]
-  pull_request:
-    branches: [ main ]
+  workflow_call:
+    inputs:
+      coverage:
+        description: 'Whether to generate coverage (lcov) and upload/merge artifacts (true/false)'
+        required: true
+        default: 'false'
+        type: string
 
 jobs:
   unit-tests:
@@ -15,15 +19,138 @@ jobs:
         service: ["user-service", "notification-service", "chat-service"]
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        # Pinned to specific commit SHA for supply-chain security
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
 
       - name: Use Node.js 22
-        uses: actions/setup-node@v4
+        # Pinned to specific commit SHA for supply-chain security
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: 22
 
       - name: Install dependencies for service
         run: npm ci --prefix ${{ matrix.service }}
 
-      - name: Run unit tests for service
-        run: npm run test:unit --prefix ${{ matrix.service }}
+      - name: Run tests (coverage optional)
+        run: |
+          set -euo pipefail
+          echo "Running tests for ${{ matrix.service }}"
+          # If coverage input is true, prefer running a coverage script if present; fall back to unit tests
+          if [ "${{ inputs.coverage }}" = "true" ]; then
+            if npm run coverage --prefix ${{ matrix.service }} --silent --if-present; then
+              echo "coverage generated for ${{ matrix.service }}"
+            else
+              echo "coverage script missing or failed; running test:unit for ${{ matrix.service }}"
+              npm run test:unit --prefix ${{ matrix.service }}
+            fi
+          else
+            echo "coverage disabled by caller; running unit tests only for ${{ matrix.service }}"
+            npm run test:unit --prefix ${{ matrix.service }}
+          fi
+
+      - name: Prepare LCOV for upload (if present)
+        if: ${{ inputs.coverage == 'true' }}
+        run: |
+          set -euo pipefail
+          SRC="${{ matrix.service }}/coverage/lcov.info"
+          DST_DIR="./upload/${{ matrix.service }}"
+          if [ -f "$SRC" ]; then
+            mkdir -p "$DST_DIR"
+            cp "$SRC" "$DST_DIR/lcov.info"
+            echo "Prepared $SRC -> $DST_DIR/lcov.info"
+            ls -lh "$DST_DIR/lcov.info"
+          else
+            echo "No LCOV found at $SRC"
+          fi
+
+      - name: Upload LCOV (if present)
+        if: ${{ inputs.coverage == 'true' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: lcov-${{ matrix.service }}
+          path: upload/${{ matrix.service }}/*
+          # don't fail if no file is found
+          if-no-files-found: ignore
+
+  merge-and-upload:
+    if: ${{ inputs.coverage == 'true' }}
+    needs: unit-tests
+    runs-on: ubuntu-latest
+    name: Merge LCOV reports and upload combined artifact
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download LCOV artifacts
+        uses: actions/download-artifact@v4
+        with:
+          # download each per-service artifact we uploaded above
+          name: lcov-user-service
+          path: ./artifacts
+
+      - name: Download LCOV for notification-service
+        uses: actions/download-artifact@v4
+        with:
+          name: lcov-notification-service
+          path: ./artifacts
+
+      - name: Download LCOV for chat-service
+        uses: actions/download-artifact@v4
+        with:
+          name: lcov-chat-service
+          path: ./artifacts
+
+      - name: Merge LCOV files
+        run: |
+          set -euo pipefail
+          mkdir -p coverage
+          COMBINED=coverage/combined-lcov.info
+          : > "$COMBINED"
+          
+          echo "Contents of ./artifacts before merge:"
+          find ./artifacts -type f -name "*.info" 2>/dev/null || echo "No .info files found"
+          ls -laR ./artifacts || echo "artifacts directory not found or empty"
+          
+          shopt -s globstar || true
+          appended=0
+          for f in artifacts/**/lcov.info; do
+            if [ -f "$f" ]; then
+              echo "Appending $f to $COMBINED"
+              cat "$f" >> "$COMBINED"
+              echo "" >> "$COMBINED"
+              appended=1
+            fi
+          done
+          
+          if [ "$appended" -eq 0 ]; then
+            echo "WARNING: No LCOV files found to merge. Combined file will be empty."
+          else
+            echo "Successfully merged $appended LCOV file(s)"
+          fi
+          
+          echo "Final combined LCOV file info:"
+          ls -lh coverage/combined-lcov.info || true
+          wc -l coverage/combined-lcov.info || true
+
+          # Strict mode: fail the job if the combined LCOV is empty
+          if [ ! -s "$COMBINED" ]; then
+            echo "ERROR: combined LCOV file is empty. Failing merge step (strict mode)."
+            echo "Directory listing for coverage/:"
+            ls -la coverage || true
+            exit 1
+          fi
+
+      - name: Upload combined LCOV
+        uses: actions/upload-artifact@v4
+        with:
+          name: combined-lcov
+          path: coverage/combined-lcov.info
+          if-no-files-found: warn
+
+  sonar:
+    if: ${{ inputs.coverage == 'true' }}
+    name: SonarCloud Scan (reusable)
+    needs: merge-and-upload
+    # Call the reusable sonar workflow in this repository
+    uses: ./.github/workflows/sonar.yml
+    secrets: inherit

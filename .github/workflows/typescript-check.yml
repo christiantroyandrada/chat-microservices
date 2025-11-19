@@ -1,10 +1,8 @@
+---
 name: TypeScript Type Check
 
 on:
-  push:
-    branches: [ main, develop ]
-  pull_request:
-    branches: [ main, develop ]
+  workflow_call:
 
 jobs:
   typecheck:
@@ -14,13 +12,15 @@ jobs:
       matrix:
         service: [user-service, chat-service, notification-service]
       fail-fast: false
-    
+
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        # Pinned to specific commit SHA for supply-chain security
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        # Pinned to specific commit SHA for supply-chain security
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: '22'
           cache: 'npm'

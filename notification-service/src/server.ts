@@ -2,7 +2,7 @@ import express, { Express } from 'express'
 import cors from 'cors'
 import helmet from 'helmet'
 import cookieParser from 'cookie-parser'
-import { Server } from 'http'
+import { Server } from 'node:http'
 import { errorMiddleware, errorHandler } from './middleware'
 import config from './config/config'
 import { rabbitMQService } from './services/RabbitMQService'
@@ -41,7 +41,7 @@ app.use(cors({
     // Allow requests with no origin (like mobile apps, curl, Postman)
     if (!origin) return callback(null, true)
     
-    if (allowedOrigins.indexOf(origin) !== -1) {
+    if (allowedOrigins.includes(origin)) {
       callback(null, true)
     } else {
       logWarn(`[notification-service] CORS blocked origin: ${origin}`)

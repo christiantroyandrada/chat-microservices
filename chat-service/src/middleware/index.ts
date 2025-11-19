@@ -1,9 +1,9 @@
-import { Request, Response, NextFunction, ErrorRequestHandler } from 'express'
+import { Response, NextFunction, ErrorRequestHandler } from 'express'
 import jwt from 'jsonwebtoken'
 import { APIError } from '../utils'
 import config from '../config/config'
 import { logError } from '../utils/logger'
-import type { TokenPayload, IUser, AuthenticatedRequest } from '../types'
+import type { TokenPayload, AuthenticatedRequest } from '../types'
 
 const jwtSecret = config.JWT_SECRET as string
 
@@ -17,7 +17,7 @@ const authMiddleware = async (
     let token: string | undefined
     const authHeader = req.headers.authorization
     
-    if (authHeader && authHeader.startsWith('Bearer ')) {
+    if (authHeader?.startsWith('Bearer ')) {
       token = authHeader.substring(7)
     }
     

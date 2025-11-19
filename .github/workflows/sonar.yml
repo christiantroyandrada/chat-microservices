@@ -1,0 +1,105 @@
+---
+name: CI - Sonar (reusable)
+
+on:
+  workflow_call:
+    secrets:
+      SONAR_TOKEN:
+        required: true
+      SONAR_ORGANIZATION:
+        required: true
+      SONAR_PROJECT_KEY:
+        required: true
+
+jobs:
+  build-and-sonar:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install unzip & jq
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y jq unzip
+
+      - name: Download combined LCOV artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: combined-lcov
+          path: ./artifacts
+        continue-on-error: true
+
+      - name: Prepare coverage file
+        run: |
+          set -euo pipefail
+          mkdir -p coverage
+          COMBINED=coverage/combined-lcov.info
+          : > "$COMBINED"
+
+          echo "=== Debugging artifact download ==="
+          echo "Listing ./artifacts directory:"
+          if [ -d ./artifacts ]; then
+            ls -laR ./artifacts
+            find ./artifacts -type f -name "*.info" 2>/dev/null || echo "No .info files found"
+          else
+            echo "ERROR: ./artifacts directory does not exist"
+          fi
+          
+          echo ""
+          echo "=== Attempting to locate coverage file ==="
+          
+          # Prefer the common locations, but also search recursively for any lcov files
+          found=0
+          if [ -f ./artifacts/combined-lcov.info ]; then
+            echo "✓ Found ./artifacts/combined-lcov.info"
+            cp ./artifacts/combined-lcov.info "$COMBINED"
+            found=1
+          elif [ -f ./artifacts/coverage/combined-lcov.info ]; then
+            echo "✓ Found ./artifacts/coverage/combined-lcov.info"
+            cp ./artifacts/coverage/combined-lcov.info "$COMBINED"
+            found=1
+          else
+            echo "Searching recursively for lcov files under ./artifacts..."
+            shopt -s globstar nullglob || true
+            for f in ./artifacts/**/combined-lcov.info ./artifacts/**/lcov.info; do
+              if [ -f "$f" ]; then
+                echo "✓ Found and appending $f to $COMBINED"
+                cat "$f" >> "$COMBINED"
+                echo "" >> "$COMBINED"
+                found=1
+              fi
+            done
+          fi
+
+          echo ""
+          if [ "$found" -eq 0 ]; then
+            echo "⚠ WARNING: combined-lcov.info not found in downloaded artifacts."
+            echo "Creating empty file. Sonar will run without coverage data."
+          else
+            echo "✓ Successfully prepared coverage file: $COMBINED"
+            wc -l "$COMBINED" | awk '{print "  Line count: " $1}'
+            du -h "$COMBINED" | awk '{print "  File size: " $1}'
+          fi
+
+
+      - name: SonarCloud Scan
+        uses: SonarSource/sonarqube-scan-action@fd88b7d7ccbaefd23d8f36f73b59db7a3d246602
+        with:
+          args: >
+            -Dsonar.organization=${{ secrets.SONAR_ORGANIZATION }}
+            -Dsonar.projectKey=${{ secrets.SONAR_PROJECT_KEY }}
+            -Dsonar.sources=chat-service/src,notification-service/src,user-service/src
+            -Dsonar.tests=chat-service/tests,notification-service/tests,user-service/tests
+            -Dsonar.inclusions=chat-service/src/**,notification-service/src/**,user-service/src/**
+            -Dsonar.test.inclusions=chat-service/tests/**,notification-service/tests/**,user-service/tests/**
+            -Dsonar.javascript.lcov.reportPaths=coverage/combined-lcov.info
+            -Dsonar.exclusions=node_modules/**,docker-secrets/**,**/build/**
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_ORGANIZATION: ${{ secrets.SONAR_ORGANIZATION }}

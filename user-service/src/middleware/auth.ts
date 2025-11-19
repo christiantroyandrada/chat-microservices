@@ -23,7 +23,7 @@ export const authenticated = async (
     const authHeader = req.headers.authorization
     let token: string | undefined
 
-    if (authHeader && authHeader.startsWith('Bearer ')) {
+    if (authHeader?.startsWith('Bearer ')) {
       token = authHeader.substring(7)
     }
 

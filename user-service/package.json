@@ -5,7 +5,8 @@
   "main": "src/server.ts",
   "scripts": {
     "dev": "NODE_ENV=development nodemon src/server.ts",
-    "test:unit": "jest tests/unit",
+  "test:unit": "jest tests/unit",
+  "coverage": "jest tests/unit --coverage --coverageReporters=lcov --coverageDirectory=coverage",
     "build": "rm -rf build/ && tsc -p .",
     "start": "node build/server.js"
   },
@@ -43,9 +44,9 @@
     "@types/jest": "^30.0.0",
     "jest": "^30.2.0",
     "ts-jest": "^29.4.5"
-  }
-  ,
+  },
+
   "overrides": {
-    "glob": "^11.0.4"
+    "test-exclude": "7.0.1"
   }
 }
