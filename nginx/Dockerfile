@@ -1,9 +1,10 @@
 ##############################################################################
 # Use a vendor-maintained, security-focused nginx image (Bitnami) as a quick
 # remedial option: rebuild and re-scan to compare CVEs.
+# Updated to latest image (November 2025) to address CVE-2024-10963
 ##############################################################################
 
-FROM bitnami/nginx@sha256:8fed12f41a27a2be67125d0e063aab7a07687aab12c193eac63d8346ba72925e
+FROM bitnami/nginx@sha256:ca82b8a08e8e0e73aac438f43c66ce8d966988f0adb0589df3e34c7514adb4ea
 
 # Replace the default nginx config with our pinned config
 USER root

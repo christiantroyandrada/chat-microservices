@@ -1,5 +1,5 @@
-# Build stage — vendor-hardened Node (Bitnami) as a PoC
-FROM node:22-bullseye-slim AS builder
+# Build stage — use Debian 12 (bookworm) for better security updates
+FROM node:22-bookworm-slim AS builder
 
 WORKDIR /usr/src/app
 
@@ -22,8 +22,8 @@ RUN npm run build \
 	&& npm prune --production \
 	&& rm -rf /root/.npm /tmp/*
 
-# Production stage
-FROM gcr.io/distroless/nodejs22-debian12:nonroot
+# Production stage - use latest pinned distroless image
+FROM gcr.io/distroless/nodejs22-debian12:nonroot@sha256:1014312994b734e9f3bba23bb96fab389119750a98f14bc76936dc2a7e72c3da
 
 WORKDIR /usr/src/app
 

@@ -18,8 +18,8 @@ RUN npm run build
 # Remove devDependencies to keep final image small
 RUN npm prune --production
 
-# Final stage: use distroless Node runtime (nonroot)
-FROM gcr.io/distroless/nodejs22-debian12:nonroot
+# Final stage: use latest pinned distroless Node runtime (nonroot)
+FROM gcr.io/distroless/nodejs22-debian12:nonroot@sha256:1014312994b734e9f3bba23bb96fab389119750a98f14bc76936dc2a7e72c3da
 
 WORKDIR /usr/src/app
 
