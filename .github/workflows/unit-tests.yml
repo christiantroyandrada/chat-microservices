@@ -15,10 +15,12 @@ jobs:
         service: ["user-service", "notification-service", "chat-service"]
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        # Pinned to specific commit SHA for supply-chain security
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
 
       - name: Use Node.js 22
-        uses: actions/setup-node@v4
+        # Pinned to specific commit SHA for supply-chain security
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: 22
 

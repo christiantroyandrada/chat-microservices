@@ -25,10 +25,12 @@ jobs:
     
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        # Pinned to a specific commit SHA for supply-chain security (githubactions:S7637)
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        # Pinned to specific commit SHA for supply-chain security
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: '22'
           cache: 'npm'
@@ -52,7 +54,8 @@ jobs:
 
       - name: Upload audit report
         if: always()
-        uses: actions/upload-artifact@v4
+        # Pinned to a specific commit SHA for supply-chain security
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: audit-report-${{ matrix.service }}
           path: ${{ matrix.service }}/audit-report-${{ matrix.service }}.json
@@ -68,7 +71,8 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        # Pinned to a specific commit SHA for supply-chain security
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
 
       - name: Build Docker image
         run: |
@@ -79,7 +83,8 @@ jobs:
           fi
 
       - name: Setup Trivy (install CLI, no cache)
-        uses: aquasecurity/setup-trivy@v0.2.4
+        # Pinned to a specific commit SHA for supply-chain security
+        uses: aquasecurity/setup-trivy@e6c2c5e321ed9123bda567646e2f96565e34abe1
         with:
           version: 'v0.67.2'
           cache: false
@@ -101,7 +106,8 @@ jobs:
         # CodeQL API with the GITHUB_TOKEN and will fail with "Resource not accessible by integration".
         # We still generate and attach the JSON artifact above so maintainers can inspect results.
         if: always() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
-        uses: github/codeql-action/upload-sarif@v3
+  # Pinned to a specific commit SHA for supply-chain security
+  uses: github/codeql-action/upload-sarif@c3d42c5d08633d8b33635fbd94b000a0e2585b3c
         with:
           sarif_file: 'trivy-results-${{ matrix.service }}.sarif'
           category: 'trivy-${{ matrix.service }}'
@@ -115,7 +121,8 @@ jobs:
 
       - name: Upload Trivy report
         if: always()
-        uses: actions/upload-artifact@v4
+        # Pinned to a specific commit SHA for supply-chain security
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: trivy-report-${{ matrix.service }}
           path: 'trivy-report-${{ matrix.service }}.json'
