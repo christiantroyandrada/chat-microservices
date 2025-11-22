@@ -1,7 +1,7 @@
 import { Request, Response, NextFunction } from 'express'
 import { AppDataSource, Prekey } from '../database'
 import { APIError } from '../utils'
-import { logInfo } from '../utils/logger'
+import { logError, logInfo } from '../utils/logger'
 import type { PrekeyBundle, EncryptedKeyBundle } from '../types'
 
 /**
@@ -74,7 +74,7 @@ const storeSignalKeys = async (req: Request, res: Response, next: NextFunction) 
       }
       
       // Update existing encrypted bundle for this specific device
-      existing.bundle = { ...existing.bundle, _encryptedKeyBundle: encryptedBundle } as any
+      existing.bundle = { ...existing.bundle, _encryptedKeyBundle: encryptedBundle }
       existing.lastBackupTimestamp = new Date()
       await prekeyRepo.save(existing)
       
@@ -225,8 +225,6 @@ const getPrekeyBundle = async (req: Request, res: Response, next: NextFunction) 
     let chosen = bundles.find((b) => Array.isArray(b.bundle?.preKeys) && b.bundle.preKeys.length > 0) || bundles[0]
 
     if (Array.isArray(chosen.bundle?.preKeys) && chosen.bundle.preKeys.length > 0) {
-      // consume the first one-time prekey
-      const consumed = chosen.bundle.preKeys.shift()
       // persist updated bundle
       await repo.save(chosen)
       await qr.commitTransaction()
@@ -240,7 +238,7 @@ const getPrekeyBundle = async (req: Request, res: Response, next: NextFunction) 
     try {
       await qr.rollbackTransaction()
     } catch (e) {
-      // ignore
+      logError('[Prekey] Queryrunner rollbackTransaction fail', e)
     }
     next(error)
   } finally {

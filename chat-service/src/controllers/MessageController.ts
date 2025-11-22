@@ -5,7 +5,6 @@ import { Message, AppDataSource } from '../database'
 import { APIError, handleMessageReceived } from '../utils'
 import { logWarn, logError } from '../utils/logger'
 import { MessageStatus } from '../database/models/MessageModel'
-import { Not } from 'typeorm'
 
 // Helper to fetch user details from user service
 const fetchUserDetails = async (userId: string): Promise<{ username?: string } | null> => {
@@ -57,12 +56,17 @@ const sendMessage = async (
     try {
       parsedEnvelope = JSON.parse(trimmedMessage)
     } catch (e) {
+      // Log the parsing error for diagnostics and then surface a user-friendly API error.
+      // This counts as handling the exception (avoids swallowing it) and provides
+      // useful context for debugging without exposing internals to clients.
+      logWarn('Failed to parse encrypted message envelope', e)
       throw new APIError(400, 'Messages must be end-to-end encrypted (invalid envelope)')
     }
 
     // Narrow the parsed value and validate shape
     const envelopeCandidate = parsedEnvelope as { __encrypted?: boolean; body?: unknown } | null
-    if (!envelopeCandidate || envelopeCandidate.__encrypted !== true || typeof envelopeCandidate.body !== 'string') {
+    // Use optional chaining for concise null-safe checks
+    if (envelopeCandidate?.__encrypted !== true || typeof envelopeCandidate?.body !== 'string') {
       throw new APIError(400, 'Messages must be end-to-end encrypted')
     }
 

@@ -44,9 +44,9 @@
     "@types/jest": "^30.0.0",
     "jest": "^30.2.0",
     "ts-jest": "^29.4.5"
-  }
-  ,
+  },
+
   "overrides": {
-    "glob": "^7.2.3"
+    "test-exclude": "7.0.1"
   }
 }

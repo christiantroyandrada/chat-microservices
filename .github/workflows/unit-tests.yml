@@ -3,6 +3,11 @@ name: CI - Unit Tests
 
 on:
   workflow_call:
+    inputs:
+      coverage:
+        description: 'Whether to generate coverage (lcov) and upload/merge artifacts (true/false)'
+        required: true
+        default: 'false'
 
 jobs:
   unit-tests:
@@ -25,20 +30,25 @@ jobs:
       - name: Install dependencies for service
         run: npm ci --prefix ${{ matrix.service }}
 
-      - name: Run tests (prefer coverage when available)
+      - name: Run tests (coverage optional)
         run: |
           set -euo pipefail
           echo "Running tests for ${{ matrix.service }}"
-          # Prefer running a coverage script if present; fall back to unit tests
-          if npm run coverage --prefix ${{ matrix.service }} --silent --if-present; then
-            echo "coverage generated for ${{ matrix.service }}"
+          # If coverage input is true, prefer running a coverage script if present; fall back to unit tests
+          if [ "${{ inputs.coverage }}" = "true" ]; then
+            if npm run coverage --prefix ${{ matrix.service }} --silent --if-present; then
+              echo "coverage generated for ${{ matrix.service }}"
+            else
+              echo "coverage script missing or failed; running test:unit for ${{ matrix.service }}"
+              npm run test:unit --prefix ${{ matrix.service }}
+            fi
           else
-            echo "coverage script missing or failed; running test:unit for ${{ matrix.service }}"
+            echo "coverage disabled by caller; running unit tests only for ${{ matrix.service }}"
             npm run test:unit --prefix ${{ matrix.service }}
           fi
 
       - name: Prepare LCOV for upload (if present)
-        if: always()
+        if: ${{ inputs.coverage == 'true' }}
         run: |
           set -euo pipefail
           SRC="${{ matrix.service }}/coverage/lcov.info"
@@ -53,7 +63,7 @@ jobs:
           fi
 
       - name: Upload LCOV (if present)
-        if: always()
+        if: ${{ inputs.coverage == 'true' }}
         uses: actions/upload-artifact@v4
         with:
           name: lcov-${{ matrix.service }}
@@ -62,6 +72,7 @@ jobs:
           if-no-files-found: ignore
 
   merge-and-upload:
+    if: ${{ inputs.coverage == 'true' }}
     needs: unit-tests
     runs-on: ubuntu-latest
     name: Merge LCOV reports and upload combined artifact
@@ -136,6 +147,7 @@ jobs:
           if-no-files-found: warn
 
   sonar:
+    if: ${{ inputs.coverage == 'true' }}
     name: SonarCloud Scan (reusable)
     needs: merge-and-upload
     # Call the reusable sonar workflow in this repository

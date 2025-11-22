@@ -1,5 +1,4 @@
-import * as amqp from 'amqplib'
-import type { AmqpConnectionLike } from '../types'
+import amqp, { Channel, Connection } from 'amqplib'
 import config from '../config/config'
 import { User, AppDataSource } from '../database'
 import { APIError } from '../utils'
@@ -19,23 +18,21 @@ const getUserDetails = async (userId:string) => {
 }
 
 class RabbitMQService {
-  private requestQueue = "USER_DETAILS_REQUEST"
-  private responseQueue = "USER_DETAILS_RESPONSE"
-  private connection!: AmqpConnectionLike
-  private channel!: amqp.Channel
-
-  constructor () {
-    // do not auto-connect in constructor; server bootstrap will call connect()
-  }
+  private readonly requestQueue = "USER_DETAILS_REQUEST"
+  private readonly responseQueue = "USER_DETAILS_RESPONSE"
+  private channel!: Channel
 
   async connect () {
     // Initiate connection to RabbitMQ Server
-    // The amqplib type definitions sometimes cause the returned
-    // value to be interpreted as a different model; cast explicitly
-    // to the Connection type that has createChannel.
-    this.connection = (await amqp.connect(config.msgBrokerURL!)) as unknown as AmqpConnectionLike
-    this.channel = await this.connection.createChannel()
+    // Ensure the broker URL is present at runtime and narrow its type for TS.
+    const brokerUrl = config.msgBrokerURL
+    if (!brokerUrl) {
+      logError('[chat-service] MESSAGE_BROKER_URL is not configured')
+      throw new Error('Missing MESSAGE_BROKER_URL')
+    }
 
+    const connection = await amqp.connect(brokerUrl)
+    this.channel = await connection.createChannel()
     // assert queue that it exists
     await this.channel.assertQueue(this.requestQueue)
     await this.channel.assertQueue(this.responseQueue)

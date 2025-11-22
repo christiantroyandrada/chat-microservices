@@ -36,6 +36,10 @@ export interface PrekeyBundle {
     id: number
     publicKey: string
   }>
+  // Optional wrapper used to store a client-encrypted backup blob. This field
+  // is present when the server stores an encrypted bundle instead of the
+  // usual PrekeyBundle shape (client-side encrypted backups).
+  _encryptedKeyBundle?: EncryptedKeyBundle
 }
 // Stored in `prekeys` table and used by `PrekeyController` and other Signal helpers
 

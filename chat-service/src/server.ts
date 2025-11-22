@@ -1,4 +1,4 @@
-import { Server } from 'http'
+import { Server } from 'node:http'
 import { Socket, Server as SocketIOServer } from 'socket.io'
 import jwt from 'jsonwebtoken'
 import type { TokenPayload } from './types'
@@ -110,6 +110,7 @@ const start = async () => {
       
       next();
     } catch (err) {
+      logError('[chat-service] Socket.IO jwt auth middleware error:', err);
       next(new Error('Invalid token'));
     }
   });
@@ -165,7 +166,7 @@ const start = async () => {
 
       // Clear typing timeout if user had one active
       if (userId && typingTimeouts.has(userId)) {
-        clearTimeout(typingTimeouts.get(userId)!);
+        clearTimeout(typingTimeouts.get(userId));
         typingTimeouts.delete(userId);
       }
 
@@ -201,7 +202,7 @@ const start = async () => {
       
       // Clear existing timeout for this user
       if (typingTimeouts.has(userId)) {
-        clearTimeout(typingTimeouts.get(userId)!);
+        clearTimeout(typingTimeouts.get(userId));
         typingTimeouts.delete(userId);
       }
       
@@ -235,6 +236,8 @@ const start = async () => {
     socket.on('sendMessage', async (data, ack?: (res: { ok: boolean; id?: string; error?: string }) => void) => {
       try {
         const { senderId, receiverId, message, _id } = data
+        // Extract username once for use in both code paths (email accessed on-demand)
+        const { username } = socket.data.user || { username: undefined }
         
         // Validate: authenticated user can only send as themselves
         if (senderId !== userId) {
@@ -278,42 +281,55 @@ const start = async () => {
           }
         } else {
           // Save new message (fallback for WebSocket-only clients)
-          // Enforce encrypted envelope JSON
-          let parsedEnvelope: unknown = null
-          try {
-            parsedEnvelope = JSON.parse(trimmedMessage)
-          } catch (e) {
-            ack?.({ ok: false, error: 'Messages must be end-to-end encrypted (invalid envelope)' });
+          // Delegate parsing/validation/saving to a helper to reduce complexity
+          const result = await (async function saveEncryptedMessage(trimmed: string) {
+            let parsedEnvelope: unknown = null
+            try {
+              parsedEnvelope = JSON.parse(trimmed)
+            } catch (e) {
+              logWarn('[chat-service] Failed to parse encrypted envelope (ws):', e)
+              return { error: 'invalid_envelope' }
+            }
+
+            const envelopeCandidate = parsedEnvelope as { __encrypted?: boolean; body?: unknown } | null
+            if (envelopeCandidate?.__encrypted !== true || typeof envelopeCandidate?.body !== 'string') {
+              return { error: 'invalid_encrypted' }
+            }
+
+            const saved = await messageRepo.save({
+              senderId,
+              receiverId,
+              message: trimmed,
+              isEncrypted: true,
+              status: MessageStatus.NotDelivered,
+            })
+
+            try {
+              // Access email on-demand to avoid an unused binding
+              await handleMessageReceived(username || '', socket.data.user?.email || '', receiverId, '[Encrypted message]', true, trimmed)
+            } catch (err) {
+              // Notification failures should not block message delivery
+              logWarn('[chat-service] notifyReceiver failed:', err)
+            }
+
+            return { msg: saved }
+          })(trimmedMessage)
+
+          if ((result as any).error) {
+            const errCode = (result as any).error
+            if (errCode === 'invalid_envelope') {
+              ack?.({ ok: false, error: 'Messages must be end-to-end encrypted (invalid envelope)' });
+            } else {
+              ack?.({ ok: false, error: 'Messages must be end-to-end encrypted' });
+            }
             return;
           }
 
-          const envelopeCandidate = parsedEnvelope as { __encrypted?: boolean; body?: unknown } | null
-          if (!envelopeCandidate || envelopeCandidate.__encrypted !== true || typeof envelopeCandidate.body !== 'string') {
-            ack?.({ ok: false, error: 'Messages must be end-to-end encrypted' });
-            return;
-          }
-
-          msg = await messageRepo.save({
-            senderId,
-            receiverId,
-            message: trimmedMessage,
-            isEncrypted: true,
-            status: MessageStatus.NotDelivered,
-          })
-
-          // Notify receiver (no plaintext leak)
-          const { email, username } = socket.data.user || { email: undefined, username: undefined }
-          try {
-            await handleMessageReceived(username || '', email || '', receiverId, '[Encrypted message]', true, trimmedMessage)
-          } catch (err) {
-            // Notification failures should not block message delivery
-            logWarn('[chat-service] notifyReceiver failed:', err)
-          }
+          msg = (result as any).msg
         }
         
-        // Format message for frontend consumption (normalize field names)
-        // Frontend expects: _id, senderId, senderUsername, receiverId, content (not message), timestamp
-        const { email, username } = socket.data.user || { email: undefined, username: undefined }
+  // Format message for frontend consumption (normalize field names)
+  // Frontend expects: _id, senderId, senderUsername, receiverId, content (not message), timestamp
         const formattedMsg = {
           _id: msg.id,
           id: msg.id,
@@ -334,7 +350,7 @@ const start = async () => {
         
         // Clear typing indicator for sender when message is sent
         if (typingTimeouts.has(userId)) {
-          clearTimeout(typingTimeouts.get(userId)!);
+          clearTimeout(typingTimeouts.get(userId));
           typingTimeouts.delete(userId);
         }
         // Notify receiver that sender stopped typing

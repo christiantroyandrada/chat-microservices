@@ -1,21 +1,14 @@
 ---
-name: CI Pipeline[main]
+name: CI Pipeline (feature branches)
 
 on:
-  pull_request:
-    branches: [main]
   push:
-    branches: [main]
-
-# Give this workflow the permissions required by called reusable workflows
-# `security-audit.yml` requests `security-events: write`, so we must allow it here.
-permissions:
-  contents: read
-  security-events: write
+    # Run on all branches except main and master
+    branches-ignore: [main, master]
 
 jobs:
   build:
-    name: Build & Audit
+    name: Build services
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -56,36 +49,19 @@ jobs:
           npm ci
           npm run build || echo "Gateway build step skipped (no build script)"
 
-      - name: Audit backends
-        run: |
-          npm audit --prefix user-service --audit-level=moderate || true
-          npm audit --prefix chat-service --audit-level=moderate || true
-          npm audit --prefix notification-service --audit-level=moderate || true
-          npm audit --prefix gateway --audit-level=moderate || true
-
       - name: Summary
-        run: echo "Backend Build completed successfully"
+        run: echo "Feature branch build completed successfully"
 
-  # TypeScript type checking (runs for all branches)
   typescript-check:
     name: TypeScript Type Check
     needs: build
+    # Reuse the repository's typecheck workflow
     uses: ./.github/workflows/typescript-check.yml
 
-  # Security audit (only runs on main branch)
-  security-audit:
-    name: Security Audit
-    needs: typescript-check
-    if: github.ref == 'refs/heads/main' || github.event_name == 'schedule'
-    uses: ./.github/workflows/security-audit.yml
-    secrets: inherit
-
-  # Unit tests with coverage (only runs on main branch)
   unit-tests:
-    name: Unit Tests & Coverage
-    needs: security-audit
-    if: github.ref == 'refs/heads/main'
+    name: Unit Tests (reusable)
+    needs: typescript-check
     uses: ./.github/workflows/unit-tests.yml
     with:
-      coverage: 'true'
-    secrets: inherit
+      coverage: 'false'
+    # No secrets required for feature-branch unit tests in this repo; add `secrets: inherit` if needed

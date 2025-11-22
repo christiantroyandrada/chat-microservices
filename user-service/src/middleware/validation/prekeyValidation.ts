@@ -17,7 +17,7 @@ export const publishPrekeyValidation: ValidationChain[] = [
       try {
         const size = JSON.stringify(val).length
         return size <= 20000 // ~20KB limit for bundle JSON
-      } catch (e) {
+      } catch {
         return false
       }
     })

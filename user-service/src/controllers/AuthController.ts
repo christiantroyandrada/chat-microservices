@@ -3,7 +3,6 @@ import jwt from 'jsonwebtoken'
 import { User, AppDataSource } from '../database'
 import { APIError, encryptPassword, isPasswordMatch } from '../utils'
 import config from '../config/config'
-import { Like, Not } from 'typeorm'
 import type { RegistrationBody } from '../types'
 
 const JWT_SECRET = config.JWT_SECRET as string
@@ -57,9 +56,6 @@ const registration = async (
       email,
       password: await encryptPassword(password),
     })
-
-    // Generate JWT token for the newly registered user
-    const token = await createSendToken(user, res)
 
     const userData = {
       id: user.id,
@@ -120,8 +116,6 @@ const login = async (
       throw new APIError(401, 'Invalid email or password')
     }
     
-    const token = await createSendToken(user, res)
-
     // Token is sent via httpOnly cookie only (not in response body for security)
     return res.json({
       status: 200,

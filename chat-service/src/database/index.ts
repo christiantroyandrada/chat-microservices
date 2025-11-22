@@ -1,4 +1,2 @@
-import Message from './models/MessageModel'
-import { connectDB, AppDataSource } from './connection'
-
-export { Message, connectDB, AppDataSource }
+export { default as Message } from './models/MessageModel'
+export { connectDB, AppDataSource } from './connection'

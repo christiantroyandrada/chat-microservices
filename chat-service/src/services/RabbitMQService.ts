@@ -5,18 +5,21 @@ import type { NotificationPayload, UserDetails, UserDetailsCallback } from '../t
 import { logInfo, logError } from '../utils/logger'
 
 class RabbitMQService {
-  private requestQueue = 'USER_DETAILS_REQUEST'
-  private responseQueue = 'USER_DETAILS_RESPONSE'
+  private readonly requestQueue = 'USER_DETAILS_REQUEST'
+  private readonly responseQueue = 'USER_DETAILS_RESPONSE'
   // store callback + timeout so we can clean up if no response arrives
-  private correlationMap = new Map<string, { callback: UserDetailsCallback; timer: NodeJS.Timeout }>()
+  private readonly correlationMap = new Map<string, { callback: UserDetailsCallback; timer: NodeJS.Timeout }>()
   private channel!: Channel
 
-  constructor () {
-    // do not auto-connect here; server/bootstrap should call connect()
-  }
-
   async connect () {
-    const connection = await amqp.connect(config.msgBrokerURL!)
+    // Ensure the broker URL is present at runtime and narrow its type for TS.
+    const brokerUrl = config.msgBrokerURL
+    if (!brokerUrl) {
+      logError('[chat-service] MESSAGE_BROKER_URL is not configured')
+      throw new Error('Missing MESSAGE_BROKER_URL')
+    }
+
+    const connection = await amqp.connect(brokerUrl)
     this.channel = await connection.createChannel()
     await this.channel.assertQueue(this.requestQueue)
     await this.channel.assertQueue(this.responseQueue)

@@ -4,13 +4,13 @@ import cors from 'cors'
 import helmet from 'helmet'
 import rateLimit from 'express-rate-limit'
 import cookieParser from 'cookie-parser'
-import { Server } from 'http'
+import { Server } from 'node:http'
 import userServiceRouter from './routes/userServiceRouter'
 import { errorMiddleware, errorHandler } from './middleware'
 import { connectDB } from './database'
 import config from './config/config'
 import { rabbitMQService } from './services/RabbitMQService'
-import { logDebug, logInfo, logWarn, logError } from './utils/logger'
+import { logInfo, logWarn, logError } from './utils/logger'
 
 // Validate required environment variables on startup
 const validateEnv = () => {
@@ -24,16 +24,16 @@ const validateEnv = () => {
   
   // Fail hard on default/weak secrets in production
   const isProduction = process.env.NODE_ENV === 'production'
-  const weakSecrets = ['{{YOUR_SECRET_KEY}}', 'CHANGEME', 'changeme', 'test', 'secret']
+  const weakSecrets = new Set(['{{YOUR_SECRET_KEY}}', 'CHANGEME', 'changeme', 'test', 'secret'])
   const jwtSecret = process.env.JWT_SECRET || ''
   
-  if (isProduction && (jwtSecret.length < 32 || weakSecrets.includes(jwtSecret))) {
+  if (isProduction && (jwtSecret.length < 32 || weakSecrets.has(jwtSecret))) {
     logError('[user-service] FATAL: Running in production with weak/default JWT_SECRET. Aborting.')
     logError('[user-service] JWT_SECRET must be at least 32 characters and not a default value.')
     process.exit(1)
   }
   
-  if (!isProduction && weakSecrets.includes(jwtSecret)) {
+  if (!isProduction && weakSecrets.has(jwtSecret)) {
     logWarn('[user-service] WARNING: Using default JWT_SECRET. Change this before deploying to production!')
   }
 }

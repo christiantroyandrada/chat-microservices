@@ -10,7 +10,7 @@ import type { BrevoEmailPayload, BrevoAccountInfo, AxiosErrorResponse } from '..
  * sendEmail(...) method so existing callers don't need immediate changes.
  */
 export class SecureEmailService {
-  private client: AxiosInstance
+  private readonly client: AxiosInstance
 
   constructor() {
     if (!config.SENDINBLUE_APIKEY) {
