@@ -1,14 +1,21 @@
-name: Backend Test Build
+---
+name: CI Pipeline
 
 on:
   pull_request:
+    branches: [main]
   push:
-    # Keep main pushes, and also run CI on feature branches so feature-branch
-    # pushes execute the same build steps before PR creation.
-    branches: [ main, 'feature/**' ]
+    branches: [main, 'feature/**']
+
+# Give this workflow the permissions required by called reusable workflows
+# `security-audit.yml` requests `security-events: write`, so we must allow it here.
+permissions:
+  contents: read
+  security-events: write
 
 jobs:
   build:
+    name: Build & Audit
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -57,4 +64,26 @@ jobs:
           npm audit --prefix gateway --audit-level=moderate || true
 
       - name: Summary
-        run: echo "Backend Test Build completed successfully"
+        run: echo "Backend Build completed successfully"
+
+  # TypeScript type checking (runs for all branches)
+  typescript-check:
+    name: TypeScript Type Check
+    needs: build
+    uses: ./.github/workflows/typescript-check.yml
+
+  # Security audit (only runs on main branch)
+  security-audit:
+    name: Security Audit
+    needs: typescript-check
+    if: github.ref == 'refs/heads/main' || github.event_name == 'schedule'
+    uses: ./.github/workflows/security-audit.yml
+    secrets: inherit
+
+  # Unit tests with coverage (only runs on main branch)
+  unit-tests:
+    name: Unit Tests & Coverage
+    needs: security-audit
+    if: github.ref == 'refs/heads/main'
+    uses: ./.github/workflows/unit-tests.yml
+    secrets: inherit

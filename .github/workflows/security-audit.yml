@@ -1,13 +1,11 @@
+---
 name: Security Audit
 
-# Trigger via schedule OR when the TypeScript type-check workflow completes on main.
 on:
+  workflow_call:
   schedule:
     # Run weekly on Mondays at 9am UTC
     - cron: '0 9 * * 1'
-  workflow_run:
-    workflows: ["TypeScript Type Check"]
-    types: [completed]
 
 # Workflow permissions (top-level). Required for SARIF upload to the Security tab.
 permissions:
@@ -23,15 +21,7 @@ jobs:
       matrix:
         service: [user-service, chat-service, notification-service, gateway]
       fail-fast: false
-    # Only run on schedule or when TypeScript Type Check completed successfully on main
-    if: >
-      github.event_name == 'schedule' || (
-        github.event_name == 'workflow_run' &&
-        github.event.workflow_run.name == 'TypeScript Type Check' &&
-        github.event.workflow_run.conclusion == 'success' &&
-        github.event.workflow_run.head_branch == 'main'
-      )
-    
+
     steps:
       - name: Checkout code
         # Pinned to a specific commit SHA for supply-chain security (githubactions:S7637)
@@ -77,14 +67,6 @@ jobs:
       matrix:
         service: [user-service, chat-service, notification-service, nginx]
       fail-fast: false
-    # Only run on schedule or when TypeScript Type Check completed successfully on main
-    if: >
-      github.event_name == 'schedule' || (
-        github.event_name == 'workflow_run' &&
-        github.event.workflow_run.name == 'TypeScript Type Check' &&
-        github.event.workflow_run.conclusion == 'success' &&
-        github.event.workflow_run.head_branch == 'main'
-      )
 
     steps:
       - name: Checkout code
@@ -116,15 +98,20 @@ jobs:
         run: |
           echo "Running trivy (SARIF) against ${{ matrix.service }}:test"
           # Fail the step if Trivy finds HIGH/CRITICAL vulnerabilities (exit code 1)
-          trivy image --exit-code 1 --severity CRITICAL,HIGH --format sarif --output "trivy-results-${{ matrix.service }}.sarif" "${{ matrix.service }}:test"
+          trivy image \
+            --exit-code 1 \
+            --severity CRITICAL,HIGH \
+            --format sarif \
+            --output "trivy-results-${{ matrix.service }}.sarif" \
+            "${{ matrix.service }}:test"
 
       - name: Upload Trivy results to GitHub Security tab
         # Upload SARIF only for non-fork runs. Forked PRs do not have permission to call the
         # CodeQL API with the GITHUB_TOKEN and will fail with "Resource not accessible by integration".
         # We still generate and attach the JSON artifact above so maintainers can inspect results.
         if: always() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
-        # Pinned to a specific commit SHA for supply-chain security
-        uses: github/codeql-action/upload-sarif@c3d42c5d08633d8b33635fbd94b000a0e2585b3c
+        # Use CodeQL Action v4 (v3 is deprecated). Pin to the v4 tag for stability.
+        uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: 'trivy-results-${{ matrix.service }}.sarif'
           category: 'trivy-${{ matrix.service }}'
@@ -134,7 +121,11 @@ jobs:
         run: |
           echo "Generating trivy JSON report for ${{ matrix.service }}:test"
           # Always attempt to produce the JSON report; don't fail this step on findings
-          trivy image --format json --output "trivy-report-${{ matrix.service }}.json" --severity CRITICAL,HIGH,MEDIUM,LOW "${{ matrix.service }}:test" || true
+          trivy image \
+            --format json \
+            --output "trivy-report-${{ matrix.service }}.json" \
+            --severity CRITICAL,HIGH,MEDIUM,LOW \
+            "${{ matrix.service }}:test" || true
 
       - name: Upload Trivy report
         if: always()

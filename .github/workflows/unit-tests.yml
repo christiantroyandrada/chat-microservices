@@ -1,16 +1,11 @@
+---
 name: CI - Unit Tests
 
-# This workflow runs only after the Security Audit completes successfully on main
-# (ensures ordering: Backend Test Build -> TypeScript -> Security Audit -> Unit Tests).
 on:
-  workflow_run:
-    workflows: ["Security Audit"]
-    types: [completed]
+  workflow_call:
 
 jobs:
   unit-tests:
-    # Only run this job when the triggering "Security Audit" workflow completed successfully.
-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
     name: Unit tests - ${{ matrix.service }}
     runs-on: ubuntu-latest
     strategy:
@@ -42,19 +37,32 @@ jobs:
             npm run test:unit --prefix ${{ matrix.service }}
           fi
 
+      - name: Prepare LCOV for upload (if present)
+        if: always()
+        run: |
+          set -euo pipefail
+          SRC="${{ matrix.service }}/coverage/lcov.info"
+          DST_DIR="./upload/${{ matrix.service }}"
+          if [ -f "$SRC" ]; then
+            mkdir -p "$DST_DIR"
+            cp "$SRC" "$DST_DIR/lcov.info"
+            echo "Prepared $SRC -> $DST_DIR/lcov.info"
+            ls -lh "$DST_DIR/lcov.info"
+          else
+            echo "No LCOV found at $SRC"
+          fi
+
       - name: Upload LCOV (if present)
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: lcov-${{ matrix.service }}
-          path: ${{ matrix.service }}/coverage/lcov.info
+          path: upload/${{ matrix.service }}/*
           # don't fail if no file is found
           if-no-files-found: ignore
 
   merge-and-upload:
     needs: unit-tests
-    # Only run merge/upload when the triggering "Security Audit" workflow completed successfully.
-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     name: Merge LCOV reports and upload combined artifact
     steps:
@@ -66,19 +74,19 @@ jobs:
         with:
           # download each per-service artifact we uploaded above
           name: lcov-user-service
-          path: ./artifacts || true
+          path: ./artifacts
 
       - name: Download LCOV for notification-service
         uses: actions/download-artifact@v4
         with:
           name: lcov-notification-service
-          path: ./artifacts || true
+          path: ./artifacts
 
       - name: Download LCOV for chat-service
         uses: actions/download-artifact@v4
         with:
           name: lcov-chat-service
-          path: ./artifacts || true
+          path: ./artifacts
 
       - name: Merge LCOV files
         run: |
@@ -86,6 +94,11 @@ jobs:
           mkdir -p coverage
           COMBINED=coverage/combined-lcov.info
           : > "$COMBINED"
+          
+          echo "Contents of ./artifacts before merge:"
+          find ./artifacts -type f -name "*.info" 2>/dev/null || echo "No .info files found"
+          ls -laR ./artifacts || echo "artifacts directory not found or empty"
+          
           shopt -s globstar || true
           appended=0
           for f in artifacts/**/lcov.info; do
@@ -96,13 +109,35 @@ jobs:
               appended=1
             fi
           done
+          
           if [ "$appended" -eq 0 ]; then
-            echo "No LCOV files found to merge. Leaving combined file empty."
+            echo "WARNING: No LCOV files found to merge. Combined file will be empty."
+          else
+            echo "Successfully merged $appended LCOV file(s)"
           fi
-          ls -l coverage || true
+          
+          echo "Final combined LCOV file info:"
+          ls -lh coverage/combined-lcov.info || true
+          wc -l coverage/combined-lcov.info || true
+
+          # Strict mode: fail the job if the combined LCOV is empty
+          if [ ! -s "$COMBINED" ]; then
+            echo "ERROR: combined LCOV file is empty. Failing merge step (strict mode)."
+            echo "Directory listing for coverage/:"
+            ls -la coverage || true
+            exit 1
+          fi
 
       - name: Upload combined LCOV
         uses: actions/upload-artifact@v4
         with:
           name: combined-lcov
           path: coverage/combined-lcov.info
+          if-no-files-found: warn
+
+  sonar:
+    name: SonarCloud Scan (reusable)
+    needs: merge-and-upload
+    # Call the reusable sonar workflow in this repository
+    uses: ./.github/workflows/sonar.yml
+    secrets: inherit
