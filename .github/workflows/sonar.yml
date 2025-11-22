@@ -1,0 +1,85 @@
+name: CI - Sonar (runs after unit tests)
+
+on:
+  workflow_run:
+    workflows: ["CI - Unit Tests"]
+    types: [completed]
+    branches: [main]
+
+jobs:
+  build-and-sonar:
+    # only run when the triggering workflow completed successfully
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install unzip & jq
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y jq unzip
+
+      - name: Download combined LCOV artifact from triggering run
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          RUN_ID=${{ github.event.workflow_run.id }}
+          OWNER=${{ github.repository_owner }}
+          REPO=${{ github.event.repository.name }}
+          echo "Fetching artifacts for run $RUN_ID"
+          ARTIFACTS_URL="https://api.github.com/repos/${OWNER}/${REPO}/actions/runs/${RUN_ID}/artifacts"
+          resp=$(curl -sSL -H "Authorization: Bearer $GITHUB_TOKEN" "$ARTIFACTS_URL")
+          ART_ID=$(echo "$resp" | jq -r '.artifacts[] | select(.name=="combined-lcov") | .id')
+          if [ -z "$ART_ID" ] || [ "$ART_ID" = "null" ]; then
+            echo "combined-lcov artifact not found in triggering run"
+            exit 1
+          fi
+          echo "Found artifact id $ART_ID, downloading"
+          DOWNLOAD_URL="https://api.github.com/repos/${OWNER}/${REPO}/actions/artifacts/${ART_ID}/zip"
+          curl -sSL -H "Authorization: Bearer $GITHUB_TOKEN" -o artifact.zip "$DOWNLOAD_URL"
+          unzip -o artifact.zip -d artifact_tmp
+          mkdir -p coverage
+          FOUND=$(find artifact_tmp -type f -name 'combined-lcov.info' | head -n1 || true)
+          if [ -z "$FOUND" ]; then
+            echo "combined-lcov.info not found in artifact contents"
+            exit 1
+          fi
+          cp "$FOUND" coverage/combined-lcov.info
+          ls -l coverage
+
+      - name: Check Sonar secrets/vars
+        run: |
+          if [ -z "$SONAR_TOKEN" ]; then
+            echo "::error::SONAR_TOKEN is not set. Add it under Settings → Secrets and variables → Actions.";
+            exit 1;
+          fi
+          if [ -z "$SONAR_ORGANIZATION_SECRET" ] && [ -z "$SONAR_ORGANIZATION_VAR" ]; then
+            echo "::error::SONAR_ORGANIZATION is not set as a secret or variable. Add it under Settings → Secrets and variables → Actions.";
+            exit 1;
+          fi
+          echo "Sonar secrets/vars present. Proceeding..."
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_ORGANIZATION_SECRET: ${{ secrets.SONAR_ORGANIZATION }}
+          SONAR_ORGANIZATION_VAR: ${{ vars.SONAR_ORGANIZATION }}
+
+      - name: SonarCloud Scan
+        uses: SonarSource/sonarqube-scan-action@fd88b7d7ccbaefd23d8f36f73b59db7a3d246602
+        with:
+          args: >
+            -Dsonar.organization=${{ secrets.SONAR_ORGANIZATION }}
+            -Dsonar.projectKey=${{ secrets.SONAR_PROJECT_KEY }}
+            -Dsonar.sources=chat-service,notification-service,user-service
+            -Dsonar.tests=chat-service/tests,notification-service/tests,user-service/tests
+            -Dsonar.javascript.lcov.reportPaths=coverage/combined-lcov.info
+            -Dsonar.exclusions=node_modules/**,tests/**,test/**,__mocks__/**,mocks/**,docker-secrets/**
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_ORGANIZATION: ${{ secrets.SONAR_ORGANIZATION }}

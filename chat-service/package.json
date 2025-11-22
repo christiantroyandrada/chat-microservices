@@ -9,6 +9,8 @@
     "start": "node build/server.js",
     "test": "npm run test:unit -- --run && playwright test",
     "test:unit": "jest --config jest.config.js --runInBand"
+    ,
+    "coverage": "jest --config jest.config.js --coverage --coverageReporters=lcov --coverageDirectory=coverage"
   },
   "keywords": [],
   "author": "",
@@ -46,6 +48,6 @@
   }
   ,
   "overrides": {
-    "glob": "^11.0.4"
+    "glob": "^7.2.3"
   }
 }

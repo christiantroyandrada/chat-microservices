@@ -6,7 +6,8 @@
   "scripts": {
     "dev-server": "NODE_ENV=development nodemon src/server.ts",
     "dev": "node scripts/purgeQueue.js && npm run dev-server",
-    "test:unit": "jest tests/unit",
+  "test:unit": "jest tests/unit",
+  "coverage": "jest tests/unit --coverage --coverageReporters=lcov --coverageDirectory=coverage",
     "build": "rm -rf build/ && tsc -p .",
     "start": "node build/server.js"
   },
@@ -45,6 +46,6 @@
   }
   ,
   "overrides": {
-    "glob": "^11.0.4"
+    "glob": "^7.2.3"
   }
 }

@@ -1,14 +1,33 @@
 name: TypeScript Type Check
 
+# Run for pull requests (feature branch -> main/develop) and also when
+# the Backend Test Build workflow completes on main (to enforce ordering after merge).
 on:
-  push:
-    branches: [ main, develop ]
   pull_request:
-    branches: [ main, develop ]
+    branches: [main]
+  # Run on pushes to feature branches so feature-branch pushes run the typecheck
+  # immediately (before PR creation) and only run the lightweight checks.
+  push:
+    branches: ['feature/**']
+  workflow_run:
+    workflows: ["Backend Test Build"]
+    types: [completed]
 
 jobs:
   typecheck:
     name: TypeScript Check
+    # Only run in two cases:
+    # - direct pull_request events (PR validation)
+    # - workflow_run events triggered by the "Backend Test Build" workflow when that run
+    #   completed successfully and the triggering branch was `main` (post-merge chain)
+    if: >
+      github.event_name == 'pull_request' ||
+      (github.event_name == 'push' && startsWith(github.ref, 'refs/heads/feature/')) || (
+        github.event_name == 'workflow_run' &&
+        github.event.workflow_run.name == 'Backend Test Build' &&
+        github.event.workflow_run.conclusion == 'success' &&
+        github.event.workflow_run.head_branch == 'main'
+      )
     runs-on: ubuntu-latest
     strategy:
       matrix:

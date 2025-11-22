@@ -1,9 +1,11 @@
-name: Backend CI
+name: Backend Test Build
 
 on:
   pull_request:
   push:
-    branches: [ main ]
+    # Keep main pushes, and also run CI on feature branches so feature-branch
+    # pushes execute the same build steps before PR creation.
+    branches: [ main, 'feature/**' ]
 
 jobs:
   build:
@@ -55,4 +57,4 @@ jobs:
           npm audit --prefix gateway --audit-level=moderate || true
 
       - name: Summary
-        run: echo "Backend CI completed successfully"
+        run: echo "Backend Test Build completed successfully"
