@@ -9,6 +9,8 @@ on:
 
 jobs:
   unit-tests:
+    # Only run this job when the triggering "Security Audit" workflow completed successfully.
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
     name: Unit tests - ${{ matrix.service }}
     runs-on: ubuntu-latest
     strategy:
@@ -51,6 +53,8 @@ jobs:
 
   merge-and-upload:
     needs: unit-tests
+    # Only run merge/upload when the triggering "Security Audit" workflow completed successfully.
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     name: Merge LCOV reports and upload combined artifact
     steps:
