@@ -116,7 +116,9 @@ const login = async (
       throw new APIError(401, 'Invalid email or password')
     }
     
-    // Token is sent via httpOnly cookie only (not in response body for security)
+    // Create and send JWT via httpOnly cookie
+    await createSendToken(user, res)
+
     return res.json({
       status: 200,
       message: 'Login successful',

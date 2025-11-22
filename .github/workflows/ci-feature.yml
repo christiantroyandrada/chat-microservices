@@ -1,10 +1,14 @@
 ---
-name: CI Pipeline (feature branches)
+---
+name: ci
 
 on:
   push:
-    # Run on all branches except main and master
+  # Run on all branches except main and master
     branches-ignore: [main, master]
+  # Also run on pull requests targeting main so the workflow can act as a PR status check
+  pull_request:
+    branches: [main]
 
 jobs:
   build:

@@ -1,9 +1,8 @@
----
-name: CI Pipeline (legacy - disabled)
+name: CI Pipeline[main]
 
-# Disabled: replaced by .github/workflows/ci-main.yml
-# Keeping file for historical reference; disabled to avoid duplicate checks.
-on: []
+on:
+  push:
+    branches: [main]
 
 # Give this workflow the permissions required by called reusable workflows
 # `security-audit.yml` requests `security-events: write`, so we must allow it here.
