@@ -9,7 +9,17 @@ import { MessageStatus } from '../database/models/MessageModel'
 // Helper to fetch user details from user service
 const fetchUserDetails = async (userId: string): Promise<{ username?: string } | null> => {
   try {
-    const userServiceUrl = process.env.USER_SERVICE_URL || 'http://user:8081'
+    // Resolve user service URL with secure-by-default behavior.
+    // - If USER_SERVICE_URL is provided, use it verbatim (allows overrides).
+    // - Otherwise default to HTTPS in non-development environments.
+    // - Allow HTTP for development/test/local workflows for convenience.
+    const userServiceUrl = ((): string => {
+      const envUrl = process.env.USER_SERVICE_URL
+      if (envUrl) return envUrl
+      const nodeEnv = process.env.NODE_ENV ?? 'development'
+      if (nodeEnv === 'development' || nodeEnv === 'test') return 'http://user:8081'
+      return 'https://user:8081'
+    })()
     const response = await fetch(`${userServiceUrl}/users/${userId}`)
     
     if (!response.ok) {

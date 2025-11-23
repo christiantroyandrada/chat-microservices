@@ -9,6 +9,9 @@
   "keywords": [],
   "author": "",
   "license": "ISC",
+  "devDependencies": {
+    "@types/node": "^20.19.25"
+  },
   "dependencies": {
     "@types/express": "^5.0.5",
     "@types/express-http-proxy": "^1.6.7",
