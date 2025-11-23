@@ -99,7 +99,7 @@ jobs:
             -Dsonar.inclusions=chat-service/src/**,notification-service/src/**,user-service/src/**
             -Dsonar.test.inclusions=chat-service/tests/**,notification-service/tests/**,user-service/tests/**
             -Dsonar.javascript.lcov.reportPaths=coverage/combined-lcov.info
-            -Dsonar.exclusions=node_modules/**,docker-secrets/**,**/build/**
+            -Dsonar.exclusions=node_modules/**,docker-secrets/**,**/build/**,**/tests/**
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           SONAR_ORGANIZATION: ${{ secrets.SONAR_ORGANIZATION }}
