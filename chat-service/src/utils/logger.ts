@@ -1,5 +1,5 @@
 /* stylelint-disable */
-import util from 'util'
+import util from 'node:util'
 
 const IS_NON_PROD = process.env.NODE_ENV !== 'production'
 
@@ -41,7 +41,7 @@ function getCallerContext(): string {
       const lineNum = s.slice(secondLastColon + 1, lastColon)
       const colNum = s.slice(lastColon + 1)
 
-      if (!/^[0-9]+$/.test(lineNum) || !/^[0-9]+$/.test(colNum)) return null
+      if (!/^\d+$/.test(lineNum) || !/^\d+$/.test(colNum)) return null
 
       // Construct an array compatible with RegExp.exec usage in the
       // original code (index 1 = filePath, 2 = line, 3 = col).
@@ -85,13 +85,6 @@ function formatArg(arg: unknown): unknown {
         } catch {
           // structuredClone failed for this value; fall through
         }
-      }
-
-      // Fallback: shallow/serializable deep clone via JSON
-      try {
-        return JSON.parse(JSON.stringify(arg))
-      } catch {
-        // Fall back to util.inspect below
       }
     } catch {
       // Fall back to util.inspect so objects are displayed readably
