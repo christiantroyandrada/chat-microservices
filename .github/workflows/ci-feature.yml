@@ -1,7 +1,6 @@
----
+
 ---
 name: ci
-
 on:
   push:
   # Run on all branches except main and master

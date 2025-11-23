@@ -8,6 +8,7 @@ on:
         description: 'Whether to generate coverage (lcov) and upload/merge artifacts (true/false)'
         required: true
         default: 'false'
+        type: string
 
 jobs:
   unit-tests:
