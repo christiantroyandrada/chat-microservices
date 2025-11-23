@@ -56,7 +56,6 @@ class RabbitMQService {
       userToken,
       fromName,
     } = payload
-
     if (type !== 'MESSAGE_RECEIVED') {
       this.channel.ack(msg)
       return
@@ -71,37 +70,45 @@ class RabbitMQService {
       type: NotificationType.MESSAGE,
       title: `New message from ${fromName || 'Unknown'}`,
       message: storedMessage,
-      read: false
+      read: false,
     })
 
     const online = this.userStatusStore.isUserOnline(userId)
 
-    // If the recipient is online, send a push.
-    if (online && userToken) {
+    // helper: send push for encrypted/plain messages
+    const sendPush = async () => {
       if (isEncrypted) {
         const dataPayload: Record<string, string> = {}
         if (envelope) dataPayload.envelope = typeof envelope === 'string' ? envelope : JSON.stringify(envelope)
         else if (message) dataPayload.envelope = message
 
         await this.fcmService.sendPushNotification(userToken, '[Encrypted message]', dataPayload)
-        this.channel.ack(msg)
         return
       }
 
-      // Not encrypted — send plaintext in push body
       await this.fcmService.sendPushNotification(userToken, message || 'You have a new message')
-      this.channel.ack(msg)
-      return
     }
 
-    // If the user has an email configured, send a transactional email.
-    if (userEmail) {
+    // helper: send transactional email
+    const sendEmail = async () => {
       const emailBody = isEncrypted ? 'You have a new encrypted message. Open the app to view it.' : (message || '')
       await this.emailService.sendEmail(
         userEmail,
         `New message from ${fromName}`,
         emailBody,
       )
+    }
+
+    // If the recipient is online and has a device token, prefer push
+    if (online && userToken) {
+      await sendPush()
+      this.channel.ack(msg)
+      return
+    }
+
+    // Otherwise fallback to email if available
+    if (userEmail) {
+      await sendEmail()
       this.channel.ack(msg)
       return
     }

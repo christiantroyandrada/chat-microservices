@@ -1,4 +1,4 @@
-import amqp, { Channel, Connection } from 'amqplib'
+import amqp, { Channel } from 'amqplib'
 import config from '../config/config'
 import { User, AppDataSource } from '../database'
 import { APIError } from '../utils'

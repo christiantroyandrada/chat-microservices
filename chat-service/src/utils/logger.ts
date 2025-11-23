@@ -32,11 +32,23 @@ function formatArg(arg: unknown): unknown {
   if (arg instanceof Error) return { message: arg.message, stack: arg.stack }
   if (typeof arg === 'object' && arg !== null) {
     try {
-      // Prefer structuredClone when available (native deep clone) and fall
-      // back to the JSON trick for older runtimes.
+      // Prefer structuredClone when available (native deep clone). Some
+      // runtimes may not implement it or it may throw for certain inputs
       const sc = (globalThis).structuredClone
-      if (typeof sc === 'function') return sc(arg)
-      return JSON.parse(JSON.stringify(arg))
+      if (typeof sc === 'function') {
+        try {
+          return sc(arg)
+        } catch {
+          // structuredClone failed for this value; fall through
+        }
+      }
+
+      // Fallback: shallow/serializable deep clone via JSON
+      try {
+        return JSON.parse(JSON.stringify(arg))
+      } catch {
+        // Fall back to util.inspect below
+      }
     } catch {
       // Fall back to util.inspect so objects are displayed readably
       return util.inspect(arg, { depth: null })
