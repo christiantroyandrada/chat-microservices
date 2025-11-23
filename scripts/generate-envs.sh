@@ -5,13 +5,44 @@
 
 set -euo pipefail
 
+# Parse args: support --force and --secrets-file=PATH (or --secrets-file PATH)
 FORCE=false
-if [ "${1:-}" = "--force" ]; then
-  FORCE=true
-fi
+SECRETS_OVERRIDE=""
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --force)
+      FORCE=true
+      shift
+      ;;
+    --secrets-file=*)
+      SECRETS_OVERRIDE="${1#*=}"
+      shift
+      ;;
+    --secrets-file)
+      shift
+      SECRETS_OVERRIDE="${1:-}"
+      shift || true
+      ;;
+    *)
+      # ignore unknown args
+      shift
+      ;;
+  esac
+done
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-SECRETS_FILE="$ROOT_DIR/docker-secrets/app_secrets"
+# Default canonical secrets path inside the repo (where docker-compose expects it)
+DEFAULT_SECRETS_PATH="$ROOT_DIR/docker-secrets/app_secrets"
+
+# Allow an override from the CLI or environment
+if [ -n "${SECRETS_OVERRIDE:-}" ]; then
+  SECRETS_FILE="$SECRETS_OVERRIDE"
+elif [ -n "${SECRETS_FILE:-}" ]; then
+  # preserve externally provided SECRETS_FILE env if present
+  SECRETS_FILE="$SECRETS_FILE"
+else
+  SECRETS_FILE="$DEFAULT_SECRETS_PATH"
+fi
 
 # Hold a generated JWT secret at runtime so we don't need to persist it into
 # the checked-in `docker-secrets/app_secrets` file. This keeps secrets out of
@@ -19,9 +50,49 @@ SECRETS_FILE="$ROOT_DIR/docker-secrets/app_secrets"
 GENERATED_JWT_SECRET=""
 
 if [ ! -f "$SECRETS_FILE" ]; then
-  echo "Secrets file not found: $SECRETS_FILE"
-  echo "Copy docker-secrets/app_secrets.example to docker-secrets/app_secrets and populate it first."
-  exit 1
+  # Try to locate a candidate secrets file elsewhere in the repo or parent dirs
+  echo "Secrets file not found at: $SECRETS_FILE"
+  echo "Searching for an existing 'app_secrets' or example file..."
+
+  # Search common locations: repo docker-secrets, parent repo, any app_secrets* within a small depth
+  FOUND=""
+  CANDIDATES=(
+    "$ROOT_DIR/docker-secrets/app_secrets"
+    "$ROOT_DIR/docker-secrets/app_secrets.example"
+    "$ROOT_DIR/../docker-secrets/app_secrets"
+    "$ROOT_DIR/../docker-secrets/app_secrets.example"
+    "$ROOT_DIR/app_secrets"
+    "$ROOT_DIR/app_secrets.example"
+  )
+  for c in "${CANDIDATES[@]}"; do
+    if [ -f "$c" ]; then
+      FOUND="$c"
+      break
+    fi
+  done
+
+  if [ -z "$FOUND" ]; then
+    # Fallback: shallow find inside repository (maxdepth 3) for files starting with app_secrets
+    FOUND=$(find "$ROOT_DIR" -maxdepth 3 -type f -iname 'app_secrets*' -print -quit 2>/dev/null || true)
+  fi
+
+  if [ -n "$FOUND" ] && [ -f "$FOUND" ]; then
+    echo "Found secrets candidate: $FOUND"
+    # Ensure docker-secrets dir exists in the repo
+    mkdir -p "$ROOT_DIR/docker-secrets"
+    # If the canonical repo path doesn't exist, create a symlink there that points to the discovered file.
+    if [ ! -e "$DEFAULT_SECRETS_PATH" ]; then
+      ln -s "$FOUND" "$DEFAULT_SECRETS_PATH"
+      echo "Created symlink: $DEFAULT_SECRETS_PATH -> $FOUND"
+    else
+      echo "A file already exists at $DEFAULT_SECRETS_PATH; leaving it in place."
+    fi
+    SECRETS_FILE="$DEFAULT_SECRETS_PATH"
+  else
+    echo "No existing secrets file or example found."
+    echo "Please copy docker-secrets/app_secrets.example to docker-secrets/app_secrets and populate it first."
+    exit 1
+  fi
 fi
 
 get_value() {
@@ -32,8 +103,18 @@ get_value() {
     return
   fi
 
+  # Allow environment variables to override secrets file values
+  if [ -n "${!key:-}" ]; then
+    printf "%s" "${!key}"
+    return
+  fi
+
   # Use a safe grep invocation that doesn't fail under 'set -euo pipefail'
-  (grep -m1 "^${key}=" "$SECRETS_FILE" 2>/dev/null || true) | head -1 | cut -d'=' -f2- | sed -e 's/^"//' -e 's/"$//' -e "s/^'//" -e "s/'$//"
+  # Trim surrounding single/double quotes and surrounding whitespace
+  (grep -m1 "^${key}=" "$SECRETS_FILE" 2>/dev/null || true) \
+    | head -1 \
+    | cut -d'=' -f2- \
+    | perl -pe 's/^["\x27]//; s/["\x27]$//; s/^[[:space:]]+//; s/[[:space:]]+$//'
 }
 
 generate_jwt_secret() {

@@ -9,7 +9,17 @@ import { MessageStatus } from '../database/models/MessageModel'
 // Helper to fetch user details from user service
 const fetchUserDetails = async (userId: string): Promise<{ username?: string } | null> => {
   try {
-    const userServiceUrl = process.env.USER_SERVICE_URL || 'http://user:8081'
+    // Resolve user service URL with secure-by-default behavior.
+    // - If USER_SERVICE_URL is provided, use it verbatim (allows overrides).
+    // - Otherwise default to HTTPS in non-development environments.
+    // - Allow HTTP for development/test/local workflows for convenience.
+    const userServiceUrl = ((): string => {
+      const envUrl = process.env.USER_SERVICE_URL
+      if (envUrl) return envUrl
+      const nodeEnv = process.env.NODE_ENV ?? 'development'
+      if (nodeEnv === 'development' || nodeEnv === 'test') return 'http://user:8081'
+      return 'https://user:8081'
+    })()
     const response = await fetch(`${userServiceUrl}/users/${userId}`)
     
     if (!response.ok) {
@@ -200,10 +210,13 @@ const getConversations = async (
       ORDER BY rm."lastMessageTime" DESC
     `, [userId])
 
+    // Ensure we have an array even if the repo returns undefined/null
+    const conversationsArray = Array.isArray(conversationsRaw) ? conversationsRaw : (conversationsRaw ? [conversationsRaw] : [])
+
     // Fetch usernames for all conversation partners
     // Use the shared ConversationRow type from src/types.ts
     const conversationsWithUsernames = await Promise.all(
-      (conversationsRaw as ConversationRow[]).map(async (conv) => {
+      (conversationsArray as ConversationRow[]).map(async (conv) => {
         const userDetails = await fetchUserDetails(conv.userId)
         return {
           ...conv,
@@ -269,6 +282,14 @@ const markAsRead = async (
 }
 
 export default {
+  sendMessage,
+  fetchConversation,
+  getConversations,
+  markAsRead,
+}
+
+// Also provide named exports to support CommonJS `require()` consumers in tests
+export {
   sendMessage,
   fetchConversation,
   getConversations,

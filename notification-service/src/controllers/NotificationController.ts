@@ -208,3 +208,13 @@ export default {
   deleteNotification,
   createNotification
 }
+
+// Named exports for CommonJS `require()` based tests
+export {
+  getNotifications,
+  getUnreadCount,
+  markAsRead,
+  markAllAsRead,
+  deleteNotification,
+  createNotification,
+}

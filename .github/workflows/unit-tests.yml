@@ -112,15 +112,13 @@ jobs:
           ls -laR ./artifacts || echo "artifacts directory not found or empty"
           
           shopt -s globstar || true
-          appended=0
-          for f in artifacts/**/lcov.info; do
-            if [ -f "$f" ]; then
-              echo "Appending $f to $COMBINED"
-              cat "$f" >> "$COMBINED"
-              echo "" >> "$COMBINED"
-              appended=1
-            fi
-          done
+          # Use a dedicated script to normalize and merge LCOV files. The
+          # script will look for lcov.info files under ./artifacts, rewrite
+          # SF: paths to include the service folder (e.g. SF:chat-service/src/...),
+          # and write the combined file to $COMBINED.
+          echo "Running normalization script"
+          bash scripts/normalize-lcov.sh ./artifacts "$COMBINED"
+          appended=1
           
           if [ "$appended" -eq 0 ]; then
             echo "WARNING: No LCOV files found to merge. Combined file will be empty."
