@@ -56,65 +56,99 @@ class RabbitMQService {
       userToken,
       fromName,
     } = payload
-    if (type !== 'MESSAGE_RECEIVED') {
-      this.channel.ack(msg)
-      return
-    }
-
-    // Create notification record in database. For encrypted messages do not
-    // persist plaintext — store a generic placeholder instead.
     const notificationRepo = AppDataSource.getRepository(Notification)
-    const storedMessage = isEncrypted ? '[Encrypted message]' : (message || 'You have a new message')
-    await notificationRepo.save({
-      userId,
-      type: NotificationType.MESSAGE,
-      title: `New message from ${fromName || 'Unknown'}`,
-      message: storedMessage,
-      read: false,
-    })
 
-    const online = this.userStatusStore.isUserOnline(userId)
+    // Handle known event types. MESSAGE_RECEIVED keeps the original behavior.
+    switch (type) {
+      case 'MESSAGE_RECEIVED': {
+        // Create notification record in database. For encrypted messages do not
+        // persist plaintext — store a generic placeholder instead.
+        const storedMessage = isEncrypted ? '[Encrypted message]' : (message || 'You have a new message')
+        await notificationRepo.save({
+          userId,
+          type: NotificationType.MESSAGE,
+          title: `New message from ${fromName || 'Unknown'}`,
+          message: storedMessage,
+          read: false,
+        })
 
-    // helper: send push for encrypted/plain messages
-    const sendPush = async () => {
-      if (isEncrypted) {
-        const dataPayload: Record<string, string> = {}
-        if (envelope) dataPayload.envelope = typeof envelope === 'string' ? envelope : JSON.stringify(envelope)
-        else if (message) dataPayload.envelope = message
+        const online = this.userStatusStore.isUserOnline(userId)
 
-        await this.fcmService.sendPushNotification(userToken, '[Encrypted message]', dataPayload)
+        // helper: send push for encrypted/plain messages
+        const sendPush = async () => {
+          if (isEncrypted) {
+            const dataPayload: Record<string, string> = {}
+            if (envelope) dataPayload.envelope = typeof envelope === 'string' ? envelope : JSON.stringify(envelope)
+            else if (message) dataPayload.envelope = message
+
+            await this.fcmService.sendPushNotification(userToken, '[Encrypted message]', dataPayload)
+            return
+          }
+
+          await this.fcmService.sendPushNotification(userToken, message || 'You have a new message')
+        }
+
+        // helper: send transactional email
+        const sendEmail = async () => {
+          const emailBody = isEncrypted ? 'You have a new encrypted message. Open the app to view it.' : (message || '')
+          await this.emailService.sendEmail(
+            userEmail,
+            `New message from ${fromName}`,
+            emailBody,
+          )
+        }
+
+        // If the recipient is online and has a device token, prefer push
+        if (online && userToken) {
+          await sendPush()
+          this.channel.ack(msg)
+          return
+        }
+
+        // Otherwise fallback to email if available
+        if (userEmail) {
+          await sendEmail()
+          this.channel.ack(msg)
+          return
+        }
+
+        // nothing to do for this message, acknowledge to remove from queue
+        this.channel.ack(msg)
         return
       }
 
-      await this.fcmService.sendPushNotification(userToken, message || 'You have a new message')
-    }
+      case 'USER_REGISTERED': {
+        // Create a system notification and send a welcome email
+        await notificationRepo.save({
+          userId,
+          type: NotificationType.SYSTEM,
+          title: 'Welcome to Chat App',
+          message: message || 'Thanks for registering. Welcome to Chat App!',
+          read: false,
+        })
 
-    // helper: send transactional email
-    const sendEmail = async () => {
-      const emailBody = isEncrypted ? 'You have a new encrypted message. Open the app to view it.' : (message || '')
-      await this.emailService.sendEmail(
-        userEmail,
-        `New message from ${fromName}`,
-        emailBody,
-      )
-    }
+        if (userEmail) {
+          try {
+            await this.emailService.sendEmail(userEmail, 'Welcome to Chat App', message || 'Thanks for registering. Welcome to Chat App!')
+          } catch (e) {
+            logError('[notification-service] Failed to send welcome email', e)
+          }
+        }
 
-    // If the recipient is online and has a device token, prefer push
-    if (online && userToken) {
-      await sendPush()
-      this.channel.ack(msg)
-      return
-    }
+        this.channel.ack(msg)
+        return
+      }
 
-    // Otherwise fallback to email if available
-    if (userEmail) {
-      await sendEmail()
-      this.channel.ack(msg)
-      return
-    }
+      // USER_LOGGED_IN events are intentionally ignored to limit notification
+      // types to: registration and offline message alerts. If needed in future
+      // this can be added back behind a feature flag.
 
-    // nothing to do for this message, acknowledge to remove from queue
-    this.channel.ack(msg)
+      default: {
+        // Unknown event types are ignored by the notification-service
+        this.channel.ack(msg)
+        return
+      }
+    }
   }
 }
 
