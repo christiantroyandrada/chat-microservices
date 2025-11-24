@@ -1,3 +1,38 @@
+import * as logger from '../../src/utils/logger'
+
+describe('notification-service logger', () => {
+  const origConsole = { log: console.log, warn: console.warn, error: console.error, debug: console.debug }
+
+  beforeEach(() => {
+    jest.spyOn(console, 'log').mockImplementation(() => {})
+    jest.spyOn(console, 'warn').mockImplementation(() => {})
+    jest.spyOn(console, 'error').mockImplementation(() => {})
+    jest.spyOn(console, 'debug').mockImplementation(() => {})
+  })
+
+  afterEach(() => {
+    jest.restoreAllMocks()
+    console.log = origConsole.log
+    console.warn = origConsole.warn
+    console.error = origConsole.error
+    console.debug = origConsole.debug
+  })
+
+  test('log functions accept error and object args and call console', () => {
+    const err = new Error('oh no')
+    const obj = { a: 1 }
+
+    expect(() => logger.logInfo('hi', obj)).not.toThrow()
+    expect(() => logger.logWarn(err)).not.toThrow()
+    expect(() => logger.logError('err', obj)).not.toThrow()
+    expect(() => logger.logDebug('dbg')).not.toThrow()
+
+    expect(console.log).toHaveBeenCalled()
+    expect(console.warn).toHaveBeenCalled()
+    expect(console.error).toHaveBeenCalled()
+    expect(console.debug).toHaveBeenCalled()
+  })
+})
 describe('logger utilities (notification-service)', () => {
   afterEach(() => {
     jest.restoreAllMocks()

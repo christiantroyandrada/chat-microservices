@@ -12,8 +12,9 @@ describe('MessageController branch coverage', () => {
     // minimal handleMessageReceived so require doesn't fail
     jest.doMock('../../src/utils', () => ({ APIError: class APIError extends Error { constructor(public statusCode:number, public message:string){ super(message) } }, handleMessageReceived: jest.fn() }))
 
-    const MessageController = require('../../src/controllers/MessageController')
-    const MC = MessageController.default || MessageController
+  const { requireControllerAfterMocks } = require('../utils/testHelpers')
+  const { controller } = requireControllerAfterMocks('../../src/controllers/MessageController')
+  const MC = controller.default || controller
     const res: any = { json: jest.fn() }
 
     await MC.sendMessage({ user: { _id: 'u1', username: 'u' }, body: { message: 'x' } } as any, res)
@@ -23,8 +24,9 @@ describe('MessageController branch coverage', () => {
   it('sendMessage rejects when sender equals receiver', async () => {
     jest.doMock('../../src/database', () => ({ AppDataSource: { getRepository: jest.fn() }, Message: class {} }))
     jest.doMock('../../src/utils', () => ({ APIError: class APIError extends Error { constructor(public statusCode:number, public message:string){ super(message) } }, handleMessageReceived: jest.fn() }))
-    const MessageController = require('../../src/controllers/MessageController')
-    const MC = MessageController.default || MessageController
+  const { requireControllerAfterMocks } = require('../utils/testHelpers')
+  const { controller } = requireControllerAfterMocks('../../src/controllers/MessageController')
+  const MC = controller.default || controller
     const res: any = { json: jest.fn() }
 
     await MC.sendMessage({ user: { _id: 'u1', username: 'u' }, body: { receiverId: 'u1', message: 'x' } } as any, res)
@@ -34,8 +36,9 @@ describe('MessageController branch coverage', () => {
   it('sendMessage rejects when message too long', async () => {
     jest.doMock('../../src/database', () => ({ AppDataSource: { getRepository: jest.fn() }, Message: class {} }))
     jest.doMock('../../src/utils', () => ({ APIError: class APIError extends Error { constructor(public statusCode:number, public message:string){ super(message) } }, handleMessageReceived: jest.fn() }))
-    const MessageController = require('../../src/controllers/MessageController')
-    const MC = MessageController.default || MessageController
+  const { requireControllerAfterMocks } = require('../utils/testHelpers')
+  const { controller } = requireControllerAfterMocks('../../src/controllers/MessageController')
+  const MC = controller.default || controller
     const res: any = { json: jest.fn() }
     const long = 'a'.repeat(5001)
 
@@ -46,8 +49,9 @@ describe('MessageController branch coverage', () => {
   it('sendMessage rejects when envelope __encrypted !== true', async () => {
     jest.doMock('../../src/database', () => ({ AppDataSource: { getRepository: jest.fn() }, Message: class {} }))
     jest.doMock('../../src/utils', () => ({ APIError: class APIError extends Error { constructor(public statusCode:number, public message:string){ super(message) } }, handleMessageReceived: jest.fn() }))
-    const MessageController = require('../../src/controllers/MessageController')
-    const MC = MessageController.default || MessageController
+  const { requireControllerAfterMocks } = require('../utils/testHelpers')
+  const { controller } = requireControllerAfterMocks('../../src/controllers/MessageController')
+  const MC = controller.default || controller
     const res: any = { json: jest.fn() }
     const badEnvelope = JSON.stringify({ __encrypted: false, body: 'x' })
 
@@ -64,8 +68,9 @@ describe('MessageController branch coverage', () => {
 
     // First: fetch returns username
   global.fetch = jest.fn().mockResolvedValue({ ok: true, json: async () => ({ data: { username: 'bob' } }) }) as any
-  const MessageController = require('../../src/controllers/MessageController')
-  const MC = MessageController.default || MessageController
+  const { requireControllerAfterMocks } = require('../utils/testHelpers')
+  const { controller } = requireControllerAfterMocks('../../src/controllers/MessageController')
+  const MC = controller.default || controller
   const res1: any = { json: jest.fn() }
   await MC.getConversations({ user: { _id: 'u1' } } as any, res1)
     expect(res1.json).toHaveBeenCalled()
@@ -85,8 +90,9 @@ describe('MessageController branch coverage', () => {
     const repo = { createQueryBuilder: jest.fn().mockReturnValue({ update: jest.fn().mockReturnThis(), set: jest.fn().mockReturnThis(), where: jest.fn().mockReturnThis(), andWhere: jest.fn().mockReturnThis(), execute: jest.fn().mockResolvedValue({ affected: 3 }) }) }
     const AppDataSource = { getRepository: jest.fn().mockReturnValue(repo) }
     jest.doMock('../../src/database', () => ({ AppDataSource }))
-    const MessageController = require('../../src/controllers/MessageController')
-    const MC = MessageController.default || MessageController
+  const { requireControllerAfterMocks } = require('../utils/testHelpers')
+  const { controller } = requireControllerAfterMocks('../../src/controllers/MessageController')
+  const MC = controller.default || controller
     const res: any = { json: jest.fn() }
 
     await MC.markAsRead({ user: { _id: 'u1' }, params: { senderId: 'u2' } } as any, res)

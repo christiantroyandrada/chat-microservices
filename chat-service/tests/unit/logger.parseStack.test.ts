@@ -1,4 +1,4 @@
-describe.skip('logger stack parsing branches', () => {
+describe('logger stack parsing branches', () => {
   afterEach(() => {
     jest.restoreAllMocks()
     jest.resetModules()
@@ -12,10 +12,10 @@ describe.skip('logger stack parsing branches', () => {
     // Spy on console.log to verify output
     const spy = jest.spyOn(console, 'log').mockImplementation(() => {})
 
-    // Monkeypatch Error.captureStackTrace so we can inject a custom stack
-    const originalCapture = (Error as any).captureStackTrace
-    ;(Error as any).captureStackTrace = (err: any) => {
-      err.stack = 'Error: test\n    at firstLine\n    at Object.<anonymous> (src/controllers/Fake.ts:123:45)\n'
+    // Monkeypatch Error.prepareStackTrace to inject a custom stack string
+    const originalPrepare = (Error as any).prepareStackTrace
+    ;(Error as any).prepareStackTrace = function () {
+      return 'Error: test\n    at firstLine\n    at Object.<anonymous> (src/controllers/Fake.ts:123:45)\n'
     }
 
     try {
@@ -26,7 +26,7 @@ describe.skip('logger stack parsing branches', () => {
       expect(typeof args[1]).toBe('string')
       expect(args[1]).toContain('Fake.ts:123')
     } finally {
-      if (originalCapture) (Error as any).captureStackTrace = originalCapture
+      if (originalPrepare) (Error as any).prepareStackTrace = originalPrepare
     }
   })
 })

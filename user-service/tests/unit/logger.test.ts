@@ -1,3 +1,25 @@
+import * as logger from '../../src/utils/logger'
+
+describe('user-service logger', () => {
+  beforeEach(() => {
+    jest.spyOn(console, 'log').mockImplementation(() => {})
+    jest.spyOn(console, 'warn').mockImplementation(() => {})
+    jest.spyOn(console, 'error').mockImplementation(() => {})
+    jest.spyOn(console, 'debug').mockImplementation(() => {})
+  })
+
+  afterEach(() => {
+    jest.restoreAllMocks()
+  })
+
+  test('log functions accept plain values and do not throw', () => {
+    const v = 42
+    expect(() => logger.logInfo('i', v)).not.toThrow()
+    expect(() => logger.logWarn('w', v)).not.toThrow()
+    expect(() => logger.logError('e', v)).not.toThrow()
+    expect(() => logger.logDebug('d', v)).not.toThrow()
+  })
+})
 describe('logger utilities (user-service)', () => {
   afterEach(() => {
     jest.restoreAllMocks()

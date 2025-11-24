@@ -10,8 +10,9 @@ describe('NotificationController additional error branches', () => {
     const AppDataSource = { getRepository: jest.fn().mockReturnValue(notifRepo) }
     jest.doMock('../../src/database', () => ({ AppDataSource }))
 
-    const NotificationController = require('../../src/controllers/NotificationController')
-    const NC = NotificationController.default || NotificationController
+  const { requireControllerAfterMocks } = require('../utils/testHelpers')
+  const { controller } = requireControllerAfterMocks('../../src/controllers/NotificationController')
+  const NC = controller.default || controller
     const res: any = { status: jest.fn().mockReturnThis(), json: jest.fn() }
 
     await NC.getNotifications({ user: { _id: 'u1' }, query: {} } as any, res)
@@ -23,8 +24,9 @@ describe('NotificationController additional error branches', () => {
     const AppDataSource = { getRepository: jest.fn().mockReturnValue(notifRepo) }
     jest.doMock('../../src/database', () => ({ AppDataSource }))
 
-    const NotificationController = require('../../src/controllers/NotificationController')
-    const NC = NotificationController.default || NotificationController
+  const { requireControllerAfterMocks } = require('../utils/testHelpers')
+  const { controller } = requireControllerAfterMocks('../../src/controllers/NotificationController')
+  const NC = controller.default || controller
     const res: any = { status: jest.fn().mockReturnThis(), json: jest.fn() }
 
     await NC.getUnreadCount({ user: { _id: 'u1' } } as any, res)
@@ -37,8 +39,9 @@ describe('NotificationController additional error branches', () => {
     const AppDataSource = { getRepository: jest.fn().mockReturnValue(notifRepo) }
     jest.doMock('../../src/database', () => ({ AppDataSource }))
 
-    const NotificationController = require('../../src/controllers/NotificationController')
-    const NC = NotificationController.default || NotificationController
+  const { requireControllerAfterMocks } = require('../utils/testHelpers')
+  const { controller } = requireControllerAfterMocks('../../src/controllers/NotificationController')
+  const NC = controller.default || controller
     const res: any = { status: jest.fn().mockReturnThis(), json: jest.fn() }
 
     await NC.markAllAsRead({ user: { _id: 'u1' } } as any, res)

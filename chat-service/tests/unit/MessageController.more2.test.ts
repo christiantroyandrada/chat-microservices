@@ -27,8 +27,9 @@ describe('MessageController additional tests', () => {
   it('sendMessage rejects when receiver missing or same as sender', async () => {
     // require after mocks to avoid importing modules that depend on ESM-only packages
   jest.resetModules()
-  const mod = require('../../src/controllers/MessageController')
-  const MessageController = mod && mod.default ? mod.default : mod
+  const { requireControllerAfterMocks } = require('../utils/testHelpers')
+  const { controller } = requireControllerAfterMocks('../../src/controllers/MessageController')
+  const MessageController = controller && controller.default ? controller.default : controller
     const res: any = { json: jest.fn() }
     // missing receiverId
     await MessageController.sendMessage({ user: { _id: 'u1' }, body: { receiverId: '', message: 'x' } } as any, res)
@@ -42,8 +43,9 @@ describe('MessageController additional tests', () => {
 
   it('sendMessage validates message content (empty/too long/non-string)', async () => {
   jest.resetModules()
-  const mod = require('../../src/controllers/MessageController')
-  const MessageController = mod && mod.default ? mod.default : mod
+  const { requireControllerAfterMocks } = require('../utils/testHelpers')
+  const { controller } = requireControllerAfterMocks('../../src/controllers/MessageController')
+  const MessageController = controller && controller.default ? controller.default : controller
     const res: any = { json: jest.fn() }
     await MessageController.sendMessage({ user: { _id: 'u1', username: 'u', email: 'a@b' }, body: { receiverId: 'u2', message: '' } } as any, res)
     expect(res.json).toHaveBeenCalled()
@@ -60,8 +62,9 @@ describe('MessageController additional tests', () => {
 
   it('sendMessage rejects when envelope shape invalid', async () => {
   jest.resetModules()
-  const mod = require('../../src/controllers/MessageController')
-  const MessageController = mod && mod.default ? mod.default : mod
+  const { requireControllerAfterMocks } = require('../utils/testHelpers')
+  const { controller } = requireControllerAfterMocks('../../src/controllers/MessageController')
+  const MessageController = controller && controller.default ? controller.default : controller
     const res: any = { json: jest.fn() }
     const badEnvelope = JSON.stringify({ __encrypted: false, body: 'x' })
     await MessageController.sendMessage({ user: { _id: 'u1', username: 'u', email: 'a@b' }, body: { receiverId: 'u2', message: badEnvelope } } as any, res)
@@ -75,8 +78,9 @@ describe('MessageController additional tests', () => {
   jest.spyOn(AppDataSource, 'getRepository').mockReturnValue(repo as any)
   const utils = require('../../src/utils')
   jest.spyOn(utils, 'handleMessageReceived').mockResolvedValue(undefined)
-  const mod = require('../../src/controllers/MessageController')
-  const MessageController = mod && mod.default ? mod.default : mod
+  const { requireControllerAfterMocks } = require('../utils/testHelpers')
+  const { controller } = requireControllerAfterMocks('../../src/controllers/MessageController')
+  const MessageController = controller && controller.default ? controller.default : controller
 
     const res: any = { json: jest.fn() }
     const env = JSON.stringify({ __encrypted: true, body: 'abc' })
@@ -92,8 +96,9 @@ describe('MessageController additional tests', () => {
   const qb = { where: jest.fn().mockReturnThis(), orderBy: jest.fn().mockReturnThis(), getMany: jest.fn().mockResolvedValue(msgs) }
   const repo = { createQueryBuilder: jest.fn().mockReturnValue(qb) }
   jest.spyOn(AppDataSource, 'getRepository').mockReturnValue(repo as any)
-  const mod = require('../../src/controllers/MessageController')
-  const MessageController = mod && mod.default ? mod.default : mod
+  const { requireControllerAfterMocks } = require('../utils/testHelpers')
+  const { controller } = requireControllerAfterMocks('../../src/controllers/MessageController')
+  const MessageController = controller && controller.default ? controller.default : controller
 
     const res: any = { json: jest.fn() }
     await MessageController.fetchConversation({ user: { _id: 'u1' }, params: { receiverId: 'u2' } } as any, res)
@@ -107,8 +112,9 @@ describe('MessageController additional tests', () => {
   jest.spyOn(AppDataSource, 'getRepository').mockReturnValue(repo as any)
 
   global.fetch = jest.fn().mockResolvedValue({ ok: true, json: async () => ({ data: { username: 'other' } }) }) as any
-  const mod = require('../../src/controllers/MessageController')
-  const MessageController = mod && mod.default ? mod.default : mod
+  const { requireControllerAfterMocks } = require('../utils/testHelpers')
+  const { controller } = requireControllerAfterMocks('../../src/controllers/MessageController')
+  const MessageController = controller && controller.default ? controller.default : controller
 
     const res: any = { json: jest.fn() }
     await MessageController.getConversations({ user: { _id: 'u1' } } as any, res)

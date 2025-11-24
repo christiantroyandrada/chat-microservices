@@ -12,8 +12,9 @@ describe('AuthController additional branch exercises (user-service)', () => {
     // mock isPasswordMatch to avoid import issues
     jest.doMock('../../src/utils', () => ({ isPasswordMatch: jest.fn(), encryptPassword: jest.fn(), APIError: class APIError extends Error { constructor(public statusCode:number, public message:string){ super(message) } } }))
 
-    const AuthController = require('../../src/controllers/AuthController')
-    const AC = AuthController.default || AuthController
+  const { requireControllerAfterMocks } = require('../utils/testHelpers')
+  const { controller } = requireControllerAfterMocks('../../src/controllers/AuthController')
+  const AC = controller.default || controller
     const next = jest.fn()
     await AC.login({ body: { email: 'a@b', password: 'p' } } as any, {} as any, next)
     expect(next).toHaveBeenCalled()
@@ -26,8 +27,9 @@ describe('AuthController additional branch exercises (user-service)', () => {
     jest.doMock('../../src/database', () => ({ AppDataSource }))
     jest.doMock('../../src/utils', () => ({ isPasswordMatch: jest.fn().mockResolvedValue(false), encryptPassword: jest.fn(), APIError: class APIError extends Error { constructor(public statusCode:number, public message:string){ super(message) } } }))
 
-    const AuthController = require('../../src/controllers/AuthController')
-    const AC = AuthController.default || AuthController
+  const { requireControllerAfterMocks } = require('../utils/testHelpers')
+  const { controller } = requireControllerAfterMocks('../../src/controllers/AuthController')
+  const AC = controller.default || controller
     const next = jest.fn()
     await AC.login({ body: { email: 'a@b', password: 'p' } } as any, {} as any, next)
     expect(next).toHaveBeenCalled()
@@ -35,16 +37,18 @@ describe('AuthController additional branch exercises (user-service)', () => {
 
   it('getCurrentUser calls next when unauthenticated or user not found', async () => {
     const next = jest.fn()
-    const AuthController = require('../../src/controllers/AuthController')
-    const AC = AuthController.default || AuthController
+  const { requireControllerAfterMocks } = require('../utils/testHelpers')
+  const { controller } = requireControllerAfterMocks('../../src/controllers/AuthController')
+  const AC = controller.default || controller
     await AC.getCurrentUser({} as any, {} as any, next)
     expect(next).toHaveBeenCalled()
   })
 
   it('getUserById calls next when userId missing', async () => {
     const next = jest.fn()
-    const AuthController = require('../../src/controllers/AuthController')
-    const AC = AuthController.default || AuthController
+  const { requireControllerAfterMocks } = require('../utils/testHelpers')
+  const { controller } = requireControllerAfterMocks('../../src/controllers/AuthController')
+  const AC = controller.default || controller
     await AC.getUserById({ params: {} } as any, {} as any, next)
     expect(next).toHaveBeenCalled()
   })
