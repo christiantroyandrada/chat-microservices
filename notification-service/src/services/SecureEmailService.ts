@@ -1,7 +1,10 @@
 import axios, { AxiosInstance } from 'axios'
+import nodemailer from 'nodemailer'
 import config from '../config/config'
 import { logInfo, logWarn, logError } from '../utils/logger'
 import type { BrevoEmailPayload, BrevoAccountInfo, AxiosErrorResponse } from '../types'
+
+type Attachment = { filename: string; contentBase64: string; cid?: string }
 
 /**
  * SecureEmailService — a thin, secure wrapper around the Brevo (SendinBlue)
@@ -11,6 +14,7 @@ import type { BrevoEmailPayload, BrevoAccountInfo, AxiosErrorResponse } from '..
  */
 export class SecureEmailService {
   private readonly client: AxiosInstance
+  private smtpTransport: ReturnType<typeof nodemailer.createTransport> | null = null
 
   constructor() {
     if (!config.SENDINBLUE_APIKEY) {
@@ -35,7 +39,8 @@ export class SecureEmailService {
     to: string,
     subject: string,
     htmlContent: string,
-    textContent?: string
+    textContent?: string,
+    attachments?: Attachment[]
   ): Promise<{ messageId: string }> {
     if (!config.SENDINBLUE_APIKEY) {
       throw new Error('[SecureEmailService] API key not configured')
@@ -46,6 +51,36 @@ export class SecureEmailService {
     }
 
     try {
+      // Prefer SMTP relay when configured so we can attach inline images (CID)
+      if (config.smtp && config.smtp.host && config.smtp.user && config.smtp.pass) {
+        if (!this.smtpTransport) {
+          this.smtpTransport = nodemailer.createTransport({
+            host: config.smtp.host,
+            port: Number(config.smtp.port) || 587,
+            secure: Number(config.smtp.port) === 465, // true for 465, false for 587
+            auth: {
+              user: config.smtp.user,
+              pass: config.smtp.pass
+            }
+          })
+        }
+
+        const mailOptions: any = {
+          from: `${'Chat Service'} <${config.EMAIL_FROM}>`,
+          to,
+          subject,
+          html: htmlContent,
+        }
+
+        if (attachments && attachments.length) {
+          mailOptions.attachments = attachments.map(a => ({ filename: a.filename, content: Buffer.from(a.contentBase64, 'base64'), cid: a.cid }))
+        }
+
+        const info = await this.smtpTransport.sendMail(mailOptions)
+        logInfo('[SecureEmailService] SMTP email sent successfully:', info.messageId || info.response)
+        return { messageId: info.messageId || String(info.response || '') }
+      }
+
       const payload: BrevoEmailPayload = {
         sender: {
           email: config.EMAIL_FROM,
@@ -57,9 +92,16 @@ export class SecureEmailService {
         ...(textContent && { textContent })
       }
 
+      if (attachments && attachments.length) {
+        // Brevo expects an `attachment` array with { name, content } base64
+        // Note: inline CID behavior may vary with provider; this is a best-effort fallback.
+        // @ts-ignore
+        payload.attachment = attachments.map(a => ({ name: a.filename, content: a.contentBase64 }))
+      }
+
       const response = await this.client.post('/smtp/email', payload)
 
-  logInfo('[SecureEmailService] Email sent successfully:', response.data.messageId)
+      logInfo('[SecureEmailService] Email sent successfully:', response.data.messageId)
       return { messageId: response.data.messageId }
     } catch (err: unknown) {
       // Use axios helper type guard when available
@@ -104,8 +146,8 @@ export class SecureEmailService {
   /**
    * Compatibility wrapper for the legacy EmailService.sendEmail signature
    */
-  async sendEmail(to: string, subject: string, content: string) {
-    await this.sendTransactionalEmail(to, subject, content).catch((err) => {
+  async sendEmail(to: string, subject: string, content: string, attachments?: { filename: string; contentBase64: string; cid?: string }[]) {
+    await this.sendTransactionalEmail(to, subject, content, undefined, attachments).catch((err) => {
       logError('[SecureEmailService] sendEmail failed:', err)
       throw err
     })

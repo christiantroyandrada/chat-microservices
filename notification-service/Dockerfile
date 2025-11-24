@@ -27,6 +27,9 @@ WORKDIR /usr/src/app
 COPY --from=builder /usr/src/app/build ./build
 COPY --from=builder /usr/src/app/node_modules ./node_modules
 COPY --from=builder /usr/src/app/package*.json ./
+# Ensure template files are available in the runtime image at the same
+# relative location the app expects (build/src/templates)
+COPY --from=builder /usr/src/app/src/templates ./build/src/templates
 
 EXPOSE 8083
 

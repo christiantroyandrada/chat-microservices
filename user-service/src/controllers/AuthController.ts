@@ -4,6 +4,7 @@ import { User, AppDataSource } from '../database'
 import { APIError, encryptPassword, isPasswordMatch } from '../utils'
 import config from '../config/config'
 import type { RegistrationBody } from '../types'
+import { rabbitMQService } from '../services/RabbitMQService'
 
 const JWT_SECRET = config.JWT_SECRET as string
 const COOKIE_EXPIRATION_DAYS = 7
@@ -64,6 +65,24 @@ const registration = async (
     }
 
     // Token is sent via httpOnly cookie only (not in response body for security)
+    // Also create and send JWT cookie so clients are authenticated immediately
+    await createSendToken(user as User, res)
+
+    // Publish a notification event so the notification-service can create
+    // a DB notification and optionally send a welcome email to the user.
+    try {
+      await rabbitMQService.publishNotification({
+        type: 'USER_REGISTERED',
+        userId: user.id,
+        userEmail: user.email,
+        fromName: 'System',
+        message: 'Welcome to the Chat App!'
+      })
+    } catch (e) {
+      // Log and continue — registration succeeded even if publishing fails
+      console.warn('[user-service] Failed to publish USER_REGISTERED event', e)
+    }
+
     return res.json({
       status: 200,
       message: 'User registered successfully',

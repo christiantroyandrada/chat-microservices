@@ -72,6 +72,23 @@ class RabbitMQService {
         }
       })
   }
+
+    /**
+     * Publish a notification payload to the shared notifications queue.
+     * Used by other services (e.g. auth) to notify the notification-service.
+     */
+    async publishNotification (payload: any) {
+      try {
+        if (!this.channel) throw new Error('RabbitMQ channel is not initialized')
+        const q = process.env.NOTIFICATIONS_QUEUE || 'NOTIFICATIONS'
+        await this.channel.assertQueue(q, { durable: true })
+        this.channel.sendToQueue(q, Buffer.from(JSON.stringify(payload)))
+        return true
+      } catch (err) {
+        logError('[user-service] publishNotification failed:', err)
+        return false
+      }
+    }
 }
 
 export const rabbitMQService = new RabbitMQService()

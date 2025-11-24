@@ -65,12 +65,12 @@ const prekeyGetLimiter = rateLimit({
 })
 
 // Publish prekey: authenticated + validation + rate limit
-userServiceRouter.post('/api/user/prekeys', prekeyPostLimiter, authenticated, publishPrekeyValidation, validateRequest, PrekeyController.publishPrekey)
+userServiceRouter.post('/prekeys', prekeyPostLimiter, authenticated, publishPrekeyValidation, validateRequest, PrekeyController.publishPrekey)
 
 // Get a prekey bundle for a user (consumes a one-time prekey when available)
 // Get prekey bundle (public) - consumption is handled atomically in the controller
 // Get prekey bundle (public) - consumption is handled atomically in the controller
-userServiceRouter.get('/api/user/prekeys/:userId', prekeyGetLimiter, PrekeyController.getPrekeyBundle)
+userServiceRouter.get('/prekeys/:userId', prekeyGetLimiter, PrekeyController.getPrekeyBundle)
 
 // Store complete Signal key set (authenticated) - uses /user prefix like other auth routes
 userServiceRouter.post('/signal-keys', prekeyPostLimiter, authenticated, PrekeyController.storeSignalKeys)

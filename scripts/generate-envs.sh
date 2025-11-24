@@ -34,6 +34,11 @@ ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 # Default canonical secrets path inside the repo (where docker-compose expects it)
 DEFAULT_SECRETS_PATH="$ROOT_DIR/docker-secrets/app_secrets"
 
+# When running inside Docker, check for volume-mounted secrets first
+if [ -f "/run/secrets/app_secrets" ]; then
+  DEFAULT_SECRETS_PATH="/run/secrets/app_secrets"
+fi
+
 # Allow an override from the CLI or environment
 if [ -n "${SECRETS_OVERRIDE:-}" ]; then
   SECRETS_FILE="$SECRETS_OVERRIDE"

@@ -62,6 +62,7 @@ This collaborative approach combines the **strategic thinking and domain experti
 
 - **Database**: PostgreSQL 17.6 with TypeORM (shared by all services)
 - **Message Queue**: RabbitMQ for inter-service communication (external)
+- **Asset Storage**: Cloudinary for static assets and email images (external)
 - **Reverse Proxy**: Nginx on port 85 routes requests to appropriate services
 - **API Routes**:
   - `/api/user/*` → user-service (port 8081)
@@ -92,10 +93,12 @@ This collaborative approach combines the **strategic thinking and domain experti
 └────────────────────────────────────────────────────────────┘
 
     External Services (not in compose):
-    ┌──────────────┐
-    │  RabbitMQ    │  ← MESSAGE_BROKER_URL
-    │  (CloudAMQP) │
-    └──────────────┘
+    ┌──────────────┐  ┌──────────────┐
+    │  RabbitMQ    │  │  Cloudinary  │
+    │  (CloudAMQP) │  │  (Assets)    │
+    └──────────────┘  └──────────────┘
+         ↑                   ↑
+    MESSAGE_BROKER_URL   Static Assets
 ```
 
 ## Prerequisites
@@ -316,6 +319,33 @@ node scripts/purgeQueue.js
 Useful for clearing test messages during development.
 
 ## Troubleshooting
+
+### Docker Desktop Bind Mount Issues (macOS)
+
+**Problem**: After Docker Desktop updates (especially v4.52+), you may see errors like:
+```
+Error response from daemon: invalid mount config for type "bind": 
+bind source path does not exist: /host_mnt/Users/.../docker-secrets/app_secrets
+```
+
+**Root Cause**: Docker Desktop's VM caches host path mappings. If your repository path previously contained spaces or was renamed, the VM may still try to resolve old cached paths for bind mounts.
+
+**Solution**: This project now uses a **volume-based secrets approach** that avoids Docker Desktop's VM path translation entirely:
+- The `setup` service copies secrets from the repository into a shared Docker volume
+- All other services mount this volume read-only at `/run/secrets/app_secrets`
+- No bind mounts = no VM path translation issues
+
+**This approach is:**
+- ✅ Reliable on Docker Desktop (any version, any path)
+- ✅ Cloud/VPS ready (volumes work everywhere)
+- ✅ Secure (volume permissions isolated to Docker)
+- ✅ No manual workarounds or temp files needed
+
+**If you still see bind mount errors:**
+1. Ensure you're running the latest version of this repository's `docker-compose.yml`
+2. Clean up old volumes: `docker-compose down -v`
+3. Restart Docker Desktop
+4. Bring up the stack fresh: `docker-compose up --build -d`
 
 ### PostgreSQL Connection Issues
 

@@ -7,7 +7,7 @@ import { Message, connectDB, AppDataSource } from './database'
 import { MessageStatus } from './database/models/MessageModel'
 import config from './config/config'
 import { rabbitMQService } from './services/RabbitMQService'
-import { handleMessageReceived } from './utils'
+import { handleMessageReceived, UserStatusStore } from './utils'
 
 import { logDebug, logInfo, logWarn, logError } from './utils/logger'
 
@@ -118,6 +118,9 @@ const start = async () => {
 
   // Track active user connections (userId -> Set of socket IDs)
   const activeUsers = new Map<string, Set<string>>();
+  // Mirror presence into an in-process status store so other modules can
+  // cheaply check whether a user is considered online without RPC.
+  const userStatusStore = UserStatusStore.getInstance()
   
   // Track typing status with timeout (userId -> timeout reference)
   const typingTimeouts = new Map<string, NodeJS.Timeout>();
@@ -127,7 +130,7 @@ const start = async () => {
 
     // Use authenticated user ID from JWT (already verified by middleware)
     const userId = socket.data.user?.id;
-    if (userId) {
+      if (userId) {
   socket.join(userId);
   logDebug('[chat-service] User joined room:', userId, 'socket:', socket.id);
 
@@ -136,6 +139,10 @@ const start = async () => {
         activeUsers.set(userId, new Set());
       }
       activeUsers.get(userId)!.add(socket.id);
+
+      // Also update the in-process status store (used to decide whether to
+      // publish notification events to the messaging queue).
+      userStatusStore.setUserOnline(userId)
 
       // If this is the user's first connection, broadcast online status to all clients
       if (activeUsers.get(userId)!.size === 1) {
@@ -178,6 +185,8 @@ const start = async () => {
         // If user has no more active connections, mark as offline
         if (userSockets.size === 0) {
           activeUsers.delete(userId);
+          // update in-process store
+          userStatusStore.setUserOffline(userId)
           const lastSeen = new Date().toISOString();
           logInfo('[chat-service] User went offline:', userId, 'lastSeen:', lastSeen);
           io.emit('presence', {
