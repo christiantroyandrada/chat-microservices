@@ -62,6 +62,7 @@ This collaborative approach combines the **strategic thinking and domain experti
 
 - **Database**: PostgreSQL 17.6 with TypeORM (shared by all services)
 - **Message Queue**: RabbitMQ for inter-service communication (external)
+- **Asset Storage**: Cloudinary for static assets and email images (external)
 - **Reverse Proxy**: Nginx on port 85 routes requests to appropriate services
 - **API Routes**:
   - `/api/user/*` → user-service (port 8081)
@@ -92,10 +93,12 @@ This collaborative approach combines the **strategic thinking and domain experti
 └────────────────────────────────────────────────────────────┘
 
     External Services (not in compose):
-    ┌──────────────┐
-    │  RabbitMQ    │  ← MESSAGE_BROKER_URL
-    │  (CloudAMQP) │
-    └──────────────┘
+    ┌──────────────┐  ┌──────────────┐
+    │  RabbitMQ    │  │  Cloudinary  │
+    │  (CloudAMQP) │  │  (Assets)    │
+    └──────────────┘  └──────────────┘
+         ↑                   ↑
+    MESSAGE_BROKER_URL   Static Assets
 ```
 
 ## Prerequisites
