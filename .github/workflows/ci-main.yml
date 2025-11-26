@@ -93,9 +93,7 @@ jobs:
     needs: unit-tests
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    environment:
-      name: production
-      url: http://${{ secrets.VPS_HOST }}
+    environment: production
     concurrency:
       group: production-deployment
       cancel-in-progress: false
