@@ -46,12 +46,6 @@ jobs:
           npm ci
           npm run build
 
-      - name: Build gateway
-        working-directory: ./gateway
-        run: |
-          npm ci
-          npm run build || echo "Gateway build step skipped (no build script)"
-
       - name: Summary
         run: echo "Feature branch build completed successfully"
 

@@ -47,18 +47,11 @@ jobs:
           npm ci
           npm run build
 
-      - name: Build gateway
-        working-directory: ./gateway
-        run: |
-          npm ci
-          npm run build || echo "Gateway build step skipped (no build script)"
-
       - name: Audit backends
         run: |
           npm audit --prefix user-service --audit-level=moderate || true
           npm audit --prefix chat-service --audit-level=moderate || true
           npm audit --prefix notification-service --audit-level=moderate || true
-          npm audit --prefix gateway --audit-level=moderate || true
 
       - name: Summary
         run: echo "Backend Build completed successfully"
@@ -86,3 +79,341 @@ jobs:
     with:
       coverage: 'true'
     secrets: inherit
+
+  # Deploy to VPS (only runs on main branch after tests pass)
+  deploy:
+    name: Deploy to VPS
+    needs: unit-tests
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: production
+    concurrency:
+      group: production-deployment
+      cancel-in-progress: false
+
+    steps:
+      - name: Fetch secrets from Infisical
+        id: infisical
+        uses: Infisical/secrets-action@v1.0.7
+        with:
+          method: universal
+          # Intentional  misspelling as INFISICAL was erroneously created in secrets
+          client-id: ${{ secrets.INFISCAL_CLIENT_ID }}
+          client-secret: ${{ secrets.INFISCAL_CLIENT_SECRET }}
+          project-slug: ${{ secrets.INFISCAL_PROJECT_SLUG }}
+          env-slug: prod
+          secret-path: /
+
+      - name: Validate Infisical secrets
+        run: |
+          echo "🔍 Validating required secrets from Infisical..."
+          MISSING=0
+          
+          # Infisical action sets secrets as environment variables, not outputs
+          # Check each required secret using env context (do not print values)
+          if [ -z "$ADMIN_USERNAME" ]; then
+            echo "❌ ADMIN_USERNAME is missing or empty in Infisical"
+            MISSING=1
+          else
+            echo "✅ ADMIN_USERNAME present"
+          fi
+          
+          if [ -z "$ADMIN_PASSWORD" ]; then
+            echo "❌ ADMIN_PASSWORD is missing or empty in Infisical"
+            MISSING=1
+          else
+            echo "✅ ADMIN_PASSWORD present"
+          fi
+          
+          if [ -z "$ADMIN_PASSWORD_ENCODED" ]; then
+            echo "❌ ADMIN_PASSWORD_ENCODED is missing or empty in Infisical"
+            MISSING=1
+          else
+            echo "✅ ADMIN_PASSWORD_ENCODED present"
+          fi
+          
+          if [ -z "$CORS_ORIGINS" ]; then
+            echo "⚠️  CORS_ORIGINS is missing or empty in Infisical (may be intentional)"
+          else
+            echo "✅ CORS_ORIGINS present"
+          fi
+          
+          if [ -z "$MESSAGE_BROKER_URL" ]; then
+            echo "⚠️  MESSAGE_BROKER_URL is missing or empty in Infisical (may be intentional)"
+          else
+            echo "✅ MESSAGE_BROKER_URL present"
+          fi
+          
+          if [ "$MISSING" -eq 1 ]; then
+            echo ""
+            echo "❌ One or more required secrets are missing in Infisical."
+            echo "Please verify in Infisical dashboard:"
+            echo "  - Project: ${{ secrets.INFISCAL_PROJECT_SLUG }}"
+            echo "  - Environment: prod"
+            echo "  - Path: /"
+            echo ""
+            echo "Ensure these secrets exist and have values:"
+            echo "  - ADMIN_USERNAME (PostgreSQL username)"
+            echo "  - ADMIN_PASSWORD (PostgreSQL password)"
+            echo "  - ADMIN_PASSWORD_ENCODED (URL-encoded version)"
+            exit 1
+          fi
+          
+          echo "✅ All required secrets validated"
+
+      - name: Debug SSH connectivity (temporary)
+        if: always()
+        continue-on-error: true
+        run: |
+          echo "🔍 Debugging SSH connectivity to VPS (safe, will not expose key)"
+          # Check whether the secret exists (do not print the secret itself)
+          if [ -z "${{ secrets.VPS_SSH_PRIVATE_KEY }}" ]; then
+            echo "❌ Secret 'VPS_SSH_PRIVATE_KEY' is missing or empty"
+            echo "Please confirm the secret exists in repository settings or organization secrets."
+            exit 0
+          else
+            echo "✅ Secret 'VPS_SSH_PRIVATE_KEY' appears present"
+          fi
+
+          # Write the private key to a temporary file and attempt a verbose auth
+          mkdir -p /tmp/ssh-debug
+          PRIVATE_KEY="${{ secrets.VPS_SSH_PRIVATE_KEY }}"
+          printf '%s\n' "$PRIVATE_KEY" > /tmp/ssh-debug/deploy_key
+          chmod 600 /tmp/ssh-debug/deploy_key
+
+          echo "Attempting SSH handshake (will continue on failure)..."
+          ssh -i /tmp/ssh-debug/deploy_key \
+            -o StrictHostKeyChecking=no \
+            -o UserKnownHostsFile=/dev/null \
+            -o BatchMode=yes \
+            -o ConnectTimeout=10 \
+            -p "${{ secrets.VPS_PORT || '22' }}" \
+            "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}" echo "SSH_OK" || true
+
+      - name: Deploy to VPS via SSH
+        uses: appleboy/ssh-action@029f5b4aeeeb58fdfe1410a5d17f967dacf36262
+        env:
+          # Database credentials (Infisical sets these as env vars, pass them through)
+          ADMIN_USERNAME: ${{ env.ADMIN_USERNAME }}
+          ADMIN_PASSWORD: ${{ env.ADMIN_PASSWORD }}
+          ADMIN_PASSWORD_ENCODED: ${{ env.ADMIN_PASSWORD_ENCODED }}
+          # Application secrets
+          CORS_ORIGINS: ${{ env.CORS_ORIGINS }}
+          MESSAGE_BROKER_URL: ${{ env.MESSAGE_BROKER_URL }}
+          SENDINBLUE_APIKEY: ${{ env.SENDINBLUE_APIKEY }}
+          SMTP_PASS: ${{ env.SMTP_PASS }}
+          SMTP_USER: ${{ env.SMTP_USER }}
+          # Deployment config
+          PGADMIN_EMAIL: ${{ secrets.PGADMIN_EMAIL || 'admin@admin.com' }}
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_PRIVATE_KEY }}
+          port: ${{ secrets.VPS_PORT || '22' }}
+          command_timeout: 30m
+          envs: ADMIN_USERNAME,ADMIN_PASSWORD,ADMIN_PASSWORD_ENCODED,CORS_ORIGINS,MESSAGE_BROKER_URL,SENDINBLUE_APIKEY,SMTP_PASS,SMTP_USER,PGADMIN_EMAIL
+          script: |
+            set -euo pipefail
+            export DEPLOY_PATH="${{ secrets.DEPLOY_PATH || '/opt/chat-app' }}"
+
+            echo "🚀 Starting backend deployment..."
+
+            # Ensure DEPLOY_PATH is writable; fall back to $HOME if needed
+            if ! mkdir -p "$DEPLOY_PATH" 2>/dev/null; then
+              echo "⚠️ Cannot create $DEPLOY_PATH (permission denied). Falling back to home directory"
+              FALLBACK="$HOME/chat-app"
+              mkdir -p "$FALLBACK"
+              export DEPLOY_PATH="$FALLBACK"
+              echo "➡️ Using fallback DEPLOY_PATH=$DEPLOY_PATH"
+            fi
+
+            # If the chat-microservices directory exists, update it. Otherwise try to clone it.
+            if [ -d "$DEPLOY_PATH/chat-microservices" ]; then
+              echo "➡️ Found existing directory $DEPLOY_PATH/chat-microservices — updating"
+              cd "$DEPLOY_PATH/chat-microservices"
+              # Try to fetch from origin; fall back to pull if fetch fails
+              if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+                git fetch origin --prune || git pull --rebase --autostash || true
+                git reset --hard origin/main || true
+              else
+                echo "⚠️ Directory exists but is not a git repo — attempting to re-clone"
+                cd "$DEPLOY_PATH"
+                rm -rf chat-microservices
+                # Fall through to clone step below
+              fi
+            fi
+
+            if [ ! -d "$DEPLOY_PATH/chat-microservices" ]; then
+              echo "➡️ Directory not found — creating $DEPLOY_PATH and attempting to clone repository"
+              mkdir -p "$DEPLOY_PATH"
+              cd "$DEPLOY_PATH"
+
+              REPO_URL="https://github.com/${{ github.repository }}.git"
+              # Try a shallow clone (may fail for private repos)
+              if git ls-remote --exit-code "$REPO_URL" >/dev/null 2>&1; then
+                git clone --depth 1 --branch main "$REPO_URL" chat-microservices || {
+                  echo "⚠️ git clone failed, creating empty folder to continue"
+                  mkdir -p chat-microservices
+                }
+                cd chat-microservices || true
+              else
+                echo "⚠️ Cannot access $REPO_URL (network or permissions). Creating empty directory and continuing"
+                mkdir -p chat-microservices
+                cd chat-microservices
+              fi
+            fi
+
+            cd "$DEPLOY_PATH/chat-microservices"
+
+            # Check Docker permissions
+            echo "🔍 Checking Docker permissions..."
+            if ! docker ps >/dev/null 2>&1; then
+              echo "⚠️ Docker permission denied. Attempting to add user to docker group..."
+              # Check if user is in docker group
+              if ! groups | grep -q docker; then
+                echo "💡 User is not in docker group. To fix this on VPS, run:"
+                echo "   sudo usermod -aG docker $USER && newgrp docker"
+                echo "⚠️ Continuing anyway - docker commands may fail"
+              fi
+            else
+              echo "✅ Docker access confirmed"
+            fi
+
+            # Ensure docker-secrets directory and app_secrets file exist
+            echo "🔧 Ensuring docker-secrets/app_secrets exists..."
+            mkdir -p docker-secrets
+            if [ ! -f docker-secrets/app_secrets ]; then
+              echo "➡️ Creating docker-secrets/app_secrets from environment variables"
+              cat > docker-secrets/app_secrets <<EOF
+            ADMIN_USERNAME=${ADMIN_USERNAME}
+            ADMIN_PASSWORD=${ADMIN_PASSWORD}
+            ADMIN_PASSWORD_ENCODED=${ADMIN_PASSWORD_ENCODED}
+            CORS_ORIGINS=${CORS_ORIGINS}
+            MESSAGE_BROKER_URL=${MESSAGE_BROKER_URL}
+            SENDINBLUE_APIKEY=${SENDINBLUE_APIKEY}
+            SMTP_PASS=${SMTP_PASS}
+            SMTP_USER=${SMTP_USER}
+            PGADMIN_EMAIL=${PGADMIN_EMAIL}
+            EOF
+              echo "✅ Created docker-secrets/app_secrets"
+            else
+              echo "✅ docker-secrets/app_secrets already exists"
+            fi
+
+            # Ensure deploy script exists before trying to run it
+            if [ -f deploy/deploy-vps.sh ]; then
+              echo "🔧 Making deploy script executable and running it"
+              chmod +x deploy/deploy-vps.sh || true
+              # Export all environment variables so deploy-vps.sh can access them
+              export ADMIN_USERNAME
+              export ADMIN_PASSWORD
+              export ADMIN_PASSWORD_ENCODED
+              export PGADMIN_EMAIL
+              export CORS_ORIGINS
+              export MESSAGE_BROKER_URL
+              export SENDINBLUE_APIKEY
+              export SMTP_PASS
+              export SMTP_USER
+              bash deploy/deploy-vps.sh
+            else
+              echo "⚠️ deploy/deploy-vps.sh not found — skipping script run"
+              echo "📁 Current directory listing:"
+              ls -la || true
+            fi
+
+      - name: Verify deployment
+        uses: appleboy/ssh-action@029f5b4aeeeb58fdfe1410a5d17f967dacf36262
+        env:
+          # Database credentials (Infisical sets these as env vars, pass them through)
+          ADMIN_USERNAME: ${{ env.ADMIN_USERNAME }}
+          ADMIN_PASSWORD: ${{ env.ADMIN_PASSWORD }}
+          ADMIN_PASSWORD_ENCODED: ${{ env.ADMIN_PASSWORD_ENCODED }}
+          # Application secrets
+          CORS_ORIGINS: ${{ env.CORS_ORIGINS }}
+          MESSAGE_BROKER_URL: ${{ env.MESSAGE_BROKER_URL }}
+          SENDINBLUE_APIKEY: ${{ env.SENDINBLUE_APIKEY }}
+          SMTP_PASS: ${{ env.SMTP_PASS }}
+          SMTP_USER: ${{ env.SMTP_USER }}
+          # Deployment config
+          PGADMIN_EMAIL: ${{ secrets.PGADMIN_EMAIL || 'admin@admin.com' }}
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_PRIVATE_KEY }}
+          port: ${{ secrets.VPS_PORT || '22' }}
+          envs: ADMIN_USERNAME,ADMIN_PASSWORD,ADMIN_PASSWORD_ENCODED,CORS_ORIGINS,MESSAGE_BROKER_URL,SENDINBLUE_APIKEY,SMTP_PASS,SMTP_USER,PGADMIN_EMAIL
+          script: |
+            set -e
+            export DEPLOY_PATH="${{ secrets.DEPLOY_PATH || '/opt/chat-app' }}"
+            
+            # Export all environment variables for docker compose
+            export ADMIN_USERNAME
+            export ADMIN_PASSWORD
+            export ADMIN_PASSWORD_ENCODED
+            export PGADMIN_EMAIL
+            export CORS_ORIGINS
+            export MESSAGE_BROKER_URL
+            export SENDINBLUE_APIKEY
+            export SMTP_PASS
+            export SMTP_USER
+            
+            cd $DEPLOY_PATH/chat-microservices
+            
+            echo "⏳ Waiting for services to be healthy..."
+            sleep 15
+            
+            # Check service status
+            docker compose ps
+            
+            # Check if all critical services are healthy
+            if docker compose ps | grep -E '(user|chat|notification|frontend|nginx)' | grep -q "unhealthy"; then
+              echo "❌ Some services are unhealthy!"
+              echo "📋 Service status:"
+              docker compose ps
+              echo "📝 Recent logs:"
+              docker compose logs --tail=50
+              exit 1
+            fi
+            
+            # Test health endpoints
+            echo "🔍 Testing health endpoints..."
+            curl -f http://localhost:80/health || (echo "❌ NGINX health check failed" && exit 1)
+            
+            echo "✅ All services are running and healthy"
+            echo "🎉 Backend deployment successful!"
+
+      - name: Cleanup after deployment
+        if: success()
+        uses: appleboy/ssh-action@029f5b4aeeeb58fdfe1410a5d17f967dacf36262
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_PRIVATE_KEY }}
+          port: ${{ secrets.VPS_PORT || '22' }}
+          script: |
+            echo "🧹 Running post-deployment cleanup..."
+            DEPLOY_PATH="/opt/chat-app"
+            cd $DEPLOY_PATH/chat-microservices
+            
+            # Prune dangling images (unused layers from previous builds)
+            echo "🗑️ Pruning dangling Docker images..."
+            docker image prune -f || true
+            
+            # Prune stopped containers (if any)
+            echo "🗑️ Pruning stopped containers..."
+            docker container prune -f || true
+            
+            # Prune unused volumes (careful - only anonymous volumes)
+            echo "🗑️ Pruning unused anonymous volumes..."
+            docker volume prune -f --filter "label!=keep" || true
+            
+            # Prune unused networks
+            echo "🗑️ Pruning unused networks..."
+            docker network prune -f || true
+            
+            # Show disk usage after cleanup
+            echo "📊 Docker disk usage after cleanup:"
+            docker system df
+            
+            echo "✅ Cleanup complete!"
+
