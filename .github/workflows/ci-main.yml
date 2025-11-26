@@ -86,3 +86,103 @@ jobs:
     with:
       coverage: 'true'
     secrets: inherit
+
+  # Deploy to VPS (only runs on main branch after tests pass)
+  deploy:
+    name: Deploy to VPS
+    needs: unit-tests
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: http://${{ secrets.VPS_HOST }}
+    concurrency:
+      group: production-deployment
+      cancel-in-progress: false
+
+    steps:
+      - name: Fetch secrets from Infisical
+        id: infisical
+        uses: Infisical/secrets-action@v1.0.7
+        with:
+          client-id: ${{ secrets.INFISICAL_CLIENT_ID }}
+          client-secret: ${{ secrets.INFISICAL_CLIENT_SECRET }}
+          project-id: ${{ secrets.INFISICAL_PROJECT_ID }}
+          environment: ${{ secrets.INFISICAL_ENVIRONMENT || 'prod' }}
+          secret-path: ${{ secrets.INFISICAL_SECRET_PATH || '/' }}
+
+      - name: Deploy to VPS via SSH
+        uses: appleboy/ssh-action@029f5b4aeeeb58fdfe1410a5d17f967dacf36262
+        env:
+          # Database credentials
+          ADMIN_USERNAME: ${{ steps.infisical.outputs.ADMIN_USERNAME }}
+          ADMIN_PASSWORD: ${{ steps.infisical.outputs.ADMIN_PASSWORD }}
+          ADMIN_PASSWORD_ENCODED: ${{ steps.infisical.outputs.ADMIN_PASSWORD_ENCODED }}
+          # Application secrets
+          CORS_ORIGINS: ${{ steps.infisical.outputs.CORS_ORIGINS }}
+          MESSAGE_BROKER_URL: ${{ steps.infisical.outputs.MESSAGE_BROKER_URL }}
+          SENDINBLUE_APIKEY: ${{ steps.infisical.outputs.SENDINBLUE_APIKEY }}
+          SMTP_PASS: ${{ steps.infisical.outputs.SMTP_PASS }}
+          SMTP_USER: ${{ steps.infisical.outputs.SMTP_USER }}
+          # Deployment config
+          PGADMIN_EMAIL: ${{ secrets.PGADMIN_EMAIL || 'admin@admin.com' }}
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_PRIVATE_KEY }}
+          port: ${{ secrets.VPS_PORT || '22' }}
+          command_timeout: 30m
+          envs: ADMIN_USERNAME,ADMIN_PASSWORD,ADMIN_PASSWORD_ENCODED,CORS_ORIGINS,MESSAGE_BROKER_URL,SENDINBLUE_APIKEY,SMTP_PASS,SMTP_USER,PGADMIN_EMAIL
+          script: |
+            set -e
+            export DEPLOY_PATH="${{ secrets.DEPLOY_PATH || '/opt/chat-app' }}"
+            
+            # Environment variables are already exported by ssh-action via 'envs' parameter
+            
+            echo "🚀 Starting backend deployment..."
+            cd $DEPLOY_PATH/chat-microservices
+            
+            # Pull latest changes
+            git fetch origin
+            git reset --hard origin/main
+            
+            # Make deploy script executable
+            chmod +x deploy/deploy-vps.sh
+            
+            # Run deployment script (env vars are already available)
+            bash deploy/deploy-vps.sh
+
+      - name: Verify deployment
+        uses: appleboy/ssh-action@029f5b4aeeeb58fdfe1410a5d17f967dacf36262
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_PRIVATE_KEY }}
+          port: ${{ secrets.VPS_PORT || '22' }}
+          script: |
+            set -e
+            export DEPLOY_PATH="${{ secrets.DEPLOY_PATH || '/opt/chat-app' }}"
+            cd $DEPLOY_PATH/chat-microservices
+            
+            echo "⏳ Waiting for services to be healthy..."
+            sleep 15
+            
+            # Check service status
+            docker compose ps
+            
+            # Check if all critical services are healthy
+            if docker compose ps | grep -E '(user|chat|notification|frontend|nginx)' | grep -q "unhealthy"; then
+              echo "❌ Some services are unhealthy!"
+              echo "📋 Service status:"
+              docker compose ps
+              echo "📝 Recent logs:"
+              docker compose logs --tail=50
+              exit 1
+            fi
+            
+            # Test health endpoints
+            echo "🔍 Testing health endpoints..."
+            curl -f http://localhost:85/health || (echo "❌ NGINX health check failed" && exit 1)
+            
+            echo "✅ All services are running and healthy"
+            echo "🎉 Backend deployment successful!"
