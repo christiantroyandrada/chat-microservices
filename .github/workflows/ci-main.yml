@@ -111,6 +111,35 @@ jobs:
           env-slug: prod
           secret-path: /
 
+      - name: Debug SSH connectivity (temporary)
+        if: always()
+        continue-on-error: true
+        run: |
+          echo "🔍 Debugging SSH connectivity to VPS (safe, will not expose key)"
+          # Check whether the secret exists (do not print the secret itself)
+          if [ -z "${{ secrets.VPS_SSH_PRIVATE_KEY }}" ]; then
+            echo "❌ Secret 'VPS_SSH_PRIVATE_KEY' is missing or empty"
+            echo "Please confirm the secret exists in repository settings or organization secrets."
+            exit 0
+          else
+            echo "✅ Secret 'VPS_SSH_PRIVATE_KEY' appears present"
+          fi
+
+          # Write the private key to a temporary file and attempt a verbose auth
+          mkdir -p /tmp/ssh-debug
+          PRIVATE_KEY="${{ secrets.VPS_SSH_PRIVATE_KEY }}"
+          printf '%s\n' "$PRIVATE_KEY" > /tmp/ssh-debug/deploy_key
+          chmod 600 /tmp/ssh-debug/deploy_key
+
+          echo "Attempting SSH handshake (will continue on failure)..."
+          ssh -i /tmp/ssh-debug/deploy_key \
+            -o StrictHostKeyChecking=no \
+            -o UserKnownHostsFile=/dev/null \
+            -o BatchMode=yes \
+            -o ConnectTimeout=10 \
+            -p "${{ secrets.VPS_PORT || '22' }}" \
+            "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}" echo "SSH_OK" || true
+
       - name: Deploy to VPS via SSH
         uses: appleboy/ssh-action@029f5b4aeeeb58fdfe1410a5d17f967dacf36262
         env:
