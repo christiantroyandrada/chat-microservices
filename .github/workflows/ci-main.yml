@@ -103,11 +103,13 @@ jobs:
         id: infisical
         uses: Infisical/secrets-action@v1.0.7
         with:
-          client-id: ${{ secrets.INFISICAL_CLIENT_ID }}
-          client-secret: ${{ secrets.INFISICAL_CLIENT_SECRET }}
-          project-id: ${{ secrets.INFISICAL_PROJECT_ID }}
-          environment: ${{ secrets.INFISICAL_ENVIRONMENT || 'prod' }}
-          secret-path: ${{ secrets.INFISICAL_SECRET_PATH || '/' }}
+          method: universal
+          # Intentional  misspelling as INFISICAL was erroneously created in secrets
+          client-id: ${{ secrets.INFISCAL_CLIENT_ID }}
+          client-secret: ${{ secrets.INFISCAL_CLIENT_SECRET }}
+          project-slug: ${{ secrets.INFISCAL_PROJECT_SLUG }}
+          env-slug: prod
+          secret-path: /
 
       - name: Deploy to VPS via SSH
         uses: appleboy/ssh-action@029f5b4aeeeb58fdfe1410a5d17f967dacf36262

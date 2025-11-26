@@ -81,15 +81,16 @@ Add these secrets to **both** repositories:
    - Value: Client Secret from Step 3
    - Location: Settings → Secrets and variables → Actions
 
-3. **INFISICAL_PROJECT_ID**
-   - Value: Project ID from Step 1
+3. **INFISICAL_PROJECT_SLUG**
+   - Value: Project slug from Step 1 (visible in project URL)
    - Location: Settings → Secrets and variables → Actions
+   - Example: `my-chat-app` or `chat-microservices`
 
 ### Optional GitHub Secrets
 
-4. **INFISICAL_ENVIRONMENT** (default: `prod`)
-   - Value: Your environment name in Infisical
-   - Examples: `prod`, `production`, `staging`
+4. **INFISICAL_ENV_SLUG** (default: `prod`)
+   - Value: Your environment slug in Infisical
+   - Examples: `prod`, `production`, `staging`, `dev`
 
 5. **INFISICAL_SECRET_PATH** (default: `/`)
    - Value: Path to secrets in Infisical

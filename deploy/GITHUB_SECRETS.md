@@ -23,14 +23,15 @@ This document lists all the secrets required for automated deployment to your VP
 - **Required**: Yes (for production deployment)
 - **How to get**: Generated when creating machine identity
 
-#### INFISICAL_PROJECT_ID
-- **Description**: Your Infisical project ID
+#### INFISICAL_PROJECT_SLUG
+- **Description**: Your Infisical project slug (visible in project URL)
 - **Required**: Yes (for production deployment)
-- **How to get**: Found in Infisical project settings
+- **How to get**: Found in Infisical project URL or settings
+- **Example**: `my-chat-app`, `chat-microservices`
 
-#### INFISICAL_ENVIRONMENT
-- **Description**: Infisical environment name
-- **Example**: `prod`, `production`, `staging`
+#### INFISICAL_ENV_SLUG
+- **Description**: Infisical environment slug
+- **Example**: `prod`, `production`, `staging`, `dev`
 - **Default**: `prod` (if not set)
 - **Required**: No
 
@@ -115,8 +116,8 @@ Both `chat-user-microservice` (backend) and `chat-microservices-frontend` reposi
 **Infisical Integration:**
 - `INFISICAL_CLIENT_ID`
 - `INFISICAL_CLIENT_SECRET`
-- `INFISICAL_PROJECT_ID`
-- `INFISICAL_ENVIRONMENT` (optional)
+- `INFISICAL_PROJECT_SLUG`
+- `INFISICAL_ENV_SLUG` (optional)
 - `INFISICAL_SECRET_PATH` (optional)
 
 **Optional:**

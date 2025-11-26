@@ -31,12 +31,12 @@ Configure the following secrets in your GitHub repository:
 3. **VPS_SSH_PRIVATE_KEY** - Private SSH key for authentication
 4. **INFISICAL_CLIENT_ID** - Infisical machine identity client ID
 5. **INFISICAL_CLIENT_SECRET** - Infisical machine identity client secret
-6. **INFISICAL_PROJECT_ID** - Your Infisical project ID
+6. **INFISICAL_PROJECT_SLUG** - Your Infisical project slug
 
 #### Optional Secrets
 7. **VPS_PORT** - SSH port (optional, defaults to 22)
 8. **DEPLOY_PATH** - Deployment directory (optional, defaults to `/opt/chat-app`)
-9. **INFISICAL_ENVIRONMENT** - Infisical environment (optional, defaults to `prod`)
+9. **INFISICAL_ENV_SLUG** - Infisical environment slug (optional, defaults to `prod`)
 10. **INFISICAL_SECRET_PATH** - Path in Infisical (optional, defaults to `/`)
 11. **PGADMIN_EMAIL** - pgAdmin login email
 
