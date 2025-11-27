@@ -74,11 +74,39 @@ EOF
     fi
   fi
 
-# Check if required environment variables are set
-if [ -z "$ADMIN_PASSWORD" ]; then
-    echo "⚠️  Warning: ADMIN_PASSWORD not set, using value from .env file if available"
+# Load secrets from app_secrets file into environment (ensures compose interpolation works)
+echo "🔐 Loading secrets from docker-secrets/app_secrets into environment..."
+if [ -f docker-secrets/app_secrets ]; then
+  set -o allexport
+  . ./docker-secrets/app_secrets
+  set +o allexport
+  echo "✅ Loaded secrets from app_secrets"
+else
+  echo "❌ docker-secrets/app_secrets not found after write/check — cannot proceed"
+  exit 9
 fi
 
+# Validate required secrets are non-empty
+MISSING_SECRETS=0
+if [ -z "${ADMIN_USERNAME:-}" ]; then
+  echo "❌ ADMIN_USERNAME is not set or empty"
+  MISSING_SECRETS=1
+fi
+if [ -z "${ADMIN_PASSWORD:-}" ]; then
+  echo "❌ ADMIN_PASSWORD is not set or empty"
+  MISSING_SECRETS=1
+fi
+if [ -z "${ADMIN_PASSWORD_ENCODED:-}" ]; then
+  echo "❌ ADMIN_PASSWORD_ENCODED is not set or empty"
+  MISSING_SECRETS=1
+fi
+
+if [ "$MISSING_SECRETS" -eq 1 ]; then
+  echo "❌ One or more required secrets are missing. Please check Infisical outputs and app_secrets file."
+  exit 10
+fi
+
+echo "✅ All required secrets validated"
 
 # Ensure docker is installed and accessible
 if ! command -v docker >/dev/null 2>&1; then
@@ -121,11 +149,34 @@ docker compose "${COMPOSE_ARGS[@]}" build --pull "${BACKEND_SERVICES[@]}" || {
 
 echo "🔄 Running setup service to generate .env files (synchronous)..."
 # Run setup synchronously to ensure .env files are generated before starting DB/services
-docker compose "${COMPOSE_ARGS[@]}" run --rm setup || {
+# Run the container with the host user's UID:GID so files created in mounted volumes are owned
+# by the deploy user instead of root (prevents permission denied on the host).
+HOST_UID=$(id -u)
+HOST_GID=$(id -g)
+docker compose "${COMPOSE_ARGS[@]}" run --rm --user "${HOST_UID}:${HOST_GID}" setup || {
   echo "❌ Setup service failed to run. See logs below:"
   docker compose "${COMPOSE_ARGS[@]}" logs setup --tail=200 || true
   exit 7
 }
+
+# Post-setup: ensure generated .env files are readable by the deploy user.
+echo "🔧 Fixing permissions for generated env files if necessary..."
+for svc_dir in ./user-service ./chat-service ./notification-service; do
+  env_file="$svc_dir/.env"
+  if [ -f "$env_file" ]; then
+    # If file is not owned by current user, try to chown it. If sudo is not available
+    # or chown fails, fall back to making the file world-readable so docker-compose can access it.
+    owner_uid=$(stat -c %u "$env_file" 2>/dev/null || echo 0)
+    if [ "$owner_uid" -ne "$HOST_UID" ]; then
+      echo "⚙️  Adjusting ownership/permissions for $env_file"
+      sudo chown "${HOST_UID}:${HOST_GID}" "$env_file" 2>/dev/null || true
+      sudo chmod 600 "$env_file" 2>/dev/null || chmod 644 "$env_file" || true
+    else
+      # Ensure file has at least owner read permission
+      chmod 600 "$env_file" 2>/dev/null || true
+    fi
+  fi
+done
 
 echo "✅ Setup completed. Starting database and backend services..."
 docker compose "${COMPOSE_ARGS[@]}" up -d --remove-orphans --force-recreate postgres pgadmin "${BACKEND_SERVICES[@]}" || {

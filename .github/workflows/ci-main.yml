@@ -111,6 +111,62 @@ jobs:
           env-slug: prod
           secret-path: /
 
+      - name: Validate Infisical secrets
+        run: |
+          echo "🔍 Validating required secrets from Infisical..."
+          MISSING=0
+          
+          # Check each required secret (do not print values)
+          if [ -z "${{ steps.infisical.outputs.ADMIN_USERNAME }}" ]; then
+            echo "❌ ADMIN_USERNAME is missing or empty in Infisical"
+            MISSING=1
+          else
+            echo "✅ ADMIN_USERNAME present"
+          fi
+          
+          if [ -z "${{ steps.infisical.outputs.ADMIN_PASSWORD }}" ]; then
+            echo "❌ ADMIN_PASSWORD is missing or empty in Infisical"
+            MISSING=1
+          else
+            echo "✅ ADMIN_PASSWORD present"
+          fi
+          
+          if [ -z "${{ steps.infisical.outputs.ADMIN_PASSWORD_ENCODED }}" ]; then
+            echo "❌ ADMIN_PASSWORD_ENCODED is missing or empty in Infisical"
+            MISSING=1
+          else
+            echo "✅ ADMIN_PASSWORD_ENCODED present"
+          fi
+          
+          if [ -z "${{ steps.infisical.outputs.CORS_ORIGINS }}" ]; then
+            echo "⚠️  CORS_ORIGINS is missing or empty in Infisical (may be intentional)"
+          else
+            echo "✅ CORS_ORIGINS present"
+          fi
+          
+          if [ -z "${{ steps.infisical.outputs.MESSAGE_BROKER_URL }}" ]; then
+            echo "⚠️  MESSAGE_BROKER_URL is missing or empty in Infisical (may be intentional)"
+          else
+            echo "✅ MESSAGE_BROKER_URL present"
+          fi
+          
+          if [ "$MISSING" -eq 1 ]; then
+            echo ""
+            echo "❌ One or more required secrets are missing in Infisical."
+            echo "Please verify in Infisical dashboard:"
+            echo "  - Project: ${{ secrets.INFISCAL_PROJECT_SLUG }}"
+            echo "  - Environment: prod"
+            echo "  - Path: /"
+            echo ""
+            echo "Ensure these secrets exist and have values:"
+            echo "  - ADMIN_USERNAME (PostgreSQL username)"
+            echo "  - ADMIN_PASSWORD (PostgreSQL password)"
+            echo "  - ADMIN_PASSWORD_ENCODED (URL-encoded version)"
+            exit 1
+          fi
+          
+          echo "✅ All required secrets validated"
+
       - name: Debug SSH connectivity (temporary)
         if: always()
         continue-on-error: true
