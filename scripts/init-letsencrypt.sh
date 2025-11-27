@@ -166,6 +166,8 @@ docker run --rm \
     --email "$EMAIL" \
     --agree-tos \
     --no-eff-email \
+    --keep-until-expiring \
+    --non-interactive \
     $STAGING_ARG \
     -d "$DOMAIN"
 
