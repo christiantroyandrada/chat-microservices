@@ -15,3 +15,5 @@ Thumbs.db
 **/coverage
 # SSL/Let's Encrypt certificates (generated on VPS)
 certbot/
+# Temporary compose file for ACME challenge (auto-deleted)
+docker-compose.acme.yml
