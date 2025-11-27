@@ -1,3 +1,2 @@
 export { Notification } from './models/NotificationModel'
-export { connectDB, AppDataSource } from './connection'
-
+export { connectDB, AppDataSource, runMigrations } from './connection'
