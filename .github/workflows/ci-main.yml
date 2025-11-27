@@ -254,6 +254,16 @@ jobs:
             if [ -f deploy/deploy-vps.sh ]; then
               echo "🔧 Making deploy script executable and running it"
               chmod +x deploy/deploy-vps.sh || true
+              # Export all environment variables so deploy-vps.sh can access them
+              export ADMIN_USERNAME
+              export ADMIN_PASSWORD
+              export ADMIN_PASSWORD_ENCODED
+              export PGADMIN_EMAIL
+              export CORS_ORIGINS
+              export MESSAGE_BROKER_URL
+              export SENDINBLUE_APIKEY
+              export SMTP_PASS
+              export SMTP_USER
               bash deploy/deploy-vps.sh
             else
               echo "⚠️ deploy/deploy-vps.sh not found — skipping script run"

@@ -89,14 +89,16 @@ docker compose "${COMPOSE_ARGS[@]}" pull || echo "⚠️ docker compose pull fai
 echo "🏗️  Building backend services (excluding frontend)..."
 # Build only backend services - frontend is built separately from its own repo
 # Note: service names in compose are 'user', 'chat', 'notification' (not '*-service')
-BACKEND_SERVICES=(user chat notification gateway nginx)
+# setup service uses a pre-built node image, so no build needed
+BACKEND_SERVICES=(user chat notification nginx)
 docker compose "${COMPOSE_ARGS[@]}" build --pull "${BACKEND_SERVICES[@]}" || {
   echo "⚠️ Some services failed to build. Continuing..."
 }
 
-echo "🔄 Restarting backend services..."
-# Start backend services only (frontend is managed by its own deployment)
-docker compose "${COMPOSE_ARGS[@]}" up -d --remove-orphans --force-recreate "${BACKEND_SERVICES[@]}" || {
+echo "🔄 Starting backend services..."
+# Start setup service first to generate .env files, then start the rest
+# setup service will run once and exit (restart: "no"), then other services start
+docker compose "${COMPOSE_ARGS[@]}" up -d --remove-orphans --force-recreate setup postgres pgadmin "${BACKEND_SERVICES[@]}" || {
   echo "⚠️ Some services failed to start"
   docker compose "${COMPOSE_ARGS[@]}" ps || true
   docker compose "${COMPOSE_ARGS[@]}" logs --tail=50 || true
