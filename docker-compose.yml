@@ -141,6 +141,11 @@ services:
       options: { max-size: "10m", max-file: "3" }
 
   frontend:
+    # Frontend is built from sibling repo - use 'frontend' profile for local dev
+    # VPS deployments use a pre-built image or separate frontend deployment
+    profiles:
+      - frontend
+      - full
     build: ../chat-microservices-frontend
     restart: always
     expose:
@@ -183,8 +188,7 @@ services:
         condition: service_healthy
       notification:
         condition: service_healthy
-      frontend:
-        condition: service_healthy
+      # Note: frontend dependency removed - frontend uses profile and may not be present on VPS
     # volumes:
     #   - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
     healthcheck:

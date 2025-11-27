@@ -51,18 +51,41 @@ echo "🔧 Checking environment configuration..."
   if [ -n "${ADMIN_PASSWORD:-}" ]; then
     echo "➡️ Writing docker-secrets/app_secrets from environment variables"
     cat > docker-secrets/app_secrets <<EOF
+# PostgreSQL admin credentials (from Infisical)
 ADMIN_USERNAME=${ADMIN_USERNAME}
 ADMIN_PASSWORD=${ADMIN_PASSWORD}
 ADMIN_PASSWORD_ENCODED=${ADMIN_PASSWORD_ENCODED}
-CORS_ORIGINS=${CORS_ORIGINS}
-MESSAGE_BROKER_URL=${MESSAGE_BROKER_URL}
-SENDINBLUE_APIKEY=${SENDINBLUE_APIKEY}
-SMTP_PASS=${SMTP_PASS}
-SMTP_USER=${SMTP_USER}
+
+# pgAdmin web interface
 PGADMIN_EMAIL=${PGADMIN_EMAIL}
+
+# Shared configuration across all services
+NODE_ENV=production
+DATABASE_URL=postgresql://${ADMIN_USERNAME}:${ADMIN_PASSWORD_ENCODED}@postgres:5432/chat_db
+MESSAGE_BROKER_URL=${MESSAGE_BROKER_URL:-amqp://localhost}
+CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:80}
+
+# JWT Secret - will be auto-generated if this is weak/placeholder
+JWT_SECRET={{AUTO_GENERATE}}
+
+# User service
+PORT_USER=8081
+
+# Chat service  
+PORT_CHAT=8082
+
+# Notification service
+PORT_NOTIFICATION=8083
+SMTP_HOST=smtp.example.com
+SMTP_PORT=587
+SMTP_USER=${SMTP_USER}
+SMTP_PASS=${SMTP_PASS}
+SENDINBLUE_APIKEY=${SENDINBLUE_APIKEY}
+EMAIL_FROM=notifications@example.com
+NOTIFICATIONS_QUEUE=NOTIFICATIONS
 EOF
     chmod 600 docker-secrets/app_secrets || true
-    echo "✅ Wrote docker-secrets/app_secrets"
+    echo "✅ Wrote docker-secrets/app_secrets with all required configuration"
   else
     # If no ADMIN_PASSWORD in env and file missing, fail because setup cannot run
     if [ ! -f docker-secrets/app_secrets ]; then
@@ -146,6 +169,16 @@ BACKEND_SERVICES=(user chat notification nginx)
 docker compose "${COMPOSE_ARGS[@]}" build --pull "${BACKEND_SERVICES[@]}" || {
   echo "⚠️ Some services failed to build. Continuing..."
 }
+
+echo "🗑️  Removing stale .env files to ensure fresh generation..."
+# Remove existing .env files to force regeneration with current secrets
+# This prevents issues with stale/empty .env files from previous deployments
+for svc in user-service chat-service notification-service; do
+  if [ -f "$svc/.env" ]; then
+    rm -f "$svc/.env"
+    echo "  Removed $svc/.env"
+  fi
+done
 
 echo "🔄 Running setup service to generate .env files (synchronous)..."
 # Run setup synchronously to ensure .env files are generated before starting DB/services

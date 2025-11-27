@@ -279,26 +279,9 @@ jobs:
               echo "✅ Docker access confirmed"
             fi
 
-            # Ensure docker-secrets directory and app_secrets file exist
-            echo "🔧 Ensuring docker-secrets/app_secrets exists..."
+            # Note: docker-secrets/app_secrets is created by deploy-vps.sh with all required config
+            # Just ensure the directory exists
             mkdir -p docker-secrets
-            if [ ! -f docker-secrets/app_secrets ]; then
-              echo "➡️ Creating docker-secrets/app_secrets from environment variables"
-              cat > docker-secrets/app_secrets <<EOF
-            ADMIN_USERNAME=${ADMIN_USERNAME}
-            ADMIN_PASSWORD=${ADMIN_PASSWORD}
-            ADMIN_PASSWORD_ENCODED=${ADMIN_PASSWORD_ENCODED}
-            CORS_ORIGINS=${CORS_ORIGINS}
-            MESSAGE_BROKER_URL=${MESSAGE_BROKER_URL}
-            SENDINBLUE_APIKEY=${SENDINBLUE_APIKEY}
-            SMTP_PASS=${SMTP_PASS}
-            SMTP_USER=${SMTP_USER}
-            PGADMIN_EMAIL=${PGADMIN_EMAIL}
-            EOF
-              echo "✅ Created docker-secrets/app_secrets"
-            else
-              echo "✅ docker-secrets/app_secrets already exists"
-            fi
 
             # Ensure deploy script exists before trying to run it
             if [ -f deploy/deploy-vps.sh ]; then
@@ -317,7 +300,7 @@ jobs:
               bash deploy/deploy-vps.sh
             else
               echo "⚠️ deploy/deploy-vps.sh not found — skipping script run"
-              echo "📁 Current directory listing:"
+              echo "📁 Current directory listing:""
               ls -la || true
             fi
 
