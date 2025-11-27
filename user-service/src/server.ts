@@ -47,7 +47,7 @@ app.set('trust proxy', 1)
 // Configure CORS for the user service. Can be overridden with CORS_ORIGINS env var (comma-separated).
 const allowedOrigins = process.env.CORS_ORIGINS
   ? process.env.CORS_ORIGINS.split(',').map(o => o.trim())
-  : ['http://localhost:5173', 'http://localhost:85', 'http://localhost:8080']
+  : ['http://localhost:5173', 'http://localhost:80', 'http://localhost:8080']
 app.use(cors({
   origin: allowedOrigins,
   credentials: true,
