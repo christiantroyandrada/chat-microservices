@@ -11,8 +11,12 @@ USER root
 RUN rm -f /opt/bitnami/nginx/conf/nginx.conf || true
 COPY nginx.conf /opt/bitnami/nginx/conf/nginx.conf
 
-# Expose the internal non-root port used by this project
-EXPOSE 8080
+# Create directories for Let's Encrypt and ACME challenges
+RUN mkdir -p /var/www/certbot /etc/letsencrypt && \
+    chown -R 1001:1001 /var/www/certbot /etc/letsencrypt
+
+# Expose HTTP and HTTPS ports (non-root)
+EXPOSE 8080 8443
 
 # Bitnami images run as a non-root user (1001) by default
 USER 1001

@@ -300,7 +300,7 @@ jobs:
               bash deploy/deploy-vps.sh
             else
               echo "⚠️ deploy/deploy-vps.sh not found — skipping script run"
-              echo "📁 Current directory listing:""
+              echo "📁 Current directory listing:"
               ls -la || true
             fi
 
