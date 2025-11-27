@@ -47,18 +47,11 @@ jobs:
           npm ci
           npm run build
 
-      - name: Build gateway
-        working-directory: ./gateway
-        run: |
-          npm ci
-          npm run build || echo "Gateway build step skipped (no build script)"
-
       - name: Audit backends
         run: |
           npm audit --prefix user-service --audit-level=moderate || true
           npm audit --prefix chat-service --audit-level=moderate || true
           npm audit --prefix notification-service --audit-level=moderate || true
-          npm audit --prefix gateway --audit-level=moderate || true
 
       - name: Summary
         run: echo "Backend Build completed successfully"
@@ -116,35 +109,36 @@ jobs:
           echo "🔍 Validating required secrets from Infisical..."
           MISSING=0
           
-          # Check each required secret (do not print values)
-          if [ -z "${{ steps.infisical.outputs.ADMIN_USERNAME }}" ]; then
+          # Infisical action sets secrets as environment variables, not outputs
+          # Check each required secret using env context (do not print values)
+          if [ -z "$ADMIN_USERNAME" ]; then
             echo "❌ ADMIN_USERNAME is missing or empty in Infisical"
             MISSING=1
           else
             echo "✅ ADMIN_USERNAME present"
           fi
           
-          if [ -z "${{ steps.infisical.outputs.ADMIN_PASSWORD }}" ]; then
+          if [ -z "$ADMIN_PASSWORD" ]; then
             echo "❌ ADMIN_PASSWORD is missing or empty in Infisical"
             MISSING=1
           else
             echo "✅ ADMIN_PASSWORD present"
           fi
           
-          if [ -z "${{ steps.infisical.outputs.ADMIN_PASSWORD_ENCODED }}" ]; then
+          if [ -z "$ADMIN_PASSWORD_ENCODED" ]; then
             echo "❌ ADMIN_PASSWORD_ENCODED is missing or empty in Infisical"
             MISSING=1
           else
             echo "✅ ADMIN_PASSWORD_ENCODED present"
           fi
           
-          if [ -z "${{ steps.infisical.outputs.CORS_ORIGINS }}" ]; then
+          if [ -z "$CORS_ORIGINS" ]; then
             echo "⚠️  CORS_ORIGINS is missing or empty in Infisical (may be intentional)"
           else
             echo "✅ CORS_ORIGINS present"
           fi
           
-          if [ -z "${{ steps.infisical.outputs.MESSAGE_BROKER_URL }}" ]; then
+          if [ -z "$MESSAGE_BROKER_URL" ]; then
             echo "⚠️  MESSAGE_BROKER_URL is missing or empty in Infisical (may be intentional)"
           else
             echo "✅ MESSAGE_BROKER_URL present"
@@ -199,16 +193,16 @@ jobs:
       - name: Deploy to VPS via SSH
         uses: appleboy/ssh-action@029f5b4aeeeb58fdfe1410a5d17f967dacf36262
         env:
-          # Database credentials
-          ADMIN_USERNAME: ${{ steps.infisical.outputs.ADMIN_USERNAME }}
-          ADMIN_PASSWORD: ${{ steps.infisical.outputs.ADMIN_PASSWORD }}
-          ADMIN_PASSWORD_ENCODED: ${{ steps.infisical.outputs.ADMIN_PASSWORD_ENCODED }}
+          # Database credentials (Infisical sets these as env vars, pass them through)
+          ADMIN_USERNAME: ${{ env.ADMIN_USERNAME }}
+          ADMIN_PASSWORD: ${{ env.ADMIN_PASSWORD }}
+          ADMIN_PASSWORD_ENCODED: ${{ env.ADMIN_PASSWORD_ENCODED }}
           # Application secrets
-          CORS_ORIGINS: ${{ steps.infisical.outputs.CORS_ORIGINS }}
-          MESSAGE_BROKER_URL: ${{ steps.infisical.outputs.MESSAGE_BROKER_URL }}
-          SENDINBLUE_APIKEY: ${{ steps.infisical.outputs.SENDINBLUE_APIKEY }}
-          SMTP_PASS: ${{ steps.infisical.outputs.SMTP_PASS }}
-          SMTP_USER: ${{ steps.infisical.outputs.SMTP_USER }}
+          CORS_ORIGINS: ${{ env.CORS_ORIGINS }}
+          MESSAGE_BROKER_URL: ${{ env.MESSAGE_BROKER_URL }}
+          SENDINBLUE_APIKEY: ${{ env.SENDINBLUE_APIKEY }}
+          SMTP_PASS: ${{ env.SMTP_PASS }}
+          SMTP_USER: ${{ env.SMTP_USER }}
           # Deployment config
           PGADMIN_EMAIL: ${{ secrets.PGADMIN_EMAIL || 'admin@admin.com' }}
         with:
@@ -330,16 +324,16 @@ jobs:
       - name: Verify deployment
         uses: appleboy/ssh-action@029f5b4aeeeb58fdfe1410a5d17f967dacf36262
         env:
-          # Database credentials (needed for docker compose ps/logs commands)
-          ADMIN_USERNAME: ${{ steps.infisical.outputs.ADMIN_USERNAME }}
-          ADMIN_PASSWORD: ${{ steps.infisical.outputs.ADMIN_PASSWORD }}
-          ADMIN_PASSWORD_ENCODED: ${{ steps.infisical.outputs.ADMIN_PASSWORD_ENCODED }}
+          # Database credentials (Infisical sets these as env vars, pass them through)
+          ADMIN_USERNAME: ${{ env.ADMIN_USERNAME }}
+          ADMIN_PASSWORD: ${{ env.ADMIN_PASSWORD }}
+          ADMIN_PASSWORD_ENCODED: ${{ env.ADMIN_PASSWORD_ENCODED }}
           # Application secrets
-          CORS_ORIGINS: ${{ steps.infisical.outputs.CORS_ORIGINS }}
-          MESSAGE_BROKER_URL: ${{ steps.infisical.outputs.MESSAGE_BROKER_URL }}
-          SENDINBLUE_APIKEY: ${{ steps.infisical.outputs.SENDINBLUE_APIKEY }}
-          SMTP_PASS: ${{ steps.infisical.outputs.SMTP_PASS }}
-          SMTP_USER: ${{ steps.infisical.outputs.SMTP_USER }}
+          CORS_ORIGINS: ${{ env.CORS_ORIGINS }}
+          MESSAGE_BROKER_URL: ${{ env.MESSAGE_BROKER_URL }}
+          SENDINBLUE_APIKEY: ${{ env.SENDINBLUE_APIKEY }}
+          SMTP_PASS: ${{ env.SMTP_PASS }}
+          SMTP_USER: ${{ env.SMTP_USER }}
           # Deployment config
           PGADMIN_EMAIL: ${{ secrets.PGADMIN_EMAIL || 'admin@admin.com' }}
         with:
@@ -387,3 +381,39 @@ jobs:
             
             echo "✅ All services are running and healthy"
             echo "🎉 Backend deployment successful!"
+
+      - name: Cleanup after deployment
+        if: success()
+        uses: appleboy/ssh-action@029f5b4aeeeb58fdfe1410a5d17f967dacf36262
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_PRIVATE_KEY }}
+          port: ${{ secrets.VPS_PORT || '22' }}
+          script: |
+            echo "🧹 Running post-deployment cleanup..."
+            DEPLOY_PATH="/opt/chat-app"
+            cd $DEPLOY_PATH/chat-microservices
+            
+            # Prune dangling images (unused layers from previous builds)
+            echo "🗑️ Pruning dangling Docker images..."
+            docker image prune -f || true
+            
+            # Prune stopped containers (if any)
+            echo "🗑️ Pruning stopped containers..."
+            docker container prune -f || true
+            
+            # Prune unused volumes (careful - only anonymous volumes)
+            echo "🗑️ Pruning unused anonymous volumes..."
+            docker volume prune -f --filter "label!=keep" || true
+            
+            # Prune unused networks
+            echo "🗑️ Pruning unused networks..."
+            docker network prune -f || true
+            
+            # Show disk usage after cleanup
+            echo "📊 Docker disk usage after cleanup:"
+            docker system df
+            
+            echo "✅ Cleanup complete!"
+

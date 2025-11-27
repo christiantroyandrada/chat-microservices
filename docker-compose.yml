@@ -1,17 +1,17 @@
 services:
   # Setup service - generates .env files from consolidated secrets before other services start
   # Automatically generates strong JWT secrets if missing or weak
-  # Uses a shared volume for secrets to avoid Docker Desktop VM bind-mount path issues
+  # Reads secrets directly from bind-mounted docker-secrets directory
   setup:
     image: node:22-bullseye-slim
+    working_dir: /app
     volumes:
-      - ./scripts:/scripts:ro
-      - ./docker-secrets:/docker-secrets:ro
-      - ./user-service:/user-service
-      - ./chat-service:/chat-service
-      - ./notification-service:/notification-service
-      - app-secrets-volume:/run/secrets
-    command: sh -c "cp /docker-secrets/app_secrets /run/secrets/app_secrets && chmod 600 /run/secrets/app_secrets && /scripts/generate-envs.sh"
+      - ./scripts:/app/scripts:ro
+      - ./docker-secrets:/app/docker-secrets:ro
+      - ./user-service:/app/user-service
+      - ./chat-service:/app/chat-service
+      - ./notification-service:/app/notification-service
+    command: sh -c "/app/scripts/generate-envs.sh --secrets-file=/app/docker-secrets/app_secrets"
     restart: "no"
 
   postgres:
@@ -19,7 +19,6 @@ services:
     restart: unless-stopped
     volumes:
       - postgres-data:/var/lib/postgresql/data
-      - app-secrets-volume:/run/secrets:ro
     environment:
       POSTGRES_USER: ${ADMIN_USERNAME}
       POSTGRES_PASSWORD: ${ADMIN_PASSWORD}
@@ -53,7 +52,6 @@ services:
       PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED: 'False'
     volumes:
       - pgadmin-data:/var/lib/pgadmin
-      - app-secrets-volume:/run/secrets:ro
     healthcheck:
       test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:80/misc/ping || exit 1"]
       interval: 15s
@@ -76,8 +74,6 @@ services:
       DATABASE_URL: postgresql://${ADMIN_USERNAME}:${ADMIN_PASSWORD}@postgres:5432/chat_db
       # For local development use 'development', for production deployment use 'production'
       NODE_ENV: development
-    volumes:
-      - app-secrets-volume:/run/secrets:ro
     depends_on:
       setup:
         condition: service_completed_successfully
@@ -104,8 +100,6 @@ services:
     environment:
       DATABASE_URL: postgresql://${ADMIN_USERNAME}:${ADMIN_PASSWORD}@postgres:5432/chat_db
       NODE_ENV: development
-    volumes:
-      - app-secrets-volume:/run/secrets:ro
     depends_on:
       setup:
         condition: service_completed_successfully
@@ -131,8 +125,6 @@ services:
     environment:
       NODE_ENV: development
       DATABASE_URL: postgresql://${ADMIN_USERNAME}:${ADMIN_PASSWORD}@postgres:5432/chat_db
-    volumes:
-      - app-secrets-volume:/run/secrets:ro
     depends_on:
       setup:
         condition: service_completed_successfully
@@ -208,6 +200,3 @@ services:
 volumes:
   postgres-data:
   pgadmin-data:
-  # Shared volume for secrets - avoids Docker Desktop VM bind-mount path issues
-  # and provides a cloud/VPS-ready solution without host-specific paths
-  app-secrets-volume:

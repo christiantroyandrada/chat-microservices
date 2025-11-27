@@ -19,7 +19,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        service: [user-service, chat-service, notification-service, gateway]
+        service: [user-service, chat-service, notification-service]
       fail-fast: false
 
     steps:
