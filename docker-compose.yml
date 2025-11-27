@@ -178,9 +178,14 @@ services:
     build:
       context: ./nginx
       dockerfile: Dockerfile
-    # Expose nginx on host port 80 (maps host 80 -> container 8080)
+    # Expose nginx on host port 80 and 443 (maps to container 8080 and 8443)
+    # Port 443 is only used when SSL is configured on VPS
     ports:
       - "0.0.0.0:80:8080"
+      - "0.0.0.0:443:8443"
+    # Note: SSL certificate volumes are mounted conditionally via docker-compose.prod.yml
+    # For local development, nginx runs HTTP-only (no volumes needed)
+    # For production, use: docker compose -f docker-compose.yml -f docker-compose.prod.yml up
     depends_on:
       user:
         condition: service_healthy
@@ -189,8 +194,6 @@ services:
       notification:
         condition: service_healthy
       # Note: frontend dependency removed - frontend uses profile and may not be present on VPS
-    # volumes:
-    #   - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
     healthcheck:
       test: ["CMD-SHELL", "timeout 2 bash -c '</dev/tcp/localhost/8080' || exit 1"]
       interval: 10s

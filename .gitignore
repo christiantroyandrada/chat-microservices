@@ -13,3 +13,5 @@ docker-secrets/*
 .DS_Store
 Thumbs.db
 **/coverage
+# SSL/Let's Encrypt certificates (generated on VPS)
+certbot/
