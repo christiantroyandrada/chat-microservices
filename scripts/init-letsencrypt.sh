@@ -169,8 +169,11 @@ docker run --rm \
     $STAGING_ARG \
     -d "$DOMAIN"
 
+# Find the certificate directory (may have suffix like -0001 if renewed)
+CERT_DIR=$(find "$CERTBOT_PATH/conf/live" -maxdepth 1 -type d -name "${DOMAIN}*" | head -1)
+
 # Check if certificate was obtained
-if [ ! -f "$CERTBOT_PATH/conf/live/$DOMAIN/fullchain.pem" ]; then
+if [ -z "$CERT_DIR" ] || [ ! -f "$CERT_DIR/fullchain.pem" ]; then
   echo ""
   echo "❌ Failed to obtain certificate!"
   echo ""
@@ -188,15 +191,23 @@ if [ ! -f "$CERTBOT_PATH/conf/live/$DOMAIN/fullchain.pem" ]; then
   exit 1
 fi
 
+# Get the actual cert directory name (e.g., chat.ctaprojects.xyz or chat.ctaprojects.xyz-0001)
+CERT_NAME=$(basename "$CERT_DIR")
 echo ""
 echo "✅ Certificate obtained successfully!"
+echo "   Certificate directory: $CERT_NAME"
 echo ""
 
 # Now switch to SSL nginx config
 echo "📝 Switching to SSL-enabled nginx config..."
 if [ -f "$NGINX_SSL_TEMPLATE" ]; then
-  sed "s/DOMAIN_PLACEHOLDER/$DOMAIN/g" "$NGINX_SSL_TEMPLATE" > "$NGINX_CONF"
-  echo "✅ SSL nginx config created"
+  # Replace both placeholders:
+  # - DOMAIN_PLACEHOLDER for server_name
+  # - CERT_DIR_PLACEHOLDER for certificate paths (may have -0001 suffix)
+  sed -e "s/DOMAIN_PLACEHOLDER/$DOMAIN/g" \
+      -e "s/CERT_DIR_PLACEHOLDER/$CERT_NAME/g" \
+      "$NGINX_SSL_TEMPLATE" > "$NGINX_CONF"
+  echo "✅ SSL nginx config created (cert dir: $CERT_NAME)"
 else
   echo "❌ SSL template not found at $NGINX_SSL_TEMPLATE"
   echo "   Restoring original config..."
