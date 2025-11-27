@@ -263,14 +263,40 @@ jobs:
 
       - name: Verify deployment
         uses: appleboy/ssh-action@029f5b4aeeeb58fdfe1410a5d17f967dacf36262
+        env:
+          # Database credentials (needed for docker compose ps/logs commands)
+          ADMIN_USERNAME: ${{ steps.infisical.outputs.ADMIN_USERNAME }}
+          ADMIN_PASSWORD: ${{ steps.infisical.outputs.ADMIN_PASSWORD }}
+          ADMIN_PASSWORD_ENCODED: ${{ steps.infisical.outputs.ADMIN_PASSWORD_ENCODED }}
+          # Application secrets
+          CORS_ORIGINS: ${{ steps.infisical.outputs.CORS_ORIGINS }}
+          MESSAGE_BROKER_URL: ${{ steps.infisical.outputs.MESSAGE_BROKER_URL }}
+          SENDINBLUE_APIKEY: ${{ steps.infisical.outputs.SENDINBLUE_APIKEY }}
+          SMTP_PASS: ${{ steps.infisical.outputs.SMTP_PASS }}
+          SMTP_USER: ${{ steps.infisical.outputs.SMTP_USER }}
+          # Deployment config
+          PGADMIN_EMAIL: ${{ secrets.PGADMIN_EMAIL || 'admin@admin.com' }}
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_PRIVATE_KEY }}
           port: ${{ secrets.VPS_PORT || '22' }}
+          envs: ADMIN_USERNAME,ADMIN_PASSWORD,ADMIN_PASSWORD_ENCODED,CORS_ORIGINS,MESSAGE_BROKER_URL,SENDINBLUE_APIKEY,SMTP_PASS,SMTP_USER,PGADMIN_EMAIL
           script: |
             set -e
             export DEPLOY_PATH="${{ secrets.DEPLOY_PATH || '/opt/chat-app' }}"
+            
+            # Export all environment variables for docker compose
+            export ADMIN_USERNAME
+            export ADMIN_PASSWORD
+            export ADMIN_PASSWORD_ENCODED
+            export PGADMIN_EMAIL
+            export CORS_ORIGINS
+            export MESSAGE_BROKER_URL
+            export SENDINBLUE_APIKEY
+            export SMTP_PASS
+            export SMTP_USER
+            
             cd $DEPLOY_PATH/chat-microservices
             
             echo "⏳ Waiting for services to be healthy..."
@@ -291,7 +317,7 @@ jobs:
             
             # Test health endpoints
             echo "🔍 Testing health endpoints..."
-            curl -f http://localhost:85/health || (echo "❌ NGINX health check failed" && exit 1)
+            curl -f http://localhost:80/health || (echo "❌ NGINX health check failed" && exit 1)
             
             echo "✅ All services are running and healthy"
             echo "🎉 Backend deployment successful!"

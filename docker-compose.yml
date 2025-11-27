@@ -157,7 +157,7 @@ services:
       NODE_ENV: production
       PORT: 3000
       HOST: 0.0.0.0
-      ORIGIN: http://localhost:85
+      ORIGIN: http://localhost:80
       PROTOCOL_HEADER: x-forwarded-proto
       HOST_HEADER: x-forwarded-host
     depends_on:
@@ -181,8 +181,9 @@ services:
     build:
       context: ./nginx
       dockerfile: Dockerfile
+    # Expose nginx on host port 80 (maps host 80 -> container 8080)
     ports:
-      - "127.0.0.1:85:8080"  # map host 85 to container 8080 (non-root port)
+      - "0.0.0.0:80:8080"
     depends_on:
       user:
         condition: service_healthy
