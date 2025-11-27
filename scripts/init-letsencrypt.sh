@@ -200,6 +200,12 @@ echo "✅ Certificate obtained successfully!"
 echo "   Certificate directory: $CERT_NAME"
 echo ""
 
+# Fix permissions for Bitnami nginx (runs as UID 1001)
+echo "🔐 Fixing certificate permissions for nginx..."
+sudo chown -R 1001:1001 "$CERTBOT_PATH" 2>/dev/null || chown -R 1001:1001 "$CERTBOT_PATH"
+sudo chmod -R 755 "$CERTBOT_PATH" 2>/dev/null || chmod -R 755 "$CERTBOT_PATH"
+echo "✅ Permissions fixed"
+
 # Now switch to SSL nginx config
 echo "📝 Switching to SSL-enabled nginx config..."
 if [ -f "$NGINX_SSL_TEMPLATE" ]; then

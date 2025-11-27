@@ -17,6 +17,11 @@ docker run --rm \
   -v "$CERTBOT_PATH/logs:/var/log/letsencrypt" \
   certbot/certbot renew --quiet
 
+# Fix permissions for Bitnami nginx (runs as UID 1001)
+echo "$(date): Fixing certificate permissions..."
+chown -R 1001:1001 "$CERTBOT_PATH" 2>/dev/null || sudo chown -R 1001:1001 "$CERTBOT_PATH"
+chmod -R 755 "$CERTBOT_PATH" 2>/dev/null || sudo chmod -R 755 "$CERTBOT_PATH"
+
 # Reload nginx to pick up new certificates (if any were renewed)
 cd "$PROJECT_DIR"
 docker compose exec nginx nginx -s reload 2>/dev/null || docker compose restart nginx
