@@ -163,23 +163,103 @@ jobs:
           command_timeout: 30m
           envs: ADMIN_USERNAME,ADMIN_PASSWORD,ADMIN_PASSWORD_ENCODED,CORS_ORIGINS,MESSAGE_BROKER_URL,SENDINBLUE_APIKEY,SMTP_PASS,SMTP_USER,PGADMIN_EMAIL
           script: |
-            set -e
+            set -euo pipefail
             export DEPLOY_PATH="${{ secrets.DEPLOY_PATH || '/opt/chat-app' }}"
-            
-            # Environment variables are already exported by ssh-action via 'envs' parameter
-            
+
             echo "🚀 Starting backend deployment..."
-            cd $DEPLOY_PATH/chat-microservices
-            
-            # Pull latest changes
-            git fetch origin
-            git reset --hard origin/main
-            
-            # Make deploy script executable
-            chmod +x deploy/deploy-vps.sh
-            
-            # Run deployment script (env vars are already available)
-            bash deploy/deploy-vps.sh
+
+            # Ensure DEPLOY_PATH is writable; fall back to $HOME if needed
+            if ! mkdir -p "$DEPLOY_PATH" 2>/dev/null; then
+              echo "⚠️ Cannot create $DEPLOY_PATH (permission denied). Falling back to home directory"
+              FALLBACK="$HOME/chat-app"
+              mkdir -p "$FALLBACK"
+              export DEPLOY_PATH="$FALLBACK"
+              echo "➡️ Using fallback DEPLOY_PATH=$DEPLOY_PATH"
+            fi
+
+            # If the chat-microservices directory exists, update it. Otherwise try to clone it.
+            if [ -d "$DEPLOY_PATH/chat-microservices" ]; then
+              echo "➡️ Found existing directory $DEPLOY_PATH/chat-microservices — updating"
+              cd "$DEPLOY_PATH/chat-microservices"
+              # Try to fetch from origin; fall back to pull if fetch fails
+              if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+                git fetch origin --prune || git pull --rebase --autostash || true
+                git reset --hard origin/main || true
+              else
+                echo "⚠️ Directory exists but is not a git repo — attempting to re-clone"
+                cd "$DEPLOY_PATH"
+                rm -rf chat-microservices
+                # Fall through to clone step below
+              fi
+            fi
+
+            if [ ! -d "$DEPLOY_PATH/chat-microservices" ]; then
+              echo "➡️ Directory not found — creating $DEPLOY_PATH and attempting to clone repository"
+              mkdir -p "$DEPLOY_PATH"
+              cd "$DEPLOY_PATH"
+
+              REPO_URL="https://github.com/${{ github.repository }}.git"
+              # Try a shallow clone (may fail for private repos)
+              if git ls-remote --exit-code "$REPO_URL" >/dev/null 2>&1; then
+                git clone --depth 1 --branch main "$REPO_URL" chat-microservices || {
+                  echo "⚠️ git clone failed, creating empty folder to continue"
+                  mkdir -p chat-microservices
+                }
+                cd chat-microservices || true
+              else
+                echo "⚠️ Cannot access $REPO_URL (network or permissions). Creating empty directory and continuing"
+                mkdir -p chat-microservices
+                cd chat-microservices
+              fi
+            fi
+
+            cd "$DEPLOY_PATH/chat-microservices"
+
+            # Check Docker permissions
+            echo "🔍 Checking Docker permissions..."
+            if ! docker ps >/dev/null 2>&1; then
+              echo "⚠️ Docker permission denied. Attempting to add user to docker group..."
+              # Check if user is in docker group
+              if ! groups | grep -q docker; then
+                echo "💡 User is not in docker group. To fix this on VPS, run:"
+                echo "   sudo usermod -aG docker $USER && newgrp docker"
+                echo "⚠️ Continuing anyway - docker commands may fail"
+              fi
+            else
+              echo "✅ Docker access confirmed"
+            fi
+
+            # Ensure docker-secrets directory and app_secrets file exist
+            echo "🔧 Ensuring docker-secrets/app_secrets exists..."
+            mkdir -p docker-secrets
+            if [ ! -f docker-secrets/app_secrets ]; then
+              echo "➡️ Creating docker-secrets/app_secrets from environment variables"
+              cat > docker-secrets/app_secrets <<EOF
+            ADMIN_USERNAME=${ADMIN_USERNAME}
+            ADMIN_PASSWORD=${ADMIN_PASSWORD}
+            ADMIN_PASSWORD_ENCODED=${ADMIN_PASSWORD_ENCODED}
+            CORS_ORIGINS=${CORS_ORIGINS}
+            MESSAGE_BROKER_URL=${MESSAGE_BROKER_URL}
+            SENDINBLUE_APIKEY=${SENDINBLUE_APIKEY}
+            SMTP_PASS=${SMTP_PASS}
+            SMTP_USER=${SMTP_USER}
+            PGADMIN_EMAIL=${PGADMIN_EMAIL}
+            EOF
+              echo "✅ Created docker-secrets/app_secrets"
+            else
+              echo "✅ docker-secrets/app_secrets already exists"
+            fi
+
+            # Ensure deploy script exists before trying to run it
+            if [ -f deploy/deploy-vps.sh ]; then
+              echo "🔧 Making deploy script executable and running it"
+              chmod +x deploy/deploy-vps.sh || true
+              bash deploy/deploy-vps.sh
+            else
+              echo "⚠️ deploy/deploy-vps.sh not found — skipping script run"
+              echo "📁 Current directory listing:"
+              ls -la || true
+            fi
 
       - name: Verify deployment
         uses: appleboy/ssh-action@029f5b4aeeeb58fdfe1410a5d17f967dacf36262

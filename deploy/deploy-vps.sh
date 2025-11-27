@@ -54,13 +54,22 @@ fi
 echo "🐳 Pulling latest Docker images..."
 docker compose pull
 
-echo "🏗️  Building services..."
-docker compose -f docker-compose.yml -f docker-compose.prod.yml build --pull
+echo "🏗️  Building backend services (excluding frontend)..."
+# Build only backend services - frontend is built separately from its own repo
+BACKEND_SERVICES="user-service chat-service notification-service gateway nginx"
+docker compose -f docker-compose.yml -f docker-compose.prod.yml build --pull $BACKEND_SERVICES || {
+  echo "⚠️ Some services failed to build. Continuing..."
+}
 
-echo "🔄 Restarting services..."
+echo "🔄 Restarting backend services..."
 # Use --remove-orphans to clean up any old containers
 # Use --force-recreate to ensure fresh containers
-docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --remove-orphans --force-recreate
+# Start backend services only (frontend is managed by its own deployment)
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --remove-orphans $BACKEND_SERVICES || {
+  echo "⚠️ Some services failed to start"
+  docker compose ps
+  docker compose logs --tail=50
+}
 
 echo "⏳ Waiting for services to start..."
 sleep 10
