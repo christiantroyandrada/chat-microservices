@@ -44,11 +44,35 @@ git fetch origin || echo "⚠️ git fetch failed (continuing)"
 git reset --hard origin/main || echo "⚠️ git reset failed (continuing)"
 
 echo "🔧 Checking environment configuration..."
-if [ ! -f "docker-secrets/app_secrets" ]; then
-    echo "❌ Error: docker-secrets/app_secrets not found!"
-    echo "Please ensure app_secrets file exists on the VPS"
-    exit 1
-fi
+  echo "🔧 Ensuring docker-secrets/app_secrets exists (will write from CI-provided envs if present)..."
+  mkdir -p docker-secrets
+
+  # If ADMIN_PASSWORD is provided in the environment, overwrite/create the app_secrets file
+  if [ -n "${ADMIN_PASSWORD:-}" ]; then
+    echo "➡️ Writing docker-secrets/app_secrets from environment variables"
+    cat > docker-secrets/app_secrets <<EOF
+ADMIN_USERNAME=${ADMIN_USERNAME}
+ADMIN_PASSWORD=${ADMIN_PASSWORD}
+ADMIN_PASSWORD_ENCODED=${ADMIN_PASSWORD_ENCODED}
+CORS_ORIGINS=${CORS_ORIGINS}
+MESSAGE_BROKER_URL=${MESSAGE_BROKER_URL}
+SENDINBLUE_APIKEY=${SENDINBLUE_APIKEY}
+SMTP_PASS=${SMTP_PASS}
+SMTP_USER=${SMTP_USER}
+PGADMIN_EMAIL=${PGADMIN_EMAIL}
+EOF
+    chmod 600 docker-secrets/app_secrets || true
+    echo "✅ Wrote docker-secrets/app_secrets"
+  else
+    # If no ADMIN_PASSWORD in env and file missing, fail because setup cannot run
+    if [ ! -f docker-secrets/app_secrets ]; then
+      echo "❌ docker-secrets/app_secrets not found and no secrets provided in environment"
+      echo "Please provide secrets via Infisical in CI or place app_secrets on the VPS"
+      exit 1
+    else
+      echo "ℹ️ docker-secrets/app_secrets exists on disk — using existing file"
+    fi
+  fi
 
 # Check if required environment variables are set
 if [ -z "$ADMIN_PASSWORD" ]; then
@@ -95,14 +119,35 @@ docker compose "${COMPOSE_ARGS[@]}" build --pull "${BACKEND_SERVICES[@]}" || {
   echo "⚠️ Some services failed to build. Continuing..."
 }
 
-echo "🔄 Starting backend services..."
-# Start setup service first to generate .env files, then start the rest
-# setup service will run once and exit (restart: "no"), then other services start
-docker compose "${COMPOSE_ARGS[@]}" up -d --remove-orphans --force-recreate setup postgres pgadmin "${BACKEND_SERVICES[@]}" || {
+echo "🔄 Running setup service to generate .env files (synchronous)..."
+# Run setup synchronously to ensure .env files are generated before starting DB/services
+docker compose "${COMPOSE_ARGS[@]}" run --rm setup || {
+  echo "❌ Setup service failed to run. See logs below:"
+  docker compose "${COMPOSE_ARGS[@]}" logs setup --tail=200 || true
+  exit 7
+}
+
+echo "✅ Setup completed. Starting database and backend services..."
+docker compose "${COMPOSE_ARGS[@]}" up -d --remove-orphans --force-recreate postgres pgadmin "${BACKEND_SERVICES[@]}" || {
   echo "⚠️ Some services failed to start"
   docker compose "${COMPOSE_ARGS[@]}" ps || true
   docker compose "${COMPOSE_ARGS[@]}" logs --tail=50 || true
 }
+
+# Verify that expected .env files were created by setup
+MISSING_ENV=0
+for svc in user-service chat-service notification-service; do
+  if [ ! -f "$svc/.env" ]; then
+    echo "❌ Missing generated env file: $svc/.env"
+    MISSING_ENV=1
+  fi
+done
+if [ "$MISSING_ENV" -eq 1 ]; then
+  echo "📝 Showing setup logs to help diagnose missing .env files..."
+  docker compose "${COMPOSE_ARGS[@]}" logs setup --tail=200 || true
+  echo "❌ One or more generated .env files are missing after setup. Aborting."
+  exit 8
+fi
 
 echo "⏳ Waiting for services to start..."
 
