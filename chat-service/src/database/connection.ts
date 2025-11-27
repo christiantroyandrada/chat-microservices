@@ -3,14 +3,17 @@ import { DataSource } from 'typeorm'
 import config from '../config/config'
 import { logInfo, logError } from '../utils/logger'
 import { Message } from './models/MessageModel'
+import { InitialSchema1733150000000 } from './migrations/1733150000000-InitialSchema'
 
 export const AppDataSource = new DataSource({
   type: 'postgres',
   url: config.DATABASE_URL,
-  synchronize: config.env !== 'production', // ✅ SAFE: Only auto-sync in development
+  synchronize: config.env === 'development', // Auto-sync in dev, use migrations in production
   logging: config.env === 'development',
   entities: [Message],
-  migrations: [],
+  migrations: [InitialSchema1733150000000],
+  migrationsRun: false, // We run migrations explicitly before starting services
+  migrationsTableName: 'typeorm_migrations',
   subscribers: [],
   // Connection pooling for better performance and reliability
   extra: {
@@ -30,5 +33,20 @@ export const connectDB = async () => {
   } catch (error) {
     logError('[chat-service] Error connecting to PostgreSQL:', error)
     process.exit(1)
+  }
+}
+
+export const runMigrations = async () => {
+  try {
+    logInfo('[chat-service] Running database migrations...')
+    const migrations = await AppDataSource.runMigrations()
+    if (migrations.length > 0) {
+      logInfo(`[chat-service] ✅ Ran ${migrations.length} migration(s): ${migrations.map(m => m.name).join(', ')}`)
+    } else {
+      logInfo('[chat-service] ⏭️ No pending migrations')
+    }
+  } catch (error) {
+    logError('[chat-service] Error running migrations:', error)
+    throw error
   }
 }

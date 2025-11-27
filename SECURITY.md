@@ -152,7 +152,6 @@ This document outlines the security measures implemented in the chat-microservic
 - Database connection retry logic with exponential backoff
 
 **LOW Priority:**
-- TypeORM migrations for controlled schema changes
 - Database query result caching
 - Structured logging (Winston/Pino)
 - Health check endpoints for dependencies
@@ -167,13 +166,14 @@ Before deploying to production:
 - [x] Container images use distroless runtime
 - [x] Builder and runtime images pinned to digests
 - [x] Build hardening applied (npm cache clean, prune production)
+- [x] TypeORM migrations created (idempotent with hasTable checks)
+- [x] HTTPS/TLS enabled with Let's Encrypt SSL certificates
+- [x] pgAdmin accessible via /pgadmin/ route (protected by nginx)
 - [ ] All default credentials rotated
-- [ ] HTTPS/TLS enabled for external endpoints
 - [ ] Environment variables set correctly (NODE_ENV=production)
 - [ ] Rate limits adjusted for production load
 - [ ] Monitoring and alerting configured
 - [ ] Backup strategy implemented
-- [ ] TypeORM migrations created (recommended)
 - [ ] Scheduled image rebuilds configured (weekly/monthly for OS patches)
 
 ---

@@ -4,14 +4,17 @@ import config from '../config/config'
 import { logInfo, logError } from '../utils/logger'
 import { User } from './models/UserModel'
 import { Prekey } from './models/PrekeyModel'
+import { InitialSchema1733150000000 } from './migrations/1733150000000-InitialSchema'
 
 export const AppDataSource = new DataSource({
   type: 'postgres',
   url: config.DATABASE_URL,
-  synchronize: config.env !== 'production', // ✅ SAFE: Only auto-sync in development
+  synchronize: config.env === 'development', // Auto-sync in dev, use migrations in production
   logging: config.env === 'development',
   entities: [User, Prekey],
-  migrations: [],
+  migrations: [InitialSchema1733150000000],
+  migrationsRun: false, // We run migrations explicitly before starting services
+  migrationsTableName: 'typeorm_migrations',
   subscribers: [],
   // Connection pooling for better performance and reliability
   extra: {
@@ -31,5 +34,20 @@ export const connectDB = async () => {
   } catch (error) {
     logError('[user-service] Error connecting to PostgreSQL:', error)
     process.exit(1)
+  }
+}
+
+export const runMigrations = async () => {
+  try {
+    logInfo('[user-service] Running database migrations...')
+    const migrations = await AppDataSource.runMigrations()
+    if (migrations.length > 0) {
+      logInfo(`[user-service] ✅ Ran ${migrations.length} migration(s): ${migrations.map(m => m.name).join(', ')}`)
+    } else {
+      logInfo('[user-service] ⏭️ No pending migrations')
+    }
+  } catch (error) {
+    logError('[user-service] Error running migrations:', error)
+    throw error
   }
 }

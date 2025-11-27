@@ -146,15 +146,21 @@ services:
     profiles:
       - frontend
       - full
-    build: ../chat-microservices-frontend
+    build:
+      context: ../chat-microservices-frontend
+      dockerfile: Dockerfile
+      # Default to development build (http://localhost URLs)
+      # Override with docker-compose.prod.yml for production URLs
+      args:
+        BUILD_ENV: development
     restart: always
     expose:
       - "3000"
     environment:
-      NODE_ENV: production
+      NODE_ENV: development
       PORT: 3000
       HOST: 0.0.0.0
-      ORIGIN: http://localhost:80
+      ORIGIN: http://localhost
       PROTOCOL_HEADER: x-forwarded-proto
       HOST_HEADER: x-forwarded-host
     depends_on:

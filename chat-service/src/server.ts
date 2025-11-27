@@ -3,7 +3,7 @@ import { Socket, Server as SocketIOServer } from 'socket.io'
 import jwt from 'jsonwebtoken'
 import type { TokenPayload } from './types'
 import app from './app'
-import { Message, connectDB, AppDataSource } from './database'
+import { Message, connectDB, AppDataSource, runMigrations } from './database'
 import { MessageStatus } from './database/models/MessageModel'
 import config from './config/config'
 import { rabbitMQService } from './services/RabbitMQService'
@@ -32,7 +32,11 @@ validateEnv()
 let server: Server
 
 const start = async () => {
+  // Connect to database
   await connectDB()
+  
+  // Run any pending migrations (idempotent - skips already run migrations)
+  await runMigrations()
 
   // ensure the RPC/notification client is connected before handling messages
   try {
