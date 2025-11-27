@@ -234,7 +234,14 @@ write_env() {
 # Check and generate JWT secrets if needed before writing .env files
 ensure_jwt_secrets
 
-write_env "$ROOT_DIR/.env"
+# When running in Docker (detected by /app path), skip root .env since docker-compose
+# reads it from the host, not from inside the container. Only generate service .env files.
+if [ "$ROOT_DIR" = "/app" ]; then
+  echo "Running in Docker container - skipping root .env (docker-compose reads from host)"
+else
+  write_env "$ROOT_DIR/.env"
+fi
+
 write_env "$ROOT_DIR/user-service/.env"
 write_env "$ROOT_DIR/chat-service/.env"
 write_env "$ROOT_DIR/notification-service/.env"
