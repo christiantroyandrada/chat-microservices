@@ -178,9 +178,48 @@ The compose file brings up the following services:
 - `postgres` (postgres:17.6-trixie) — PostgreSQL database for all services
 - `pgadmin` (dpage/pgadmin4, web UI, host port 8088) — PostgreSQL admin interface
 - `user`, `chat`, `notification` services (Node.js microservices with distroless runtime)
-- `nginx` (reverse proxy, host port 85, vendor Bitnami image)
+- `nginx` (reverse proxy, host port 80, vendor Bitnami image)
 
 **Note**: RabbitMQ and SMTP are external services configured via environment variables.
+
+### Environment-Aware Configuration
+
+This project uses **environment-aware Docker configuration** that automatically selects the appropriate settings for local development vs production:
+
+| Environment | nginx Config | SSL | NODE_ENV | Ports |
+|-------------|--------------|-----|----------|-------|
+| **Development** | `nginx.conf` (HTTP only) | ❌ No | development | 80, 443 (HTTP) |
+| **Production** | `ssl/nginx-ssl.conf` (HTTPS) | ✅ Let's Encrypt | production | 80, 443 (HTTPS) |
+
+**How it works:**
+
+1. **nginx Dockerfile** accepts a build argument `NGINX_ENV` (default: `development`)
+2. **Local development**: Uses default `development` config → HTTP-only nginx
+3. **CI/CD production**: Passes `NGINX_ENV=production` → SSL-enabled nginx
+4. **Production overlay**: `docker-compose.prod.yml` adds SSL volumes and production environment
+
+**Usage:**
+
+```bash
+# Local development (HTTP only, no SSL required)
+docker compose up -d --build
+
+# Production build with SSL (requires Let's Encrypt certs)
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+
+# Helper script with automatic environment detection
+./scripts/docker-env.sh up -d --build
+
+# Force production mode locally (for testing)
+DEPLOY_ENV=production ./scripts/docker-env.sh up -d --build
+```
+
+**Environment Detection (docker-env.sh):**
+- `GITHUB_ACTIONS=true` → Production mode
+- `CI=true` → Production mode  
+- `DEPLOY_ENV=production` → Production mode (explicit)
+- SSL certs exist in `./certbot/conf` → Production mode
+- Default → Development mode
 
 ### Container Images (Security Hardened)
 
@@ -250,7 +289,9 @@ The project has undergone comprehensive security audits and major enhancements. 
 - Type-safe queries with parameterized SQL
 - Connection pooling and query monitoring
 - Database indexes for optimal performance
-- `synchronize: false` in production for schema safety
+- Idempotent migrations with `hasTable()` checks
+- `synchronize: true` in development for auto-sync
+- `runMigrations()` in production for controlled schema changes
 
 ✅ **End-to-End Encryption**: Signal Protocol implementation
 - Client-side encryption/decryption
@@ -424,12 +465,13 @@ This project implements multiple security layers for local development and produ
 
 Before deploying to production:
 - [ ] Rotate all default credentials
-- [ ] Enable HTTPS/TLS
+- [x] Enable HTTPS/TLS (Let's Encrypt SSL configured)
 - [ ] Set `NODE_ENV=production`
 - [ ] Configure proper CORS origins
 - [ ] Review rate limits for production traffic
 - [ ] Enable `secure: true` for cookies
-- [ ] Verify distroless images are in use (check Dockerfiles)
+- [x] Verify distroless images are in use (check Dockerfiles)
+- [x] TypeORM migrations created with idempotent checks
 - [ ] Schedule regular image rebuilds for OS patches (weekly/monthly)
 - [ ] Review and apply production recommendations in [SECURITY.md](./SECURITY.md)
 

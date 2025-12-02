@@ -35,9 +35,9 @@ Security Cleanup: Remove source files
 The deployment uses a Docker Compose stack with:
 - **Backend Services**: User (8081), Chat (8082), Notification (8083) microservices
 - **Frontend Service**: SvelteKit application (3000)
-- **NGINX**: Reverse proxy/API gateway (80/443)
+- **NGINX**: Reverse proxy/API gateway (80/443) with SSL termination
 - **PostgreSQL**: Database (5432)
-- **pgAdmin**: Database management UI (8088, localhost only)
+- **pgAdmin**: Database management UI (accessible at `/pgadmin/` via HTTPS)
 
 ## Prerequisites
 
@@ -202,6 +202,26 @@ docker compose exec chat wget -qO- http://localhost:8082/health
 docker compose exec notification wget -qO- http://localhost:8083/health
 ```
 
+### Access pgAdmin (Database Management)
+
+pgAdmin is accessible via the nginx reverse proxy at:
+```
+https://your-domain.com/pgadmin/
+```
+
+Login with the credentials configured in your Infisical secrets:
+- **Email**: Value of `PGADMIN_EMAIL`
+- **Password**: Value of `ADMIN_PASSWORD`
+
+To connect to the PostgreSQL database in pgAdmin:
+- **Host**: `postgres` (Docker service name)
+- **Port**: `5432`
+- **Username**: Value of `ADMIN_USERNAME`
+- **Password**: Value of `ADMIN_PASSWORD`
+- **Database**: `chat_db`
+
+**Security Note**: pgAdmin exposes database admin functionality. Ensure strong passwords and consider additional network restrictions for production environments.
+
 ## Troubleshooting
 
 ### Image Pull Failed
@@ -289,9 +309,30 @@ docker compose up -d --force-recreate
 - [ ] VPS_SUDO_PASSWORD added to both repos
 - [ ] VPS connection secrets configured (HOST, USER, SSH_KEY, PORT)
 - [ ] Infisical secrets configured (especially SMTP_HOST, EMAIL_FROM)
+- [ ] PGADMIN_EMAIL configured for database management access
 - [ ] Database backups automated
 - [ ] Monitoring/alerting set up
 - [ ] Strong passwords for all services
+
+## Database Migrations
+
+All services use TypeORM migrations that run automatically on startup:
+
+- **Idempotent migrations**: Use `hasTable()` checks to skip if tables already exist
+- **Production safety**: Migrations tracked in `typeorm_migrations` table
+- **Development mode**: Uses `synchronize: true` for auto-sync during development
+- **Migration files**: Located in `*/src/database/migrations/`
+
+Migrations run in this order:
+1. `user-service`: Creates `users` and `prekeys` tables
+2. `chat-service`: Creates `messages` table with status enum
+3. `notification-service`: Creates `notifications` table with type enum
+
+To manually check migration status:
+```bash
+docker compose exec user sh -c "ls -la /app/build/database/migrations/"
+docker compose logs user | grep -i migration
+```
 
 ## Related Documentation
 

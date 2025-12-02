@@ -7,7 +7,7 @@ import { errorMiddleware, errorHandler } from './middleware'
 import config from './config/config'
 import { rabbitMQService } from './services/RabbitMQService'
 import { logInfo, logWarn, logError } from './utils/logger'
-import { connectDB } from './database'
+import { connectDB, runMigrations } from './database'
 import notificationRouter from './routes/notificationRoutes'
 
 // Validate required environment variables on startup
@@ -74,7 +74,11 @@ app.use(errorMiddleware)
 app.use(errorHandler)
 
 const start = async () => {
+  // Connect to database
   await connectDB()
+  
+  // Run any pending migrations (idempotent - skips already run migrations)
+  await runMigrations()
 
   server = app.listen(config.PORT, () => {
     logInfo(`[notification-service] Server is running on port ${config.PORT}`)

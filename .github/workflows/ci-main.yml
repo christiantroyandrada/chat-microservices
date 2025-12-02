@@ -142,6 +142,8 @@ jobs:
           tags: |
             ghcr.io/${{ github.repository_owner }}/chat-nginx:${{ github.sha }}
             ghcr.io/${{ github.repository_owner }}/chat-nginx:latest
+          build-args: |
+            NGINX_ENV=production
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -279,12 +281,13 @@ jobs:
                 depends_on:
                   postgres:
                     condition: service_healthy
-                ports:
-                  - "127.0.0.1:8088:80"
+                expose:
+                  - "80"
                 environment:
                   PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@admin.com}
                   PGADMIN_DEFAULT_PASSWORD: ${ADMIN_PASSWORD}
                   PGADMIN_CONFIG_SERVER_MODE: "False"
+                  SCRIPT_NAME: /pgadmin
                 volumes:
                   - pgadmin-data:/var/lib/pgadmin
 
