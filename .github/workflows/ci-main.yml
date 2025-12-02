@@ -1,14 +1,22 @@
-name: CI Pipeline[main]
+name: CI Pipeline [main]
 
 on:
   push:
     branches: [main]
 
-# Give this workflow the permissions required by called reusable workflows
-# `security-audit.yml` requests `security-events: write`, so we must allow it here.
+# Permissions for GHCR push and security scanning
 permissions:
   contents: read
+  packages: write
   security-events: write
+
+env:
+  REGISTRY: ghcr.io
+  # Image names (lowercase required for GHCR)
+  IMAGE_USER: ghcr.io/${{ github.repository_owner }}/chat-user-service
+  IMAGE_CHAT: ghcr.io/${{ github.repository_owner }}/chat-chat-service
+  IMAGE_NOTIFICATION: ghcr.io/${{ github.repository_owner }}/chat-notification-service
+  IMAGE_NGINX: ghcr.io/${{ github.repository_owner }}/chat-nginx
 
 jobs:
   build:
@@ -20,12 +28,10 @@ jobs:
 
     steps:
       - name: Checkout
-        # Pinned to specific commit SHA for supply-chain security
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        uses: actions/checkout@v4
 
       - name: Use Node.js ${{ matrix.node-version }}
-        # Pinned to specific commit SHA for supply-chain security
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node-version }}
 
@@ -53,24 +59,18 @@ jobs:
           npm audit --prefix chat-service --audit-level=moderate || true
           npm audit --prefix notification-service --audit-level=moderate || true
 
-      - name: Summary
-        run: echo "Backend Build completed successfully"
-
-  # TypeScript type checking (runs for all branches)
   typescript-check:
     name: TypeScript Type Check
     needs: build
     uses: ./.github/workflows/typescript-check.yml
 
-  # Security audit (only runs on main branch)
   security-audit:
     name: Security Audit
     needs: typescript-check
-    if: github.ref == 'refs/heads/main' || github.event_name == 'schedule'
+    if: github.ref == 'refs/heads/main'
     uses: ./.github/workflows/security-audit.yml
     secrets: inherit
 
-  # Unit tests with coverage (only runs on main branch)
   unit-tests:
     name: Unit Tests & Coverage
     needs: security-audit
@@ -80,10 +80,75 @@ jobs:
       coverage: 'true'
     secrets: inherit
 
-  # Deploy to VPS (only runs on main branch after tests pass)
+  # Build and push Docker images to GitHub Container Registry
+  docker-build:
+    name: Build & Push Docker Images
+    needs: unit-tests
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push user-service
+        uses: docker/build-push-action@v6
+        with:
+          context: ./user-service
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/chat-user-service:${{ github.sha }}
+            ghcr.io/${{ github.repository_owner }}/chat-user-service:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build and push chat-service
+        uses: docker/build-push-action@v6
+        with:
+          context: ./chat-service
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/chat-chat-service:${{ github.sha }}
+            ghcr.io/${{ github.repository_owner }}/chat-chat-service:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build and push notification-service
+        uses: docker/build-push-action@v6
+        with:
+          context: ./notification-service
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/chat-notification-service:${{ github.sha }}
+            ghcr.io/${{ github.repository_owner }}/chat-notification-service:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build and push nginx
+        uses: docker/build-push-action@v6
+        with:
+          context: ./nginx
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/chat-nginx:${{ github.sha }}
+            ghcr.io/${{ github.repository_owner }}/chat-nginx:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # Deploy to VPS - NO git clone/pull, only pull pre-built images
   deploy:
     name: Deploy to VPS
-    needs: unit-tests
+    needs: docker-build
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     environment: production
@@ -97,306 +162,312 @@ jobs:
         uses: Infisical/secrets-action@v1.0.7
         with:
           method: universal
-          # Intentional  misspelling as INFISICAL was erroneously created in secrets
           client-id: ${{ secrets.INFISCAL_CLIENT_ID }}
           client-secret: ${{ secrets.INFISCAL_CLIENT_SECRET }}
           project-slug: ${{ secrets.INFISCAL_PROJECT_SLUG }}
           env-slug: prod
           secret-path: /
 
-      - name: Validate Infisical secrets
+      - name: Validate secrets
         run: |
-          echo "🔍 Validating required secrets from Infisical..."
+          echo "🔍 Validating required secrets..."
           MISSING=0
           
-          # Infisical action sets secrets as environment variables, not outputs
-          # Check each required secret using env context (do not print values)
-          if [ -z "$ADMIN_USERNAME" ]; then
-            echo "❌ ADMIN_USERNAME is missing or empty in Infisical"
-            MISSING=1
-          else
-            echo "✅ ADMIN_USERNAME present"
-          fi
+          # Required secrets
+          [ -z "$ADMIN_USERNAME" ] && echo "❌ ADMIN_USERNAME missing" && MISSING=1 || echo "✅ ADMIN_USERNAME"
+          [ -z "$ADMIN_PASSWORD" ] && echo "❌ ADMIN_PASSWORD missing" && MISSING=1 || echo "✅ ADMIN_PASSWORD"
+          [ -z "$ADMIN_PASSWORD_ENCODED" ] && echo "❌ ADMIN_PASSWORD_ENCODED missing" && MISSING=1 || echo "✅ ADMIN_PASSWORD_ENCODED"
           
-          if [ -z "$ADMIN_PASSWORD" ]; then
-            echo "❌ ADMIN_PASSWORD is missing or empty in Infisical"
-            MISSING=1
-          else
-            echo "✅ ADMIN_PASSWORD present"
-          fi
+          # Email/SMTP secrets (warn if missing but don't fail)
+          [ -z "$SMTP_HOST" ] && echo "⚠️ SMTP_HOST missing (defaulting to smtp-relay.brevo.com)" || echo "✅ SMTP_HOST"
+          [ -z "$EMAIL_FROM" ] && echo "⚠️ EMAIL_FROM missing (defaulting to admin@ctaprojects.xyz)" || echo "✅ EMAIL_FROM"
+          [ -z "$SMTP_USER" ] && echo "⚠️ SMTP_USER missing" || echo "✅ SMTP_USER"
+          [ -z "$SMTP_PASS" ] && echo "⚠️ SMTP_PASS missing" || echo "✅ SMTP_PASS"
           
-          if [ -z "$ADMIN_PASSWORD_ENCODED" ]; then
-            echo "❌ ADMIN_PASSWORD_ENCODED is missing or empty in Infisical"
-            MISSING=1
-          else
-            echo "✅ ADMIN_PASSWORD_ENCODED present"
-          fi
+          # Mask sensitive values in logs
+          echo "::add-mask::$ADMIN_PASSWORD"
+          echo "::add-mask::$ADMIN_PASSWORD_ENCODED"
+          echo "::add-mask::$SMTP_PASS"
+          echo "::add-mask::$SENDINBLUE_APIKEY"
           
-          if [ -z "$CORS_ORIGINS" ]; then
-            echo "⚠️  CORS_ORIGINS is missing or empty in Infisical (may be intentional)"
-          else
-            echo "✅ CORS_ORIGINS present"
-          fi
-          
-          if [ -z "$MESSAGE_BROKER_URL" ]; then
-            echo "⚠️  MESSAGE_BROKER_URL is missing or empty in Infisical (may be intentional)"
-          else
-            echo "✅ MESSAGE_BROKER_URL present"
-          fi
-          
-          if [ "$MISSING" -eq 1 ]; then
-            echo ""
-            echo "❌ One or more required secrets are missing in Infisical."
-            echo "Please verify in Infisical dashboard:"
-            echo "  - Project: ${{ secrets.INFISCAL_PROJECT_SLUG }}"
-            echo "  - Environment: prod"
-            echo "  - Path: /"
-            echo ""
-            echo "Ensure these secrets exist and have values:"
-            echo "  - ADMIN_USERNAME (PostgreSQL username)"
-            echo "  - ADMIN_PASSWORD (PostgreSQL password)"
-            echo "  - ADMIN_PASSWORD_ENCODED (URL-encoded version)"
-            exit 1
-          fi
-          
+          [ "$MISSING" -eq 1 ] && exit 1
           echo "✅ All required secrets validated"
 
-      - name: Debug SSH connectivity (temporary)
-        if: always()
-        continue-on-error: true
-        run: |
-          echo "🔍 Debugging SSH connectivity to VPS (safe, will not expose key)"
-          # Check whether the secret exists (do not print the secret itself)
-          if [ -z "${{ secrets.VPS_SSH_PRIVATE_KEY }}" ]; then
-            echo "❌ Secret 'VPS_SSH_PRIVATE_KEY' is missing or empty"
-            echo "Please confirm the secret exists in repository settings or organization secrets."
-            exit 0
-          else
-            echo "✅ Secret 'VPS_SSH_PRIVATE_KEY' appears present"
-          fi
-
-          # Write the private key to a temporary file and attempt a verbose auth
-          mkdir -p /tmp/ssh-debug
-          PRIVATE_KEY="${{ secrets.VPS_SSH_PRIVATE_KEY }}"
-          printf '%s\n' "$PRIVATE_KEY" > /tmp/ssh-debug/deploy_key
-          chmod 600 /tmp/ssh-debug/deploy_key
-
-          echo "Attempting SSH handshake (will continue on failure)..."
-          ssh -i /tmp/ssh-debug/deploy_key \
-            -o StrictHostKeyChecking=no \
-            -o UserKnownHostsFile=/dev/null \
-            -o BatchMode=yes \
-            -o ConnectTimeout=10 \
-            -p "${{ secrets.VPS_PORT || '22' }}" \
-            "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}" echo "SSH_OK" || true
-
-      - name: Deploy to VPS via SSH
-        uses: appleboy/ssh-action@029f5b4aeeeb58fdfe1410a5d17f967dacf36262
+      - name: Deploy to VPS
+        uses: appleboy/ssh-action@v1.0.3
         env:
-          # Database credentials (Infisical sets these as env vars, pass them through)
           ADMIN_USERNAME: ${{ env.ADMIN_USERNAME }}
           ADMIN_PASSWORD: ${{ env.ADMIN_PASSWORD }}
           ADMIN_PASSWORD_ENCODED: ${{ env.ADMIN_PASSWORD_ENCODED }}
-          # Application secrets
           CORS_ORIGINS: ${{ env.CORS_ORIGINS }}
           MESSAGE_BROKER_URL: ${{ env.MESSAGE_BROKER_URL }}
           SENDINBLUE_APIKEY: ${{ env.SENDINBLUE_APIKEY }}
+          SMTP_HOST: ${{ env.SMTP_HOST }}
           SMTP_PASS: ${{ env.SMTP_PASS }}
           SMTP_USER: ${{ env.SMTP_USER }}
-          # Deployment config
-          PGADMIN_EMAIL: ${{ secrets.PGADMIN_EMAIL || 'admin@admin.com' }}
+          EMAIL_FROM: ${{ env.EMAIL_FROM }}
+          PGADMIN_EMAIL: ${{ secrets.PGADMIN_EMAIL }}
+          VPS_SUDO_PASSWORD: ${{ secrets.VPS_SUDO_PASSWORD }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          IMAGE_TAG: ${{ github.sha }}
+          REPO_OWNER: ${{ github.repository_owner }}
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_PRIVATE_KEY }}
-          port: ${{ secrets.VPS_PORT || '22' }}
+          port: ${{ secrets.VPS_PORT }}
           command_timeout: 30m
-          envs: ADMIN_USERNAME,ADMIN_PASSWORD,ADMIN_PASSWORD_ENCODED,CORS_ORIGINS,MESSAGE_BROKER_URL,SENDINBLUE_APIKEY,SMTP_PASS,SMTP_USER,PGADMIN_EMAIL
+          envs: ADMIN_USERNAME,ADMIN_PASSWORD,ADMIN_PASSWORD_ENCODED,CORS_ORIGINS,MESSAGE_BROKER_URL,SENDINBLUE_APIKEY,SMTP_HOST,SMTP_PASS,SMTP_USER,EMAIL_FROM,PGADMIN_EMAIL,VPS_SUDO_PASSWORD,GITHUB_TOKEN,IMAGE_TAG,REPO_OWNER
           script: |
             set -euo pipefail
-            export DEPLOY_PATH="${{ secrets.DEPLOY_PATH || '/opt/chat-app' }}"
+            DEPLOY_PATH="/opt/chat-app"
 
-            echo "🚀 Starting backend deployment..."
+            echo "🚀 Starting backend deployment (image-based, no git pull)..."
 
-            # Ensure DEPLOY_PATH is writable; fall back to $HOME if needed
-            if ! mkdir -p "$DEPLOY_PATH" 2>/dev/null; then
-              echo "⚠️ Cannot create $DEPLOY_PATH (permission denied). Falling back to home directory"
-              FALLBACK="$HOME/chat-app"
-              mkdir -p "$FALLBACK"
-              export DEPLOY_PATH="$FALLBACK"
-              echo "➡️ Using fallback DEPLOY_PATH=$DEPLOY_PATH"
-            fi
-
-            # If the chat-microservices directory exists, update it. Otherwise try to clone it.
-            if [ -d "$DEPLOY_PATH/chat-microservices" ]; then
-              echo "➡️ Found existing directory $DEPLOY_PATH/chat-microservices — updating"
-              cd "$DEPLOY_PATH/chat-microservices"
-              # Try to fetch from origin; fall back to pull if fetch fails
-              if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-                git fetch origin --prune || git pull --rebase --autostash || true
-                git reset --hard origin/main || true
-              else
-                echo "⚠️ Directory exists but is not a git repo — attempting to re-clone"
-                cd "$DEPLOY_PATH"
-                rm -rf chat-microservices
-                # Fall through to clone step below
-              fi
-            fi
-
-            if [ ! -d "$DEPLOY_PATH/chat-microservices" ]; then
-              echo "➡️ Directory not found — creating $DEPLOY_PATH and attempting to clone repository"
-              mkdir -p "$DEPLOY_PATH"
-              cd "$DEPLOY_PATH"
-
-              REPO_URL="https://github.com/${{ github.repository }}.git"
-              # Try a shallow clone (may fail for private repos)
-              if git ls-remote --exit-code "$REPO_URL" >/dev/null 2>&1; then
-                git clone --depth 1 --branch main "$REPO_URL" chat-microservices || {
-                  echo "⚠️ git clone failed, creating empty folder to continue"
-                  mkdir -p chat-microservices
-                }
-                cd chat-microservices || true
-              else
-                echo "⚠️ Cannot access $REPO_URL (network or permissions). Creating empty directory and continuing"
-                mkdir -p chat-microservices
-                cd chat-microservices
-              fi
-            fi
-
-            cd "$DEPLOY_PATH/chat-microservices"
-
-            # Check Docker permissions
-            echo "🔍 Checking Docker permissions..."
-            if ! docker ps >/dev/null 2>&1; then
-              echo "⚠️ Docker permission denied. Attempting to add user to docker group..."
-              # Check if user is in docker group
-              if ! groups | grep -q docker; then
-                echo "💡 User is not in docker group. To fix this on VPS, run:"
-                echo "   sudo usermod -aG docker $USER && newgrp docker"
-                echo "⚠️ Continuing anyway - docker commands may fail"
-              fi
-            else
-              echo "✅ Docker access confirmed"
-            fi
-
-            # Note: docker-secrets/app_secrets is created by deploy-vps.sh with all required config
-            # Just ensure the directory exists
-            mkdir -p docker-secrets
-
-            # Ensure deploy script exists before trying to run it
-            if [ -f deploy/deploy-vps.sh ]; then
-              echo "🔧 Making deploy script executable and running it"
-              chmod +x deploy/deploy-vps.sh || true
-              # Export all environment variables so deploy-vps.sh can access them
-              export ADMIN_USERNAME
-              export ADMIN_PASSWORD
-              export ADMIN_PASSWORD_ENCODED
-              export PGADMIN_EMAIL
-              export CORS_ORIGINS
-              export MESSAGE_BROKER_URL
-              export SENDINBLUE_APIKEY
-              export SMTP_PASS
-              export SMTP_USER
-              bash deploy/deploy-vps.sh
-            else
-              echo "⚠️ deploy/deploy-vps.sh not found — skipping script run"
-              echo "📁 Current directory listing:"
-              ls -la || true
-            fi
-
-      - name: Verify deployment
-        uses: appleboy/ssh-action@029f5b4aeeeb58fdfe1410a5d17f967dacf36262
-        env:
-          # Database credentials (Infisical sets these as env vars, pass them through)
-          ADMIN_USERNAME: ${{ env.ADMIN_USERNAME }}
-          ADMIN_PASSWORD: ${{ env.ADMIN_PASSWORD }}
-          ADMIN_PASSWORD_ENCODED: ${{ env.ADMIN_PASSWORD_ENCODED }}
-          # Application secrets
-          CORS_ORIGINS: ${{ env.CORS_ORIGINS }}
-          MESSAGE_BROKER_URL: ${{ env.MESSAGE_BROKER_URL }}
-          SENDINBLUE_APIKEY: ${{ env.SENDINBLUE_APIKEY }}
-          SMTP_PASS: ${{ env.SMTP_PASS }}
-          SMTP_USER: ${{ env.SMTP_USER }}
-          # Deployment config
-          PGADMIN_EMAIL: ${{ secrets.PGADMIN_EMAIL || 'admin@admin.com' }}
-        with:
-          host: ${{ secrets.VPS_HOST }}
-          username: ${{ secrets.VPS_USER }}
-          key: ${{ secrets.VPS_SSH_PRIVATE_KEY }}
-          port: ${{ secrets.VPS_PORT || '22' }}
-          envs: ADMIN_USERNAME,ADMIN_PASSWORD,ADMIN_PASSWORD_ENCODED,CORS_ORIGINS,MESSAGE_BROKER_URL,SENDINBLUE_APIKEY,SMTP_PASS,SMTP_USER,PGADMIN_EMAIL
-          script: |
-            set -e
-            export DEPLOY_PATH="${{ secrets.DEPLOY_PATH || '/opt/chat-app' }}"
+            # Mask sensitive env vars from logs
+            echo "::add-mask::$VPS_SUDO_PASSWORD"
+            echo "::add-mask::$GITHUB_TOKEN"
+            echo "::add-mask::$ADMIN_PASSWORD"
+            echo "::add-mask::$ADMIN_PASSWORD_ENCODED"
             
-            # Export all environment variables for docker compose
-            export ADMIN_USERNAME
-            export ADMIN_PASSWORD
-            export ADMIN_PASSWORD_ENCODED
-            export PGADMIN_EMAIL
-            export CORS_ORIGINS
-            export MESSAGE_BROKER_URL
-            export SENDINBLUE_APIKEY
-            export SMTP_PASS
-            export SMTP_USER
-            
-            cd $DEPLOY_PATH/chat-microservices
-            
+            # Create deploy directory with sudo (password piped securely)
+            if [ ! -d "$DEPLOY_PATH" ]; then
+              sudo -S mkdir -p "$DEPLOY_PATH" <<< "$VPS_SUDO_PASSWORD" 2>/dev/null
+              sudo -S chown $USER:$USER "$DEPLOY_PATH" <<< "$VPS_SUDO_PASSWORD" 2>/dev/null
+            fi
+
+            cd "$DEPLOY_PATH"
+            mkdir -p chat-microservices
+            cd chat-microservices
+
+            # Log in to GitHub Container Registry (token passed via stdin, not echoed)
+            echo "🔐 Logging in to GHCR..."
+            docker login ghcr.io -u "$REPO_OWNER" --password-stdin <<< "$GITHUB_TOKEN" 2>/dev/null
+
+            # Generate JWT secret if not exists
+            JWT_SECRET_FILE="$DEPLOY_PATH/.jwt_secret"
+            if [ ! -f "$JWT_SECRET_FILE" ]; then
+              echo "🔑 Generating new JWT secret..."
+              openssl rand -base64 64 | tr -d '\n' > "$JWT_SECRET_FILE"
+              chmod 600 "$JWT_SECRET_FILE"
+            fi
+            JWT_SECRET=$(cat "$JWT_SECRET_FILE")
+
+            # Create docker-compose.yml directly (no git needed)
+            echo "📝 Creating docker-compose.yml..."
+            cat > docker-compose.yml << 'COMPOSE_END'
+            services:
+              postgres:
+                image: postgres:17-bookworm
+                restart: unless-stopped
+                volumes:
+                  - postgres-data:/var/lib/postgresql/data
+                environment:
+                  POSTGRES_USER: ${ADMIN_USERNAME}
+                  POSTGRES_PASSWORD: ${ADMIN_PASSWORD}
+                  POSTGRES_DB: chat_db
+                healthcheck:
+                  test: ["CMD-SHELL", "pg_isready -U ${ADMIN_USERNAME} -d chat_db"]
+                  interval: 10s
+                  timeout: 5s
+                  retries: 5
+                  start_period: 10s
+
+              pgadmin:
+                image: dpage/pgadmin4:latest
+                restart: unless-stopped
+                depends_on:
+                  postgres:
+                    condition: service_healthy
+                ports:
+                  - "127.0.0.1:8088:80"
+                environment:
+                  PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@admin.com}
+                  PGADMIN_DEFAULT_PASSWORD: ${ADMIN_PASSWORD}
+                  PGADMIN_CONFIG_SERVER_MODE: "False"
+                volumes:
+                  - pgadmin-data:/var/lib/pgadmin
+
+              user:
+                image: ghcr.io/${REPO_OWNER}/chat-user-service:${IMAGE_TAG}
+                restart: always
+                expose:
+                  - "8081"
+                environment:
+                  NODE_ENV: production
+                  PORT: "8081"
+                  JWT_SECRET: ${JWT_SECRET}
+                  DATABASE_URL: postgresql://${ADMIN_USERNAME}:${ADMIN_PASSWORD_ENCODED}@postgres:5432/chat_db
+                  MESSAGE_BROKER_URL: ${MESSAGE_BROKER_URL}
+                  CORS_ORIGINS: ${CORS_ORIGINS}
+                depends_on:
+                  postgres:
+                    condition: service_healthy
+                healthcheck:
+                  test: ["CMD", "/nodejs/bin/node", "-e", "require('http').get('http://localhost:8081/health',r=>{process.exit(r.statusCode===200?0:1)}).on('error',()=>process.exit(1))"]
+                  interval: 10s
+                  timeout: 5s
+                  retries: 3
+                  start_period: 10s
+
+              chat:
+                image: ghcr.io/${REPO_OWNER}/chat-chat-service:${IMAGE_TAG}
+                restart: always
+                expose:
+                  - "8082"
+                environment:
+                  NODE_ENV: production
+                  PORT: "8082"
+                  JWT_SECRET: ${JWT_SECRET}
+                  DATABASE_URL: postgresql://${ADMIN_USERNAME}:${ADMIN_PASSWORD_ENCODED}@postgres:5432/chat_db
+                  MESSAGE_BROKER_URL: ${MESSAGE_BROKER_URL}
+                  CORS_ORIGINS: ${CORS_ORIGINS}
+                depends_on:
+                  postgres:
+                    condition: service_healthy
+                healthcheck:
+                  test: ["CMD", "/nodejs/bin/node", "-e", "require('http').get('http://localhost:8082/health',r=>{process.exit(r.statusCode===200?0:1)}).on('error',()=>process.exit(1))"]
+                  interval: 10s
+                  timeout: 5s
+                  retries: 3
+                  start_period: 10s
+
+              notification:
+                image: ghcr.io/${REPO_OWNER}/chat-notification-service:${IMAGE_TAG}
+                restart: always
+                expose:
+                  - "8083"
+                environment:
+                  NODE_ENV: production
+                  PORT: "8083"
+                  JWT_SECRET: ${JWT_SECRET}
+                  DATABASE_URL: postgresql://${ADMIN_USERNAME}:${ADMIN_PASSWORD_ENCODED}@postgres:5432/chat_db
+                  MESSAGE_BROKER_URL: ${MESSAGE_BROKER_URL}
+                  SMTP_HOST: ${SMTP_HOST:-smtp-relay.brevo.com}
+                  SMTP_PORT: "587"
+                  SMTP_USER: ${SMTP_USER}
+                  SMTP_PASS: ${SMTP_PASS}
+                  SENDINBLUE_APIKEY: ${SENDINBLUE_APIKEY}
+                  EMAIL_FROM: ${EMAIL_FROM:-admin@ctaprojects.xyz}
+                  NOTIFICATIONS_QUEUE: NOTIFICATIONS
+                  CORS_ORIGINS: ${CORS_ORIGINS}
+                depends_on:
+                  postgres:
+                    condition: service_healthy
+                healthcheck:
+                  test: ["CMD", "/nodejs/bin/node", "-e", "require('http').get('http://localhost:8083/health',r=>{process.exit(r.statusCode===200?0:1)}).on('error',()=>process.exit(1))"]
+                  interval: 10s
+                  timeout: 5s
+                  retries: 3
+                  start_period: 10s
+
+              nginx:
+                image: ghcr.io/${REPO_OWNER}/chat-nginx:${IMAGE_TAG}
+                restart: always
+                ports:
+                  - "0.0.0.0:80:8080"
+                  - "0.0.0.0:443:8443"
+                volumes:
+                  - ./certbot/conf:/etc/letsencrypt:ro
+                  - ./certbot/www:/var/www/certbot:ro
+                depends_on:
+                  user:
+                    condition: service_healthy
+                  chat:
+                    condition: service_healthy
+                  notification:
+                    condition: service_healthy
+                  frontend:
+                    condition: service_started
+                healthcheck:
+                  test: ["CMD-SHELL", "curl -f http://localhost:8080/health || exit 1"]
+                  interval: 10s
+                  timeout: 5s
+                  retries: 3
+                  start_period: 10s
+
+              frontend:
+                image: ghcr.io/${REPO_OWNER}/chat-frontend:latest
+                restart: always
+                expose:
+                  - "3000"
+                environment:
+                  NODE_ENV: production
+                  PORT: "3000"
+                  HOST: "0.0.0.0"
+                  ORIGIN: https://chat.ctaprojects.xyz
+                  PROTOCOL_HEADER: x-forwarded-proto
+                  HOST_HEADER: x-forwarded-host
+                healthcheck:
+                  test: ["CMD", "wget", "-q", "--spider", "http://localhost:3000"]
+                  interval: 10s
+                  timeout: 5s
+                  retries: 3
+                  start_period: 15s
+
+            volumes:
+              postgres-data:
+              pgadmin-data:
+            COMPOSE_END
+
+            # Export all environment variables
+            export ADMIN_USERNAME ADMIN_PASSWORD ADMIN_PASSWORD_ENCODED
+            export CORS_ORIGINS MESSAGE_BROKER_URL SENDINBLUE_APIKEY
+            export SMTP_HOST SMTP_PASS SMTP_USER EMAIL_FROM PGADMIN_EMAIL
+            export JWT_SECRET IMAGE_TAG REPO_OWNER
+
+            # Create certbot directories
+            mkdir -p certbot/conf certbot/www
+
+            echo "🐳 Pulling pre-built images from GHCR..."
+            docker compose pull
+
+            echo "🚀 Starting services..."
+            docker compose up -d --remove-orphans --force-recreate
+
             echo "⏳ Waiting for services to be healthy..."
-            sleep 15
-            
-            # Check service status
-            docker compose ps
-            
-            # Check if all critical services are healthy
-            if docker compose ps | grep -E '(user|chat|notification|frontend|nginx)' | grep -q "unhealthy"; then
-              echo "❌ Some services are unhealthy!"
-              echo "📋 Service status:"
-              docker compose ps
-              echo "📝 Recent logs:"
-              docker compose logs --tail=50
+            sleep 30
+
+            # Verify health
+            if curl -fsS http://localhost:80/health >/dev/null 2>&1; then
+              echo "✅ Backend deployment successful!"
+            else
+              echo "⚠️ Health check failed, showing logs..."
+              docker compose logs --tail=100
               exit 1
             fi
-            
-            # Test health endpoints
-            echo "🔍 Testing health endpoints..."
-            curl -f http://localhost:80/health || (echo "❌ NGINX health check failed" && exit 1)
-            
-            echo "✅ All services are running and healthy"
-            echo "🎉 Backend deployment successful!"
 
-      - name: Cleanup after deployment
-        if: success()
-        uses: appleboy/ssh-action@029f5b4aeeeb58fdfe1410a5d17f967dacf36262
+            docker compose ps
+
+      - name: Security cleanup
+        if: always()
+        uses: appleboy/ssh-action@v1.0.3
+        env:
+          VPS_SUDO_PASSWORD: ${{ secrets.VPS_SUDO_PASSWORD }}
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_PRIVATE_KEY }}
-          port: ${{ secrets.VPS_PORT || '22' }}
+          port: ${{ secrets.VPS_PORT }}
+          envs: VPS_SUDO_PASSWORD
           script: |
-            echo "🧹 Running post-deployment cleanup..."
+            echo "🔒 Security cleanup..."
             DEPLOY_PATH="/opt/chat-app"
-            cd $DEPLOY_PATH/chat-microservices
             
-            # Prune dangling images (unused layers from previous builds)
-            echo "🗑️ Pruning dangling Docker images..."
+            # Mask sudo password
+            echo "::add-mask::$VPS_SUDO_PASSWORD"
+            
+            cd "$DEPLOY_PATH/chat-microservices" 2>/dev/null || exit 0
+            
+            # Remove git data and source files
+            rm -rf .git .github 2>/dev/null || true
+            rm -rf user-service chat-service notification-service nginx 2>/dev/null || true
+            rm -rf scripts deploy docs docker-secrets 2>/dev/null || true
+            
+            # Prune Docker
             docker image prune -f || true
-            
-            # Prune stopped containers (if any)
-            echo "🗑️ Pruning stopped containers..."
             docker container prune -f || true
             
-            # Prune unused volumes (careful - only anonymous volumes)
-            echo "🗑️ Pruning unused anonymous volumes..."
-            docker volume prune -f --filter "label!=keep" || true
-            
-            # Prune unused networks
-            echo "🗑️ Pruning unused networks..."
-            docker network prune -f || true
-            
-            # Show disk usage after cleanup
-            echo "📊 Docker disk usage after cleanup:"
-            docker system df
-            
-            echo "✅ Cleanup complete!"
-
+            echo "✅ Security cleanup complete!"
+            echo "📊 Remaining files:"
+            ls -la

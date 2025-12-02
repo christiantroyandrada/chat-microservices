@@ -31,20 +31,30 @@ SSH to VPS → Deploy with secrets
 
 In your Infisical project, add these secrets to your production environment:
 
-### Database Secrets
+### Database Secrets (Required)
 ```
 ADMIN_USERNAME=postgres
 ADMIN_PASSWORD=YourSecurePassword123!
 ADMIN_PASSWORD_ENCODED=YourSecurePassword123%21
 ```
 
-### Application Secrets
+### SMTP/Email Secrets (Required for Email Features)
 ```
-CORS_ORIGINS=http://localhost:85,http://your-domain.com
-MESSAGE_BROKER_URL=amqp://username:password@rabbitmq:5672
-SENDINBLUE_APIKEY=your-sendinblue-api-key
-SMTP_PASS=your-smtp-password
+SMTP_HOST=smtp-relay.brevo.com
 SMTP_USER=your-smtp-username
+SMTP_PASS=your-smtp-password
+EMAIL_FROM=noreply@yourdomain.com
+SENDINBLUE_APIKEY=your-sendinblue-api-key
+```
+
+**Note**: If `SMTP_HOST` or `EMAIL_FROM` are not configured, the CI/CD will use defaults:
+- `SMTP_HOST` defaults to `smtp-relay.brevo.com`
+- `EMAIL_FROM` defaults to `admin@ctaprojects.xyz`
+
+### Application Secrets (Recommended)
+```
+CORS_ORIGINS=https://your-domain.com,https://www.your-domain.com
+MESSAGE_BROKER_URL=amqp://username:password@rabbitmq:5672
 ```
 
 ## Step 3: Create Machine Identity
@@ -73,15 +83,17 @@ Add these secrets to **both** repositories:
 
 ### Required GitHub Secrets
 
-1. **INFISICAL_CLIENT_ID**
+> **Note**: The workflow uses `INFISCAL_*` (without 'I') to match existing configuration.
+
+1. **INFISCAL_CLIENT_ID**
    - Value: Client ID from Step 3
    - Location: Settings → Secrets and variables → Actions
 
-2. **INFISICAL_CLIENT_SECRET**
+2. **INFISCAL_CLIENT_SECRET**
    - Value: Client Secret from Step 3
    - Location: Settings → Secrets and variables → Actions
 
-3. **INFISICAL_PROJECT_SLUG**
+3. **INFISCAL_PROJECT_SLUG**
    - Value: Project slug from Step 1 (visible in project URL)
    - Location: Settings → Secrets and variables → Actions
    - Example: `my-chat-app` or `chat-microservices`
@@ -126,12 +138,29 @@ infisical secrets --env=prod
 
 ## Secret Flow During Deployment
 
-1. **GitHub Actions starts** → CI pipeline triggered
-2. **Run tests** → Unit tests, security audits
-3. **Fetch from Infisical** → Secrets retrieved via API
-4. **SSH to VPS** → Secrets passed as environment variables
-5. **Run deployment script** → Docker Compose uses env vars
-6. **Services start** → Applications use secrets from environment
+The new image-based CI/CD pipeline handles secrets as follows:
+
+```
+1. GitHub Actions starts → CI pipeline triggered
+       ↓
+2. Run tests → Unit tests, security audits
+       ↓
+3. Build Docker images → Push to GHCR
+       ↓
+4. Fetch from Infisical → Secrets retrieved via API
+       ↓
+5. SSH to VPS → Generate docker-compose.yml with secrets
+       ↓
+6. Pull images from GHCR → Start services
+       ↓
+7. Security cleanup → Remove source files
+```
+
+**Security Features:**
+- ✅ All secrets masked with `::add-mask::` in CI logs
+- ✅ Passwords passed via here-strings (not echo pipes)
+- ✅ No secrets stored on VPS filesystem
+- ✅ Secrets injected directly into docker-compose.yml
 
 ## Environment Variables Available in Containers
 
@@ -143,12 +172,16 @@ ADMIN_USERNAME
 ADMIN_PASSWORD
 ADMIN_PASSWORD_ENCODED
 
+# Email/SMTP (with defaults if not set)
+SMTP_HOST        # Default: smtp-relay.brevo.com
+SMTP_USER
+SMTP_PASS
+EMAIL_FROM       # Default: admin@ctaprojects.xyz
+SENDINBLUE_APIKEY
+
 # Application
 CORS_ORIGINS
 MESSAGE_BROKER_URL
-SENDINBLUE_APIKEY
-SMTP_PASS
-SMTP_USER
 ```
 
 ## Security Best Practices
@@ -197,9 +230,23 @@ Error: Secret 'ADMIN_PASSWORD' not found
 ### Deployment Uses Old Secrets
 
 **Solution:** Secrets are fetched fresh on each deployment. If old values are being used:
-- Check if .env file on VPS is overriding values
 - Verify deployment script exports variables correctly
-- Check docker-compose.yml reads from environment
+- Check docker-compose.yml has correct values
+- Re-run deployment to regenerate docker-compose.yml
+
+### Email/SMTP Not Working
+
+**Check CI logs for these warnings:**
+```
+⚠️ SMTP_HOST not set in Infisical, using default
+⚠️ EMAIL_FROM not set in Infisical, using default
+```
+
+**Solutions:**
+- Add `SMTP_HOST` secret in Infisical (e.g., `smtp-relay.brevo.com`)
+- Add `EMAIL_FROM` secret in Infisical (e.g., `noreply@yourdomain.com`)
+- Verify `SMTP_USER` and `SMTP_PASS` are set correctly
+- Check notification service logs: `docker compose logs notification`
 
 ## Updating Secrets
 
@@ -207,7 +254,7 @@ Error: Secret 'ADMIN_PASSWORD' not found
 2. Secret takes effect on next deployment
 3. To apply immediately:
    - Trigger manual deployment in GitHub Actions
-   - Or SSH to VPS and run: `bash deploy/deploy-vps.sh`
+   - Or re-run the workflow from the Actions tab
 
 ## Alternative: Manual Secret Management
 

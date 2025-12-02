@@ -1,15 +1,43 @@
 # Deployment Guide
 
-This guide explains how to deploy the chat application stack to a VPS using GitHub Actions.
+This guide explains how to deploy the chat application stack using the new **image-based CI/CD pipeline**.
+
+## 🚀 New Architecture (December 2024)
+
+The deployment has been completely redesigned for security and efficiency:
+
+### Key Changes
+- ✅ **No git clone/pull on VPS** - Images are pre-built in GitHub Actions
+- ✅ **GitHub Container Registry (GHCR)** - All images stored in GHCR
+- ✅ **No source code on server** - Only docker-compose.yml and data volumes
+- ✅ **Automatic security cleanup** - Source files removed after deployment
+- ✅ **Secret masking** - All sensitive values masked in CI logs
+
+### Deployment Flow
+```
+Push to main/master
+       ↓
+GitHub Actions: Build & Test
+       ↓
+GitHub Actions: Build Docker Images
+       ↓
+Push to GHCR (ghcr.io)
+       ↓
+SSH to VPS: Pull Images from GHCR
+       ↓
+Docker Compose: Start Services
+       ↓
+Security Cleanup: Remove source files
+```
 
 ## Architecture
 
 The deployment uses a Docker Compose stack with:
-- **Backend Services**: User, Chat, and Notification microservices
-- **Frontend Service**: SvelteKit application
-- **NGINX**: Reverse proxy/API gateway
-- **PostgreSQL**: Database
-- **pgAdmin**: Database management UI
+- **Backend Services**: User (8081), Chat (8082), Notification (8083) microservices
+- **Frontend Service**: SvelteKit application (3000)
+- **NGINX**: Reverse proxy/API gateway (80/443)
+- **PostgreSQL**: Database (5432)
+- **pgAdmin**: Database management UI (8088, localhost only)
 
 ## Prerequisites
 
@@ -17,156 +45,116 @@ The deployment uses a Docker Compose stack with:
 - Ubuntu 20.04+ or Debian 11+
 - Minimum 2GB RAM, 2 CPU cores
 - 20GB+ storage
-- Docker and Docker Compose installed
-- Git installed
+- Docker and Docker Compose v2 installed
 - SSH access with key-based authentication
 
-### GitHub Secrets
+### GitHub Secrets (Required)
 
-Configure the following secrets in your GitHub repository:
+| Secret | Description |
+|--------|-------------|
+| `VPS_HOST` | VPS IP address or domain |
+| `VPS_USER` | SSH user with Docker access |
+| `VPS_SSH_PRIVATE_KEY` | SSH private key |
+| `VPS_PORT` | SSH port (default: 22) |
+| `VPS_SUDO_PASSWORD` | Sudo password for privileged ops |
+| `INFISCAL_CLIENT_ID` | Infisical client ID |
+| `INFISCAL_CLIENT_SECRET` | Infisical client secret |
+| `INFISCAL_PROJECT_SLUG` | Infisical project slug |
 
-#### Required Secrets
-1. **VPS_HOST** - Your VPS IP address or domain name
-2. **VPS_USER** - SSH user with Docker permissions (e.g., `deploy`)
-3. **VPS_SSH_PRIVATE_KEY** - Private SSH key for authentication
-4. **INFISICAL_CLIENT_ID** - Infisical machine identity client ID
-5. **INFISICAL_CLIENT_SECRET** - Infisical machine identity client secret
-6. **INFISICAL_PROJECT_SLUG** - Your Infisical project slug
+**Note**: `GITHUB_TOKEN` is automatically provided by GitHub Actions for GHCR authentication.
 
-#### Optional Secrets
-7. **VPS_PORT** - SSH port (optional, defaults to 22)
-8. **DEPLOY_PATH** - Deployment directory (optional, defaults to `/opt/chat-app`)
-9. **INFISICAL_ENV_SLUG** - Infisical environment slug (optional, defaults to `prod`)
-10. **INFISICAL_SECRET_PATH** - Path in Infisical (optional, defaults to `/`)
-11. **PGADMIN_EMAIL** - pgAdmin login email
+See [GITHUB_SECRETS.md](./GITHUB_SECRETS.md) for detailed setup.
 
-### Infisical Setup
+### Infisical Secrets (Required)
 
-This project uses Infisical for centralized secret management. See the [Infisical Setup Guide](./INFISICAL_SETUP.md) for detailed instructions.
+Store these in your Infisical project (prod environment):
 
-**Secrets managed by Infisical:**
-- Database credentials (ADMIN_USERNAME, ADMIN_PASSWORD)
-- SMTP configuration (SMTP_USER, SMTP_PASS)
-- API keys (SENDINBLUE_APIKEY)
-- Application config (CORS_ORIGINS, MESSAGE_BROKER_URL)
-
-### How to Set Up GitHub Secrets
-
-1. Go to your repository on GitHub
-2. Navigate to **Settings** → **Secrets and variables** → **Actions**
-3. Click **New repository secret**
-4. Add each secret with its value
+| Secret | Required | Default |
+|--------|----------|---------|
+| `ADMIN_USERNAME` | ✅ | - |
+| `ADMIN_PASSWORD` | ✅ | - |
+| `ADMIN_PASSWORD_ENCODED` | ✅ | - |
+| `SMTP_HOST` | ⚠️ | `smtp-relay.brevo.com` |
+| `SMTP_USER` | ⚠️ | - |
+| `SMTP_PASS` | ⚠️ | - |
+| `EMAIL_FROM` | ⚠️ | `admin@ctaprojects.xyz` |
+| `CORS_ORIGINS` | ⚠️ | - |
+| `MESSAGE_BROKER_URL` | ⚠️ | - |
+| `SENDINBLUE_APIKEY` | ⚠️ | - |
 
 ## Initial VPS Setup
 
 ### Step 1: Prepare Your VPS
 
-SSH into your VPS and run:
-
 ```bash
-# Create deployment user
+# Install Docker
+curl -fsSL https://get.docker.com | sh
+
+# Create deploy user
 sudo useradd -m -s /bin/bash deploy
+sudo usermod -aG docker deploy
 sudo usermod -aG sudo deploy
 
-# Generate SSH key for GitHub Actions
+# Setup SSH for deploy user
 sudo su - deploy
-ssh-keygen -t ed25519 -C "github-actions@deploy"
+mkdir -p ~/.ssh
+chmod 700 ~/.ssh
 
-# Copy the private key content to GitHub secrets as VPS_SSH_PRIVATE_KEY
-cat ~/.ssh/id_ed25519
-
-# Add the public key to authorized_keys
-cat ~/.ssh/id_ed25519.pub >> ~/.ssh/authorized_keys
+# Add your public key
+echo "YOUR_PUBLIC_KEY" >> ~/.ssh/authorized_keys
 chmod 600 ~/.ssh/authorized_keys
 ```
 
-### Step 2: Run Setup Script
-
-Copy and run the setup script on your VPS:
+### Step 2: Create Deploy Directory
 
 ```bash
-# Download and run setup script
-curl -o setup-vps.sh https://raw.githubusercontent.com/christiantroyandrada/chat-user-microservice/main/deploy/setup-vps.sh
-chmod +x setup-vps.sh
-./setup-vps.sh
+sudo mkdir -p /opt/chat-app
+sudo chown deploy:deploy /opt/chat-app
 ```
 
-Or manually:
+### Step 3: First Deployment
 
-```bash
-# Set deployment path
-export DEPLOY_PATH="/opt/chat-app"
-export DEPLOY_USER="deploy"
-
-# Create directory
-sudo mkdir -p "$DEPLOY_PATH"
-sudo chown -R "$DEPLOY_USER:$DEPLOY_USER" "$DEPLOY_PATH"
-
-# Clone repositories
-cd "$DEPLOY_PATH"
-git clone https://github.com/christiantroyandrada/chat-user-microservice.git chat-microservices
-git clone https://github.com/christiantroyandrada/chat-microservices-frontend.git chat-microservices-frontend
-```
-
-### Step 3: Configure Secrets
-
-Copy your `app_secrets` file to the VPS:
-
-```bash
-# From your local machine
-scp chat-microservices/docker-secrets/app_secrets deploy@YOUR_VPS_IP:/opt/chat-app/chat-microservices/docker-secrets/
-```
-
-Or create it directly on the VPS:
-
-```bash
-ssh deploy@YOUR_VPS_IP
-cd /opt/chat-app/chat-microservices/docker-secrets
-cp app_secrets.example app_secrets
-nano app_secrets  # Edit with your actual secrets
-chmod 600 app_secrets
-```
-
-### Step 4: Configure Environment Variables
-
-On your VPS, set environment variables in your shell profile:
-
-```bash
-echo 'export ADMIN_USERNAME="your_db_user"' >> ~/.bashrc
-echo 'export ADMIN_PASSWORD="your_secure_password"' >> ~/.bashrc
-echo 'export PGADMIN_EMAIL="admin@example.com"' >> ~/.bashrc
-source ~/.bashrc
-```
-
-Or create a `.env` file in `/opt/chat-app/chat-microservices/`:
-
-```bash
-cd /opt/chat-app/chat-microservices
-cat > .env << 'ENVEOF'
-ADMIN_USERNAME=your_db_user
-ADMIN_PASSWORD=your_secure_password
-PGADMIN_EMAIL=admin@example.com
-ENVEOF
-```
+Push to `main` branch to trigger the first deployment. The CI/CD will:
+1. Build all Docker images
+2. Push to GHCR
+3. SSH to VPS and create docker-compose.yml
+4. Pull images and start services
 
 ## Deployment Process
 
-### Automatic Deployment (via GitHub Actions)
+### Automatic Deployment (Recommended)
 
-1. Push changes to the `main` branch
-2. GitHub Actions will:
-   - Run tests and security audits
-   - Build Docker images
-   - Deploy to VPS via SSH
-   - Verify all services are healthy
-
-### Manual Deployment
-
-SSH into your VPS and run:
+Simply push to the `main` (backend) or `master` (frontend) branch:
 
 ```bash
+git push origin main
+```
+
+GitHub Actions will:
+1. ✅ Run tests and security audits
+2. ✅ Build Docker images in CI
+3. ✅ Push images to GHCR
+4. ✅ SSH to VPS and pull images
+5. ✅ Start/restart services
+6. ✅ Verify health checks
+7. ✅ Clean up source files
+
+### Manual Deployment (Emergency)
+
+If you need to manually deploy:
+
+```bash
+ssh deploy@YOUR_VPS -p YOUR_PORT
 cd /opt/chat-app/chat-microservices
-bash deploy/deploy-vps.sh
+
+# Login to GHCR
+echo "YOUR_GHCR_TOKEN" | docker login ghcr.io -u YOUR_USERNAME --password-stdin
+
+# Pull latest images
+docker compose pull
+
+# Restart services
+docker compose up -d --force-recreate
 ```
 
 ## Monitoring
@@ -178,6 +166,18 @@ cd /opt/chat-app/chat-microservices
 docker compose ps
 ```
 
+Expected output:
+```
+NAME          STATUS    PORTS
+postgres      healthy   5432/tcp
+pgadmin       running   127.0.0.1:8088->80/tcp
+user          healthy   8081/tcp
+chat          healthy   8082/tcp
+notification  healthy   8083/tcp
+frontend      healthy   3000/tcp
+nginx         healthy   0.0.0.0:80->8080/tcp, 0.0.0.0:443->8443/tcp
+```
+
 ### View Logs
 
 ```bash
@@ -187,97 +187,114 @@ docker compose logs -f
 # Specific service
 docker compose logs -f frontend
 docker compose logs -f user
-docker compose logs -f chat
 docker compose logs -f notification
-docker compose logs -f nginx
 ```
 
 ### Health Checks
 
 ```bash
-# Check nginx gateway
-curl http://localhost:85/health
+# NGINX gateway
+curl http://localhost:80/health
 
-# Check individual services (from within VPS)
-docker compose exec user curl http://localhost:8081/health
-docker compose exec chat curl http://localhost:8082/health
-docker compose exec notification curl http://localhost:8083/health
+# Individual services (inside container network)
+docker compose exec user wget -qO- http://localhost:8081/health
+docker compose exec chat wget -qO- http://localhost:8082/health
+docker compose exec notification wget -qO- http://localhost:8083/health
 ```
 
 ## Troubleshooting
 
-### Services Won't Start
+### Image Pull Failed
 
 ```bash
-# Check logs
-docker compose logs --tail=100
+# Re-authenticate with GHCR
+docker logout ghcr.io
+echo "YOUR_GHCR_TOKEN" | docker login ghcr.io -u YOUR_USERNAME --password-stdin
 
-# Check Docker resources
-docker system df
-docker system prune  # Clean up if needed
-
-# Restart services
-docker compose down
-docker compose up -d
+# Pull again
+docker compose pull
 ```
 
-### Deployment Failed
-
-1. Check GitHub Actions logs for errors
-2. Verify SSH credentials and connectivity
-3. Check VPS disk space: `df -h`
-4. Check Docker status: `systemctl status docker`
-5. Review service logs on VPS
-
-### Database Issues
+### Service Won't Start
 
 ```bash
-# Connect to PostgreSQL
-docker compose exec postgres psql -U $ADMIN_USERNAME -d chat_db
+# Check logs for specific service
+docker compose logs user --tail=100
 
-# Check database size
-docker compose exec postgres psql -U $ADMIN_USERNAME -c "\l+"
+# Check resource usage
+docker stats
 
-# Backup database
-docker compose exec postgres pg_dump -U $ADMIN_USERNAME chat_db > backup.sql
+# Restart specific service
+docker compose restart user
 ```
+
+### Database Connection Issues
+
+```bash
+# Check PostgreSQL is healthy
+docker compose exec postgres pg_isready -U YOUR_USERNAME
+
+# Check DATABASE_URL in service
+docker compose exec user env | grep DATABASE_URL
+```
+
+### Frontend Not Accessible
+
+1. Check nginx is running: `docker compose ps nginx`
+2. Check frontend is healthy: `docker compose ps frontend`
+3. Check nginx logs: `docker compose logs nginx --tail=50`
+4. Verify frontend image tag in docker-compose.yml
 
 ## Security Considerations
 
-1. **Firewall Configuration**: Only expose port 85 (or your chosen port) for the application
-2. **SSL/TLS**: Configure NGINX with SSL certificates (Let's Encrypt recommended)
-3. **Secret Management**: Never commit secrets to Git
-4. **SSH Keys**: Use strong SSH keys and disable password authentication
-5. **Database**: Change default passwords and restrict access
-6. **Updates**: Regularly update Docker images and system packages
+### What's Protected
+
+1. **No source code on VPS** - Only docker-compose.yml remains
+2. **Secret masking in CI** - All passwords/tokens masked in logs
+3. **Secure credential passing** - Here-strings instead of echo pipes
+4. **Automatic cleanup** - .git, source directories removed after deploy
+5. **GHCR authentication** - Token-based, not username/password
+
+### Best Practices
+
+1. **GITHUB_TOKEN is auto-rotated** - No manual rotation needed
+2. **Use strong VPS_SUDO_PASSWORD**
+3. **Enable UFW/firewall** - Only expose ports 80, 443, and SSH
+4. **Configure SSL** with Let's Encrypt
+5. **Monitor** for unauthorized access
 
 ## Rollback
 
-If deployment fails, rollback to the previous version:
+To rollback to a previous version:
 
 ```bash
+ssh deploy@YOUR_VPS -p YOUR_PORT
 cd /opt/chat-app/chat-microservices
-git log --oneline -5  # Find previous commit
-git reset --hard <commit-hash>
-bash deploy/deploy-vps.sh
+
+# Edit docker-compose.yml to use previous image tag
+# e.g., change :latest to :abc123def (previous commit SHA)
+nano docker-compose.yml
+
+# Pull specific version
+docker compose pull
+
+# Restart
+docker compose up -d --force-recreate
 ```
 
 ## Production Checklist
 
-- [ ] SSL/TLS certificates configured
-- [ ] Firewall configured (UFW or iptables)
+- [ ] SSL/TLS certificates configured (Let's Encrypt)
+- [ ] UFW firewall enabled (ports 80, 443, SSH only)
+- [ ] VPS_SUDO_PASSWORD added to both repos
+- [ ] VPS connection secrets configured (HOST, USER, SSH_KEY, PORT)
+- [ ] Infisical secrets configured (especially SMTP_HOST, EMAIL_FROM)
 - [ ] Database backups automated
-- [ ] Monitoring and alerting set up
-- [ ] Log rotation configured
+- [ ] Monitoring/alerting set up
 - [ ] Strong passwords for all services
-- [ ] app_secrets file secured (chmod 600)
-- [ ] NODE_ENV=production in docker-compose.yml
-- [ ] Regular security updates scheduled
-- [ ] Disaster recovery plan documented
 
-## Support
+## Related Documentation
 
-For issues or questions:
-- Check GitHub Issues
-- Review service logs
-- Contact repository maintainers
+- [GitHub Secrets Guide](./GITHUB_SECRETS.md)
+- [Infisical Setup Guide](./INFISICAL_SETUP.md)
+- [Security Guide](../SECURITY.md)
