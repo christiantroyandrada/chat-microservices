@@ -24,6 +24,9 @@ services:
     environment:
       NODE_ENV: production
       ORIGIN: https://chat.ctaprojects.xyz
+      # Runtime environment variables for SvelteKit $env/dynamic/public
+      PUBLIC_API_URL: https://chat.ctaprojects.xyz
+      PUBLIC_WS_URL: https://chat.ctaprojects.xyz
     build:
       context: ../chat-microservices-frontend
       dockerfile: Dockerfile
