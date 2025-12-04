@@ -100,6 +100,7 @@ services:
     environment:
       DATABASE_URL: postgresql://${ADMIN_USERNAME}:${ADMIN_PASSWORD}@postgres:5432/chat_db
       NODE_ENV: development
+      USER_SERVICE_URL: http://user:8081
     depends_on:
       setup:
         condition: service_completed_successfully
