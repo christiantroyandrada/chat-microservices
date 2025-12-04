@@ -490,28 +490,25 @@ This project is designed for **demonstration and learning purposes**, not for pr
 - **WebSocket**: Single server, no horizontal scaling with sticky sessions
 - **Storage**: Basic file storage without optimization for large media files
 
-### ⚠️ Critical E2EE Limitation: Key Persistence
+### ✅ E2EE Key Backup (Password-Based)
 
-**Important:** The current E2EE implementation stores encryption keys in browser-local IndexedDB **without cross-device synchronization**. This means:
+The E2EE implementation supports **password-based key backup** for session persistence across devices:
 
-1. **Keys are browser-specific**: Each browser/device generates its own unique encryption keys
-2. **No cloud backup by default**: Keys are NOT automatically backed up to the server (requires user password for encryption)
-3. **Lost keys = lost messages**: If users clear browser data, switch devices, or use incognito mode:
-   - Their encryption keys are lost
-   - Previous messages cannot be decrypted
-   - Other users cannot decrypt messages sent to old keys
+**How it works:**
+1. **On Registration**: Signal Protocol keys are generated, published, AND encrypted with the user's password before being stored on the server
+2. **On Login**: Encrypted keys are fetched from the server and decrypted using the user's password, restoring the exact same keys
+3. **Zero-Knowledge**: The server only stores encrypted blobs - it never sees plaintext keys
 
-**Why this happens:**
-- The Signal Protocol requires matching private keys for decryption
-- Without a user-provided encryption password, keys cannot be securely backed up to the server
-- The system prioritizes security (zero-knowledge) over convenience
+**Backend Endpoints:**
+- `POST /api/user/signal-keys` - Store encrypted key bundle (requires auth)
+- `GET /api/user/signal-keys?deviceId=xxx` - Fetch encrypted key bundle (requires auth)
 
-**Workaround for production:**
-1. Prompt users for an "encryption password" during registration/login
-2. Use this password to encrypt keys before storing them on the server
-3. Restore keys when logging in on a new device
-
-**For this demo project:** Each login effectively creates a "new user" from an encryption perspective. Messages from previous sessions may show as "cannot be decrypted."
+**Security Details:**
+- Keys are encrypted using AES-256-GCM on the client
+- Password is derived using PBKDF2 with 100,000 iterations
+- Each device gets a unique device ID for key isolation
+- Rate limiting: 1 backup per 24 hours per device
+- Audit logging for all key operations
 
 ### What Would Be Needed for Production
 
