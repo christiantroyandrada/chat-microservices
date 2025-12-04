@@ -420,6 +420,131 @@ If services cannot connect to RabbitMQ:
 - Check that RabbitMQ is accessible (if using CloudAMQP or local instance)
 - Review service logs: `docker-compose logs -f user chat notification`
 
+## 📋 Scope and Limitations
+
+This project is an **advanced personal/side project** developed using an AI-assisted hybrid approach. While it demonstrates production-level architecture and security practices, it's important to understand its scope relative to enterprise messaging platforms.
+
+### What This Project Demonstrates
+
+✅ **Production-Ready Architecture**
+- Microservices design with proper separation of concerns
+- Secure container orchestration with Docker Compose
+- CI/CD pipelines with GitHub Actions and GHCR
+- Environment-aware builds (development vs production)
+- Zero-downtime blue-green deployments with rollback capability
+
+✅ **Security Implementation**
+- End-to-End Encryption using Signal Protocol (X3DH + Double Ratchet)
+- Zero-knowledge architecture (server never sees plaintext keys)
+- AES-256-GCM encryption with PBKDF2 key derivation (100k iterations)
+- JWT authentication with httpOnly cookies
+- Rate limiting, input validation, and SQL injection protection
+- Distroless containers with minimal attack surface
+
+✅ **Real-Time Communication**
+- WebSocket-based messaging via Socket.IO
+- Message persistence with PostgreSQL
+- Inter-service communication via RabbitMQ
+
+✅ **AI-Assisted Development Value**
+- Demonstrates effective human-AI collaboration
+- Shows how AI can accelerate development while human maintains quality control
+- Proves that a single developer + AI can build complex distributed systems
+
+### Limitations Compared to Production Messaging Apps
+
+| Feature | This Project | Messenger/Telegram/Signal |
+|---------|--------------|---------------------------|
+| **Message Types** | Text only | Text, images, videos, voice, files, stickers, GIFs |
+| **Group Chats** | 1:1 conversations | Groups with 200K+ members, channels, communities |
+| **Voice/Video** | ❌ Not implemented | Full VoIP, video calls, screen sharing |
+| **Message Features** | Basic send/receive | Reactions, replies, forwards, edits, delete for everyone |
+| **Media Handling** | Basic Cloudinary | Compression, thumbnails, streaming, CDN distribution |
+| **Offline Support** | Limited | Full offline mode, message queuing, sync |
+| **Push Notifications** | Basic | Rich notifications, badges, sounds, grouping |
+| **Search** | ❌ Not implemented | Full-text search, filters, date ranges |
+| **User Discovery** | Manual | Phone/username search, contact sync, QR codes |
+| **Status/Stories** | ❌ Not implemented | 24hr stories, status updates |
+| **Bots/Integrations** | ❌ Not implemented | Bot APIs, webhooks, third-party integrations |
+
+### Infrastructure Limitations
+
+| Aspect | This Project | Production-Scale (GCash/Telegram) |
+|--------|--------------|-----------------------------------|
+| **Deployment** | Single VPS (4 vCPU, 2GB RAM) | Multi-region, auto-scaling clusters |
+| **Database** | Single PostgreSQL instance | Sharded databases, read replicas, caching layers |
+| **Message Queue** | CloudAMQP free tier | Dedicated Kafka/RabbitMQ clusters |
+| **CDN** | Cloudinary free tier | Global CDN with edge caching |
+| **Monitoring** | Basic health checks | APM, distributed tracing, alerting |
+| **Load Balancing** | Nginx on single node | Global load balancers, anycast |
+| **Disaster Recovery** | Manual backups | Multi-region replication, automatic failover |
+| **Compliance** | Best-effort security | SOC2, GDPR, PCI-DSS certified |
+
+### Scalability Considerations
+
+This project is designed for **demonstration and learning purposes**, not for production scale:
+
+- **Concurrent Users**: Tested with < 100 concurrent connections
+- **Message Volume**: Not optimized for millions of messages/day
+- **Database**: Single instance without sharding or read replicas
+- **WebSocket**: Single server, no horizontal scaling with sticky sessions
+- **Storage**: Basic file storage without optimization for large media files
+
+### ✅ E2EE Key Backup (Password-Based)
+
+The E2EE implementation supports **password-based key backup** for session persistence across devices:
+
+**How it works:**
+1. **On Registration**: Signal Protocol keys are generated, published, AND encrypted with the user's password before being stored on the server
+2. **On Login**: Encrypted keys are fetched from the server and decrypted using the user's password, restoring the exact same keys
+3. **Zero-Knowledge**: The server only stores encrypted blobs - it never sees plaintext keys
+
+**Backend Endpoints:**
+- `POST /api/user/signal-keys` - Store encrypted key bundle (requires auth)
+- `GET /api/user/signal-keys?deviceId=xxx` - Fetch encrypted key bundle (requires auth)
+
+**Security Details:**
+- Keys are encrypted using AES-256-GCM on the client
+- Password is derived using PBKDF2 with 100,000 iterations
+- Each device gets a unique device ID for key isolation
+- Rate limiting: 1 backup per 24 hours per device
+- Audit logging for all key operations
+
+### What Would Be Needed for Production
+
+To scale this to production level (like Telegram, Signal, or enterprise apps):
+
+1. **Infrastructure**: Kubernetes with auto-scaling, multi-region deployment
+2. **Database**: PostgreSQL with Citus or similar for horizontal scaling + Redis caching
+3. **Message Queue**: Dedicated Kafka for high-throughput event streaming
+4. **Media Pipeline**: Dedicated media processing (transcoding, thumbnails, CDN)
+5. **Monitoring**: Prometheus + Grafana, distributed tracing (Jaeger), ELK stack
+6. **Security Audit**: Professional penetration testing, compliance certification
+7. **Team**: Dedicated DevOps, security engineers, mobile developers
+
+### Honest Assessment
+
+**This project is:**
+- ✅ An excellent demonstration of modern microservices architecture
+- ✅ A showcase of AI-assisted development capabilities
+- ✅ A solid foundation for learning distributed systems
+- ✅ Impressive for a personal/side project
+
+**This project is NOT:**
+- ❌ A replacement for established messaging platforms
+- ❌ Ready for enterprise production deployment without significant investment
+- ❌ Suitable for high-traffic commercial applications as-is
+
+### Target Use Cases
+
+This project is ideal for:
+- 📚 Learning microservices architecture and E2EE implementation
+- 🎯 Portfolio demonstration of full-stack development skills
+- 🧪 Experimenting with modern DevOps practices
+- 🏗️ Foundation for building a specialized chat application (internal team chat, niche community)
+
+---
+
 ## Security
 
 This project implements multiple security layers for local development and production readiness. See [SECURITY.md](./SECURITY.md) for detailed guidelines.
