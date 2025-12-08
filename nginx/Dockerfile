@@ -11,13 +11,24 @@
 #               OR: docker build --build-arg NGINX_ENV=production ./nginx
 ##############################################################################
 
-FROM bitnami/nginx@sha256:ca82b8a08e8e0e73aac438f43c66ce8d966988f0adb0589df3e34c7514adb4ea
+FROM bitnami/nginx@sha256:be0b162759c09715b785fe96a5480d99afec7c3377444586bffe9fc4ddf8bb18
 
 # Build argument to select environment (development or production)
 ARG NGINX_ENV=development
 
 # Copy both config files
 USER root
+
+# Remove vulnerable Go binaries (CVE-2025-61729) - not used in our configuration
+# render-template: Bitnami templating utility (we use static config files)
+# nginx-agent: NGINX management agent (not needed for reverse proxy)
+# SPDX files: License metadata for removed binaries
+RUN rm -f /opt/bitnami/common/bin/render-template \
+          /opt/bitnami/common/.spdx-render-template.spdx \
+          /opt/bitnami/nginx-agent/bin/nginx-agent \
+          /opt/bitnami/nginx-agent/.spdx-nginx-agent.spdx \
+    || true
+
 RUN rm -f /opt/bitnami/nginx/conf/nginx.conf || true
 
 # Copy the appropriate config based on environment
