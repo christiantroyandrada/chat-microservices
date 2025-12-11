@@ -34,7 +34,7 @@ let server: Server
 // CORS must be applied before helmet to ensure preflight requests are handled properly
 const allowedOrigins = process.env.CORS_ORIGINS
   ? process.env.CORS_ORIGINS.split(',').map(o => o.trim())
-  : ['http://localhost:5173', 'http://localhost:85', 'http://localhost:8080']
+  : ['http://localhost:5173', 'http://localhost:3000', 'http://localhost:80', 'http://localhost:8080']
 
 app.use(cors({
   origin: (origin, callback) => {
@@ -42,7 +42,8 @@ app.use(cors({
     if (!origin) return callback(null, true)
     
     if (allowedOrigins.includes(origin)) {
-      callback(null, true)
+      // Return the origin itself to set Access-Control-Allow-Origin header
+      callback(null, origin)
     } else {
       logWarn(`[notification-service] CORS blocked origin: ${origin}`)
       callback(null, false)

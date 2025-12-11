@@ -30,7 +30,7 @@ describe('MessageController additional tests', () => {
   const { requireControllerAfterMocks } = require('../utils/testHelpers')
   const { controller } = requireControllerAfterMocks('../../src/controllers/MessageController')
   const MessageController = controller && controller.default ? controller.default : controller
-    const res: any = { json: jest.fn() }
+    const res: any = { json: jest.fn(), status: jest.fn().mockReturnThis() }
     // missing receiverId
     await MessageController.sendMessage({ user: { _id: 'u1' }, body: { receiverId: '', message: 'x' } } as any, res)
     expect(res.json).toHaveBeenCalled()
@@ -46,7 +46,7 @@ describe('MessageController additional tests', () => {
   const { requireControllerAfterMocks } = require('../utils/testHelpers')
   const { controller } = requireControllerAfterMocks('../../src/controllers/MessageController')
   const MessageController = controller && controller.default ? controller.default : controller
-    const res: any = { json: jest.fn() }
+    const res: any = { json: jest.fn(), status: jest.fn().mockReturnThis() }
     await MessageController.sendMessage({ user: { _id: 'u1', username: 'u', email: 'a@b' }, body: { receiverId: 'u2', message: '' } } as any, res)
     expect(res.json).toHaveBeenCalled()
 
@@ -65,7 +65,7 @@ describe('MessageController additional tests', () => {
   const { requireControllerAfterMocks } = require('../utils/testHelpers')
   const { controller } = requireControllerAfterMocks('../../src/controllers/MessageController')
   const MessageController = controller && controller.default ? controller.default : controller
-    const res: any = { json: jest.fn() }
+    const res: any = { json: jest.fn(), status: jest.fn().mockReturnThis() }
     const badEnvelope = JSON.stringify({ __encrypted: false, body: 'x' })
     await MessageController.sendMessage({ user: { _id: 'u1', username: 'u', email: 'a@b' }, body: { receiverId: 'u2', message: badEnvelope } } as any, res)
     expect(res.json).toHaveBeenCalled()
@@ -82,7 +82,7 @@ describe('MessageController additional tests', () => {
   const { controller } = requireControllerAfterMocks('../../src/controllers/MessageController')
   const MessageController = controller && controller.default ? controller.default : controller
 
-    const res: any = { json: jest.fn() }
+    const res: any = { json: jest.fn(), status: jest.fn().mockReturnThis() }
     const env = JSON.stringify({ __encrypted: true, body: 'abc' })
     await MessageController.sendMessage({ user: { _id: 'u1', username: 'u', email: 'a@b' }, body: { receiverId: 'u2', message: env } } as any, res)
   expect(res.json).toHaveBeenCalled()
@@ -100,7 +100,7 @@ describe('MessageController additional tests', () => {
   const { controller } = requireControllerAfterMocks('../../src/controllers/MessageController')
   const MessageController = controller && controller.default ? controller.default : controller
 
-    const res: any = { json: jest.fn() }
+    const res: any = { json: jest.fn(), status: jest.fn().mockReturnThis() }
     await MessageController.fetchConversation({ user: { _id: 'u1' }, params: { receiverId: 'u2' } } as any, res)
     expect(res.json).toHaveBeenCalled()
   })
@@ -116,7 +116,7 @@ describe('MessageController additional tests', () => {
   const { controller } = requireControllerAfterMocks('../../src/controllers/MessageController')
   const MessageController = controller && controller.default ? controller.default : controller
 
-    const res: any = { json: jest.fn() }
+    const res: any = { json: jest.fn(), status: jest.fn().mockReturnThis() }
     await MessageController.getConversations({ user: { _id: 'u1' } } as any, res)
     expect(res.json).toHaveBeenCalled()
   })
@@ -129,7 +129,7 @@ describe('MessageController additional tests', () => {
   const mod = require('../../src/controllers/MessageController')
   const MessageController = mod && mod.default ? mod.default : mod
 
-    const res: any = { json: jest.fn() }
+    const res: any = { json: jest.fn(), status: jest.fn().mockReturnThis() }
     await MessageController.markAsRead({ user: { _id: 'u1' }, params: { senderId: 'u2' } } as any, res)
     expect(res.json).toHaveBeenCalled()
   })

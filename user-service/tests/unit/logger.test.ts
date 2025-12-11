@@ -42,7 +42,7 @@ describe('logger utilities (user-service)', () => {
     }
   })
 
-  it('in production logDebug/logInfo/logWarn/logError are no-ops', () => {
+  it('in production logDebug is suppressed but logInfo/logWarn/logError still emit', () => {
     process.env.NODE_ENV = 'production'
     jest.resetModules()
     const logger = require('../../src/utils/logger')
@@ -55,8 +55,8 @@ describe('logger utilities (user-service)', () => {
     logger.logWarn('x')
     logger.logError('x')
     expect(sdebug).not.toHaveBeenCalled()
-    expect(sprint).not.toHaveBeenCalled()
-    expect(swarn).not.toHaveBeenCalled()
-    expect(serr).not.toHaveBeenCalled()
+    expect(sprint).toHaveBeenCalled()
+    expect(swarn).toHaveBeenCalled()
+    expect(serr).toHaveBeenCalled()
   })
 })

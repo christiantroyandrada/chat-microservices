@@ -14,8 +14,26 @@ app.set('trust proxy', 1)
 // CORS for chat REST endpoints. Socket.IO has its own CORS settings in server.ts.
 const allowedOrigins = process.env.CORS_ORIGINS
   ? process.env.CORS_ORIGINS.split(',').map(o => o.trim())
-  : ['http://localhost:5173', 'http://localhost:85', 'http://localhost:8080']
-app.use(cors({ origin: allowedOrigins, credentials: true, methods: ['GET', 'POST', 'OPTIONS', 'PUT', 'DELETE'], allowedHeaders: ['Content-Type', 'Authorization'], preflightContinue: false, optionsSuccessStatus: 204 }))
+  : ['http://localhost:5173', 'http://localhost:3000', 'http://localhost:80', 'http://localhost:8080']
+app.use(cors({
+  origin: (origin, callback) => {
+    // Allow requests with no origin (like mobile apps, curl, Postman)
+    if (!origin) return callback(null, true)
+    
+    if (allowedOrigins.includes(origin)) {
+      // Return the origin itself to set Access-Control-Allow-Origin header
+      callback(null, origin)
+    } else {
+      console.warn(`[chat-service] CORS blocked origin: ${origin}`)
+      callback(null, false)
+    }
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'OPTIONS', 'PUT', 'DELETE'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  preflightContinue: false,
+  optionsSuccessStatus: 204
+}))
 
 app.use(helmet())
 

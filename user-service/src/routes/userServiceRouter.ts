@@ -86,8 +86,10 @@ userServiceRouter.get(
 )
 
 // Get user by ID (used by chat service to fetch usernames)
+// Requires authentication to prevent user enumeration attacks
 userServiceRouter.get(
   '/users/:userId',
+  authenticated,
   AuthController.getUserById
 )
 

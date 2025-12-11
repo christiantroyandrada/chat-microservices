@@ -1,4 +1,4 @@
-import { Response } from 'express'
+import { Response, Request } from 'express'
 import type { ConversationRow } from '../types'
 import { AuthenticatedRequest } from '../middleware'
 import { Message, AppDataSource } from '../database'
@@ -6,15 +6,29 @@ import { APIError, handleMessageReceived } from '../utils'
 import { logWarn, logError } from '../utils/logger'
 import { MessageStatus } from '../database/models/MessageModel'
 
-// Helper to fetch user details from user service
-const fetchUserDetails = async (userId: string): Promise<{ username?: string } | null> => {
+// Helper to fetch user details from user service with caching
+// Simple in-memory cache with TTL to avoid N+1 HTTP calls per conversation load
+const userDetailCache = new Map<string, { data: { username?: string } | null; expiresAt: number }>()
+const USER_CACHE_TTL_MS = 60_000 // 1 minute TTL
+
+/** Clear the user detail cache — exposed for testing */
+export const clearUserDetailCache = () => userDetailCache.clear()
+
+const fetchUserDetails = async (userId: string, jwtToken?: string): Promise<{ username?: string } | null> => {
+  // Check cache first
+  const cached = userDetailCache.get(userId)
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.data
+  }
+
   try {
-    // Resolve user service URL with secure-by-default behavior.
-    // - If USER_SERVICE_URL is provided, use it verbatim (allows overrides).
-    // - For internal Docker networking, default to HTTP since containers communicate internally.
-    // - Only use HTTPS if explicitly configured (e.g., external user service).
     const userServiceUrl = process.env.USER_SERVICE_URL || 'http://user:8081'
-    const response = await fetch(`${userServiceUrl}/users/${userId}`)
+    const headers: Record<string, string> = {}
+    // Forward JWT for service-to-service auth
+    if (jwtToken) {
+      headers['Cookie'] = `jwt=${jwtToken}`
+    }
+    const response = await fetch(`${userServiceUrl}/users/${userId}`, { headers })
     
     if (!response.ok) {
       logWarn(`Failed to fetch user ${userId}: ${response.status}`)
@@ -22,12 +36,42 @@ const fetchUserDetails = async (userId: string): Promise<{ username?: string } |
     }
     
     const data = await response.json()
-    // user-service now returns { data: { id, username, email } }
-    return data?.data || data || null
+    const result = data?.data || data || null
+
+    // Store in cache
+    userDetailCache.set(userId, { data: result, expiresAt: Date.now() + USER_CACHE_TTL_MS })
+
+    return result
   } catch (error) {
     logError(`Error fetching user ${userId}:`, error)
     return null
   }
+}
+
+/**
+ * Batch-fetch user details for multiple user IDs.
+ * Checks cache first, then fetches missing ones in parallel.
+ */
+const fetchUserDetailsBatch = async (userIds: string[], jwtToken?: string): Promise<Map<string, { username?: string } | null>> => {
+  const results = new Map<string, { username?: string } | null>()
+  const uncached: string[] = []
+
+  for (const id of userIds) {
+    const cached = userDetailCache.get(id)
+    if (cached && cached.expiresAt > Date.now()) {
+      results.set(id, cached.data)
+    } else {
+      uncached.push(id)
+    }
+  }
+
+  // Fetch all uncached in parallel
+  if (uncached.length > 0) {
+    const fetched = await Promise.all(uncached.map(id => fetchUserDetails(id, jwtToken)))
+    uncached.forEach((id, idx) => results.set(id, fetched[idx]))
+  }
+
+  return results
 }
 
 const sendMessage = async (
@@ -102,9 +146,15 @@ const sendMessage = async (
       data: newMessage,
     })
   } catch (error: unknown) {
+    if (error instanceof APIError) {
+      return res.status(error.statusCode).json({
+        status: error.statusCode,
+        message: error.message,
+      })
+    }
     const message =
       error instanceof Error ? error.message : 'Internal Server Error'
-    return res.json({
+    return res.status(500).json({
       status: 500,
       message,
     })
@@ -145,9 +195,15 @@ const fetchConversation = async (
       data: messages,
     })
   } catch (error: unknown) {
+    if (error instanceof APIError) {
+      return res.status(error.statusCode).json({
+        status: error.statusCode,
+        message: error.message,
+      })
+    }
     const message = 
       error instanceof Error ? error.message : 'Internal Server Error'
-    return res.json({
+    return res.status(500).json({
       status: 500,
       message,
     })
@@ -207,17 +263,20 @@ const getConversations = async (
     // Ensure we have an array even if the repo returns undefined/null
     const conversationsArray = Array.isArray(conversationsRaw) ? conversationsRaw : (conversationsRaw ? [conversationsRaw] : [])
 
-    // Fetch usernames for all conversation partners
+    // Fetch usernames for all conversation partners in batch (avoids N+1 HTTP calls)
+    // Forward JWT for service-to-service auth
+    const jwtToken = req.cookies?.jwt
+    const userIds = (conversationsArray as ConversationRow[]).map(c => c.userId)
+    const userDetailsMap = await fetchUserDetailsBatch(userIds, jwtToken)
+
     // Use the shared ConversationRow type from src/types.ts
-    const conversationsWithUsernames = await Promise.all(
-      (conversationsArray as ConversationRow[]).map(async (conv) => {
-        const userDetails = await fetchUserDetails(conv.userId)
-        return {
-          ...conv,
-          username: userDetails?.username || 'Unknown User'
-        }
-      })
-    )
+    const conversationsWithUsernames = (conversationsArray as ConversationRow[]).map((conv) => {
+      const userDetails = userDetailsMap.get(conv.userId)
+      return {
+        ...conv,
+        username: userDetails?.username || 'Unknown User'
+      }
+    })
 
     return res.json({
       status: 200,
@@ -225,9 +284,15 @@ const getConversations = async (
       data: conversationsWithUsernames,
     })
   } catch (error: unknown) {
+    if (error instanceof APIError) {
+      return res.status(error.statusCode).json({
+        status: error.statusCode,
+        message: error.message,
+      })
+    }
     const message = 
       error instanceof Error ? error.message : 'Internal Server Error'
-    return res.json({
+    return res.status(500).json({
       status: 500,
       message,
     })
@@ -266,9 +331,15 @@ const markAsRead = async (
       }
     })
   } catch (error: unknown) {
+    if (error instanceof APIError) {
+      return res.status(error.statusCode).json({
+        status: error.statusCode,
+        message: error.message,
+      })
+    }
     const message = 
       error instanceof Error ? error.message : 'Internal Server Error'
-    return res.json({
+    return res.status(500).json({
       status: 500,
       message,
     })

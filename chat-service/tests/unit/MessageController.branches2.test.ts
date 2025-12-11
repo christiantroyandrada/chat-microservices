@@ -13,7 +13,7 @@ describe('MessageController additional branches', () => {
 
   test('sendMessage - sender and receiver same triggers validation error', async () => {
     const req: any = { body: { receiverId: 'same', message: JSON.stringify({ __encrypted: true, body: 'x' }) }, user: { _id: 'same', email: 'a@b', username: 'u' } }
-    const res: any = { json: jest.fn().mockImplementation((v) => v) }
+    const res: any = { json: jest.fn().mockImplementation((v) => v), status: jest.fn().mockReturnThis() }
 
     const outRaw = await MessageController.sendMessage(req, res)
     const out: any = outRaw as any
@@ -24,7 +24,7 @@ describe('MessageController additional branches', () => {
 
   test('sendMessage - empty message (only whitespace) returns friendly error', async () => {
     const req: any = { body: { receiverId: 'r1', message: '   ' }, user: { _id: 's1', email: 'a@b', username: 'u' } }
-    const res: any = { json: jest.fn().mockImplementation((v) => v) }
+    const res: any = { json: jest.fn().mockImplementation((v) => v), status: jest.fn().mockReturnThis() }
 
     const outRaw = await MessageController.sendMessage(req, res)
     const out: any = outRaw as any
@@ -35,7 +35,7 @@ describe('MessageController additional branches', () => {
   test('sendMessage - message exceeds max length', async () => {
     const long = 'x'.repeat(5001)
     const req: any = { body: { receiverId: 'r1', message: long }, user: { _id: 's1', email: 'a@b', username: 'u' } }
-    const res: any = { json: jest.fn().mockImplementation((v) => v) }
+    const res: any = { json: jest.fn().mockImplementation((v) => v), status: jest.fn().mockReturnThis() }
 
     const outRaw = await MessageController.sendMessage(req, res)
     const out: any = outRaw as any
@@ -45,7 +45,7 @@ describe('MessageController additional branches', () => {
 
   test('sendMessage - missing receiverId returns receiver required message', async () => {
     const req: any = { body: { message: JSON.stringify({ __encrypted: true, body: 'x' }) }, user: { _id: 's1', email: 'a@b', username: 'u' } }
-    const res: any = { json: jest.fn().mockImplementation((v) => v) }
+    const res: any = { json: jest.fn().mockImplementation((v) => v), status: jest.fn().mockReturnThis() }
 
     const outRaw = await MessageController.sendMessage(req, res)
     const out: any = outRaw as any
@@ -58,7 +58,7 @@ describe('MessageController additional branches', () => {
     jest.spyOn(AppDataSource, 'getRepository').mockReturnValue(repo as any)
 
     const req: any = { params: { receiverId: 'r2' }, user: { _id: 's1' } }
-    const res: any = { json: jest.fn().mockImplementation((v) => v) }
+    const res: any = { json: jest.fn().mockImplementation((v) => v), status: jest.fn().mockReturnThis() }
 
     const outRaw = await MessageController.fetchConversation(req, res)
     const out: any = outRaw as any
@@ -75,7 +75,7 @@ describe('MessageController additional branches', () => {
     global.fetch = jest.fn().mockResolvedValue({ ok: false, status: 404 }) as any
 
     const req: any = { user: { _id: 's1' } }
-    const res: any = { json: jest.fn().mockImplementation((v) => v) }
+    const res: any = { json: jest.fn().mockImplementation((v) => v), status: jest.fn().mockReturnThis() }
 
     const outRaw = await MessageController.getConversations(req, res)
     const out: any = outRaw as any
@@ -86,7 +86,7 @@ describe('MessageController additional branches', () => {
 
   test('markAsRead - missing senderId returns 400 message', async () => {
     const req: any = { params: { }, user: { _id: 'r1' } }
-    const res: any = { json: jest.fn().mockImplementation((v) => v) }
+    const res: any = { json: jest.fn().mockImplementation((v) => v), status: jest.fn().mockReturnThis() }
 
     const outRaw = await MessageController.markAsRead(req, res)
     const out: any = outRaw as any

@@ -1,0 +1,10 @@
+# Trivy ignore file for known/accepted vulnerabilities
+# Review and update this file regularly
+
+# CVE-2025-6020: Linux-PAM directory traversal vulnerability
+# Status: Fixed in upstream (1.5.3-11.ph5), waiting for bitnami/nginx image update
+# Risk: LOW - nginx runs as non-root user (1001), PAM not used for authentication
+# Tracking: https://github.com/bitnami/containers/issues
+# Review date: 2025-12-13
+# Expiry: Remove this entry when bitnami/nginx includes Linux-PAM >= 1.5.3-11.ph5
+CVE-2025-6020
