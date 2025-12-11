@@ -1,5 +1,12 @@
 import bcrypt from 'bcryptjs'
 
+/**
+ * API Error class for consistent error handling
+ * 
+ * MICROSERVICES PATTERN: This class is duplicated across services intentionally.
+ * Each microservice maintains its own copy for independent deployability.
+ * Keep the interface consistent across: user-service, chat-service, notification-service
+ */
 class APIError extends Error {
   statusCode: number
   isOperational: boolean
@@ -11,6 +18,7 @@ class APIError extends Error {
     stack = ''
   ) {
     super(message)
+    this.name = 'APIError'
     this.statusCode = statusCode
     this.isOperational = isOperational
     if (stack) {
