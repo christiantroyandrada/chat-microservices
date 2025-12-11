@@ -26,7 +26,7 @@ describe('MessageController non-Error catch branches', () => {
     }
     const repo: any = { save: jest.fn().mockRejectedValue('string-error') }
     ;(AppDataSource.getRepository as jest.Mock).mockReturnValue(repo)
-    const mockRes: any = { json: jest.fn() }
+    const mockRes: any = { json: jest.fn(), status: jest.fn().mockReturnThis() }
 
     await MessageController.sendMessage(mockReq, mockRes)
 
@@ -39,7 +39,7 @@ describe('MessageController non-Error catch branches', () => {
     const mockReq: any = { params: { receiverId: 'r1' }, user: { _id: 's1' } }
     const repo: any = { createQueryBuilder: jest.fn(() => ({ where: jest.fn().mockReturnThis(), orderBy: jest.fn().mockReturnThis(), getMany: jest.fn().mockRejectedValue('bad') })) }
     ;(AppDataSource.getRepository as jest.Mock).mockReturnValue(repo)
-    const mockRes: any = { json: jest.fn() }
+    const mockRes: any = { json: jest.fn(), status: jest.fn().mockReturnThis() }
 
     await MessageController.fetchConversation(mockReq, mockRes)
     const called = mockRes.json.mock.calls[0][0]
@@ -51,7 +51,7 @@ describe('MessageController non-Error catch branches', () => {
     const mockReq: any = { user: { _id: 'u1' } }
     const repo: any = { query: jest.fn().mockRejectedValue(null) }
     ;(AppDataSource.getRepository as jest.Mock).mockReturnValue(repo)
-    const mockRes: any = { json: jest.fn() }
+    const mockRes: any = { json: jest.fn(), status: jest.fn().mockReturnThis() }
 
     await MessageController.getConversations(mockReq, mockRes)
     const called = mockRes.json.mock.calls[0][0]
@@ -64,7 +64,7 @@ describe('MessageController non-Error catch branches', () => {
     const qb: any = { update: jest.fn().mockReturnThis(), set: jest.fn().mockReturnThis(), where: jest.fn().mockReturnThis(), andWhere: jest.fn().mockReturnThis(), execute: jest.fn().mockRejectedValue(undefined) }
     const repo: any = { createQueryBuilder: jest.fn(() => qb) }
     ;(AppDataSource.getRepository as jest.Mock).mockReturnValue(repo)
-    const mockRes: any = { json: jest.fn() }
+    const mockRes: any = { json: jest.fn(), status: jest.fn().mockReturnThis() }
 
     await MessageController.markAsRead(mockReq, mockRes)
     const called = mockRes.json.mock.calls[0][0]

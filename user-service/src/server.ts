@@ -47,9 +47,20 @@ app.set('trust proxy', 1)
 // Configure CORS for the user service. Can be overridden with CORS_ORIGINS env var (comma-separated).
 const allowedOrigins = process.env.CORS_ORIGINS
   ? process.env.CORS_ORIGINS.split(',').map(o => o.trim())
-  : ['http://localhost:5173', 'http://localhost:80', 'http://localhost:8080']
+  : ['http://localhost:5173', 'http://localhost:3000', 'http://localhost:80', 'http://localhost:8080']
 app.use(cors({
-  origin: allowedOrigins,
+  origin: (origin, callback) => {
+    // Allow requests with no origin (like mobile apps, curl, Postman)
+    if (!origin) return callback(null, true)
+    
+    if (allowedOrigins.includes(origin)) {
+      // Return the origin itself to set Access-Control-Allow-Origin header
+      callback(null, origin)
+    } else {
+      console.warn(`[user-service] CORS blocked origin: ${origin}`)
+      callback(null, false)
+    }
+  },
   credentials: true,
   methods: ['GET', 'POST', 'OPTIONS', 'PUT', 'DELETE'],
   allowedHeaders: ['Content-Type', 'Authorization'],
