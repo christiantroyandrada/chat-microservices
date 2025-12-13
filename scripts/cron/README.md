@@ -14,7 +14,9 @@ This directory contains automated cron job scripts for maintaining server health
 | `ssl-renew.sh` | Twice daily (3 AM & 3 PM) | Checks and renews Let's Encrypt SSL certificates |
 | `log-rotate.sh` | Daily at 4 AM | Rotates and compresses application logs |
 | `security-updates.sh` | Daily at 5 AM | Checks for security updates, triggers unattended upgrades |
+| `docker-rebuild.sh` | Weekly (Saturday 2 AM) | Checks for base image updates, optionally rebuilds containers |
 | `docker-cleanup.sh` | Weekly (Sunday 3 AM) | Removes unused Docker images, containers, build cache |
+| `update-image-digests.sh` | Manual / CI | Updates SHA digests in Dockerfiles for security patches |
 
 ## 🔧 Installation
 
@@ -43,6 +45,8 @@ All cron job logs are stored in `/var/log/chat-app/`:
 - `backup.log` - Database backup logs
 - `ssl-renew.log` - SSL certificate renewal logs
 - `docker-cleanup.log` - Docker cleanup logs
+- `docker-rebuild.log` - Docker image rebuild logs
+- `digest-update.log` - Image digest update logs
 - `security-updates.log` - Security update check logs
 - `intrusion-detect.log` - Intrusion detection logs
 - `metrics/` - System metrics JSON files (daily)
@@ -100,6 +104,34 @@ ssh ubuntu@167.114.145.230 -p 49152 'tail -f /var/log/chat-app/alerts.log'
 ```
 
 ## 🛠️ Maintenance
+
+### Docker Image Security
+
+The following scripts help maintain secure, up-to-date container images:
+
+#### Check for Base Image Updates
+```bash
+# Check if base images have security updates available
+/opt/chat-app/scripts/cron/docker-rebuild.sh
+```
+
+#### Auto-Rebuild with Updates (use with caution)
+```bash
+# Enable auto-rebuild (rebuilds images when updates are available)
+AUTO_REBUILD=true /opt/chat-app/scripts/cron/docker-rebuild.sh
+
+# Enable auto-rebuild AND auto-deploy (full automation)
+AUTO_REBUILD=true AUTO_DEPLOY=true /opt/chat-app/scripts/cron/docker-rebuild.sh
+```
+
+#### Update Dockerfile SHA Digests
+```bash
+# Check if pinned image digests need updating (dry-run)
+/opt/chat-app/scripts/cron/update-image-digests.sh
+
+# Apply updates to Dockerfiles
+/opt/chat-app/scripts/cron/update-image-digests.sh --apply
+```
 
 ### Manual Script Execution
 

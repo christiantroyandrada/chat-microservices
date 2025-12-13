@@ -11,7 +11,15 @@
 #               OR: docker build --build-arg NGINX_ENV=production ./nginx
 ##############################################################################
 
-FROM bitnami/nginx@sha256:be0b162759c09715b785fe96a5480d99afec7c3377444586bffe9fc4ddf8bb18
+FROM bitnami/nginx@sha256:12de02ed1fec45f1e76dd843b3a76ddc0e43c6a82b29ceafc1f8e5327cb9448c
+
+# OCI Image Labels for traceability and security compliance
+LABEL org.opencontainers.image.title="Nginx Reverse Proxy" \
+      org.opencontainers.image.description="Nginx reverse proxy with SSL termination" \
+      org.opencontainers.image.vendor="Chat App" \
+      org.opencontainers.image.source="https://github.com/christiantroyandrada/chat-microservices" \
+      org.opencontainers.image.licenses="MIT" \
+      org.opencontainers.image.base.name="bitnami/nginx"
 
 # Build argument to select environment (development or production)
 ARG NGINX_ENV=development

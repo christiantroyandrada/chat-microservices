@@ -1,6 +1,16 @@
 # Build stage — use Debian 12 (bookworm) for better security updates
 FROM node:22-bookworm-slim AS builder
 
+# OCI Image Labels for traceability and security compliance
+# These labels follow the OCI Image Spec annotations
+LABEL org.opencontainers.image.title="Chat Service" \
+      org.opencontainers.image.description="Real-time chat microservice" \
+      org.opencontainers.image.vendor="Chat App" \
+      org.opencontainers.image.source="https://github.com/christiantroyandrada/chat-microservices" \
+      org.opencontainers.image.documentation="https://github.com/christiantroyandrada/chat-microservices/blob/main/README.md" \
+      org.opencontainers.image.licenses="MIT" \
+      org.opencontainers.image.base.name="gcr.io/distroless/nodejs22-debian12:nonroot"
+
 WORKDIR /usr/src/app
 
 # Copy package files
@@ -23,7 +33,7 @@ RUN npm run build \
 	&& rm -rf /root/.npm /tmp/*
 
 # Production stage - use latest pinned distroless image
-FROM gcr.io/distroless/nodejs22-debian12:nonroot@sha256:1014312994b734e9f3bba23bb96fab389119750a98f14bc76936dc2a7e72c3da
+FROM gcr.io/distroless/nodejs22-debian12:nonroot@sha256:c9a583e5754af75089ff573bff654001d882f02c923e18c4b8e365f12ac2aede
 
 WORKDIR /usr/src/app
 
