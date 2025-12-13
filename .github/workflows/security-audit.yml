@@ -97,12 +97,19 @@ jobs:
       - name: Run Trivy vulnerability scanner (CLI, SARIF)
         run: |
           echo "Running trivy (SARIF) against ${{ matrix.service }}:test"
+          # Check for service-specific .trivyignore file
+          IGNOREFILE=""
+          if [ -f "${{ matrix.service }}/.trivyignore" ]; then
+            IGNOREFILE="--ignorefile ${{ matrix.service }}/.trivyignore"
+            echo "Using ignore file: ${{ matrix.service }}/.trivyignore"
+          fi
           # Fail the step if Trivy finds HIGH/CRITICAL vulnerabilities (exit code 1)
           trivy image \
             --exit-code 1 \
             --severity CRITICAL,HIGH \
             --format sarif \
             --output "trivy-results-${{ matrix.service }}.sarif" \
+            $IGNOREFILE \
             "${{ matrix.service }}:test"
 
       - name: Upload Trivy results to GitHub Security tab
@@ -120,11 +127,17 @@ jobs:
         if: always()
         run: |
           echo "Generating trivy JSON report for ${{ matrix.service }}:test"
+          # Check for service-specific .trivyignore file
+          IGNOREFILE=""
+          if [ -f "${{ matrix.service }}/.trivyignore" ]; then
+            IGNOREFILE="--ignorefile ${{ matrix.service }}/.trivyignore"
+          fi
           # Always attempt to produce the JSON report; don't fail this step on findings
           trivy image \
             --format json \
             --output "trivy-report-${{ matrix.service }}.json" \
             --severity CRITICAL,HIGH,MEDIUM,LOW \
+            $IGNOREFILE \
             "${{ matrix.service }}:test" || true
 
       - name: Upload Trivy report
