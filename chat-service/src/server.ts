@@ -67,9 +67,21 @@ const start = async () => {
 
     // Make CORS explicit - use environment variables for allowed origins
     cors: {
-      origin: process.env.CORS_ORIGINS 
-        ? process.env.CORS_ORIGINS.split(',').map(o => o.trim())
-        : ['http://localhost:5173', 'http://localhost:85', 'http://localhost:8080'], // Default for local dev (include frontend)
+      origin: (origin, callback) => {
+        const allowedOrigins = process.env.CORS_ORIGINS 
+          ? process.env.CORS_ORIGINS.split(',').map(o => o.trim())
+          : ['http://localhost:5173', 'http://localhost:3000', 'http://localhost:80', 'http://localhost:8080'];
+        
+        // Allow requests with no origin (like mobile apps, curl, Postman)
+        if (!origin) return callback(null, true);
+        
+        if (allowedOrigins.includes(origin)) {
+          callback(null, origin);
+        } else {
+          console.warn(`[chat-service] Socket.IO CORS blocked origin: ${origin}`);
+          callback(null, false);
+        }
+      },
       credentials: true,
       methods: ['GET', 'POST', 'OPTIONS'],
       allowedHeaders: ['Content-Type', 'Authorization']
