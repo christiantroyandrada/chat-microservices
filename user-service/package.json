@@ -5,8 +5,8 @@
   "main": "src/server.ts",
   "scripts": {
     "dev": "NODE_ENV=development nodemon src/server.ts",
-  "test:unit": "jest tests/unit",
-  "coverage": "jest tests/unit --coverage --coverageReporters=lcov --coverageDirectory=coverage",
+    "test:unit": "jest tests/unit",
+    "coverage": "jest tests/unit --coverage --coverageReporters=lcov --coverageDirectory=coverage",
     "build": "rm -rf build/ && tsc -p .",
     "start": "node build/server.js"
   },
@@ -22,7 +22,7 @@
     "amqplib": "^0.10.9",
     "bcryptjs": "^3.0.2",
     "cookie-parser": "^1.4.7",
-    "cors": "^2.8.5",
+    "cors": "^2.8.6",
     "csrf-csrf": "^4.0.3",
     "dotenv": "^17.2.3",
     "express": "^5.1.0",
@@ -31,7 +31,7 @@
     "helmet": "^7.0.0",
     "jsonwebtoken": "^9.0.2",
     "nodemon": "^3.1.10",
-    "pg": "^8.16.3",
+    "pg": "^8.17.2",
     "reflect-metadata": "^0.2.2",
     "ts-node": "^10.9.2",
     "typeorm": "^0.3.27",
@@ -45,7 +45,6 @@
     "jest": "^30.2.0",
     "ts-jest": "^29.4.5"
   },
-
   "overrides": {
     "test-exclude": "7.0.1",
     "diff": "^8.0.3"

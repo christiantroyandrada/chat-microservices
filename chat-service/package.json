@@ -8,8 +8,7 @@
     "build": "rm -rf build/ && tsc -p .",
     "start": "node build/server.js",
     "test": "npm run test:unit -- --run && playwright test",
-    "test:unit": "jest --config jest.config.js --runInBand"
-    ,
+    "test:unit": "jest --config jest.config.js --runInBand",
     "coverage": "jest --config jest.config.js --coverage --coverageReporters=lcov --coverageDirectory=coverage"
   },
   "keywords": [],
@@ -23,7 +22,7 @@
     "@types/uuid": "^10.0.0",
     "amqplib": "^0.10.9",
     "cookie-parser": "^1.4.7",
-    "cors": "^2.8.5",
+    "cors": "^2.8.6",
     "dotenv": "^17.2.3",
     "express": "^5.1.0",
     "express-rate-limit": "^6.7.0",
@@ -31,7 +30,7 @@
     "helmet": "^7.0.0",
     "jsonwebtoken": "^9.0.2",
     "nodemon": "^3.1.10",
-    "pg": "^8.16.3",
+    "pg": "^8.17.2",
     "reflect-metadata": "^0.2.2",
     "socket.io": "^4.8.1",
     "ts-node": "^10.9.2",
@@ -46,7 +45,6 @@
     "jest": "^30.2.0",
     "ts-jest": "^29.4.5"
   },
-
   "overrides": {
     "test-exclude": "7.0.1",
     "diff": "^8.0.3"

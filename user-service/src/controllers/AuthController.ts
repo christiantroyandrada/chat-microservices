@@ -225,7 +225,7 @@ const getUserById = async (
   next: NextFunction
 ) => {
   try {
-    const { userId } = req.params
+    const userId = req.params.userId as string
     
     if (!userId) {
       throw new APIError(400, 'User ID is required')
