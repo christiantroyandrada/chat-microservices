@@ -11,7 +11,7 @@
 #               OR: docker build --build-arg NGINX_ENV=production ./nginx
 ##############################################################################
 
-FROM bitnami/nginx@sha256:12de02ed1fec45f1e76dd843b3a76ddc0e43c6a82b29ceafc1f8e5327cb9448c
+FROM bitnami/nginx@sha256:0516dc046cffd8dc2fb8e43feadbc10d6ccc5a4bdd63c7205c8395b9256d9b52
 
 # OCI Image Labels for traceability and security compliance
 LABEL org.opencontainers.image.title="Nginx Reverse Proxy" \
