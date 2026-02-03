@@ -85,7 +85,7 @@ jobs:
         # Pinned to a specific commit SHA for supply-chain security
         uses: aquasecurity/setup-trivy@e6c2c5e321ed9123bda567646e2f96565e34abe1
         with:
-          version: 'v0.67.2'
+          version: 'v0.69.0'
           cache: false
 
       - name: "Debug: Trivy version"
@@ -104,9 +104,11 @@ jobs:
             echo "Using ignore file: ${{ matrix.service }}/.trivyignore"
           fi
           # Fail the step if Trivy finds HIGH/CRITICAL vulnerabilities (exit code 1)
+          # Use --ignore-unfixed to skip vulnerabilities without available fixes (upstream issues)
           trivy image \
             --exit-code 1 \
             --severity CRITICAL,HIGH \
+            --ignore-unfixed \
             --format sarif \
             --output "trivy-results-${{ matrix.service }}.sarif" \
             $IGNOREFILE \
