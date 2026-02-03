@@ -46,6 +46,7 @@
   },
   "overrides": {
     "test-exclude": "7.0.1",
-    "diff": "^8.0.3"
+    "diff": "^8.0.3",
+    "fast-xml-parser": "^5.3.4"
   }
 }
