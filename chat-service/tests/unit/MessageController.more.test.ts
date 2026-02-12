@@ -23,13 +23,13 @@ describe('MessageController additional sendMessage validations', () => {
       user: { _id: 'u1', username: 'u', email: 'u@example.com' },
       body: { receiverId: 'u2', message: '   ' }
     }
-    const res: any = { json: jest.fn() }
+    const res: any = { json: jest.fn(), status: jest.fn().mockReturnThis() }
 
     await MessageController.sendMessage(req, res)
 
     expect(res.json).toHaveBeenCalled()
     const resp = res.json.mock.calls[0][0]
-    expect(resp).toHaveProperty('status', 500)
+    expect(resp).toHaveProperty('status', 400)
     expect(resp.message).toMatch(/Message cannot be empty/)
   })
 
@@ -54,7 +54,7 @@ describe('MessageController additional sendMessage validations', () => {
       user: { _id: 'u1', username: 'u', email: 'u@example.com' },
       body: { receiverId: 'u2', message: long }
     }
-    const res: any = { json: jest.fn() }
+    const res: any = { json: jest.fn(), status: jest.fn().mockReturnThis() }
 
     await MessageController.sendMessage(req, res)
 
@@ -81,7 +81,7 @@ describe('MessageController additional sendMessage validations', () => {
 
     const env = JSON.stringify({ __encrypted: true, type: 1, body: 'a' })
     const req: any = { user: { _id: 'same', username: 's', email: 's@example.com' }, body: { receiverId: 'same', message: env } }
-    const res: any = { json: jest.fn() }
+    const res: any = { json: jest.fn(), status: jest.fn().mockReturnThis() }
 
     await MessageController.sendMessage(req, res)
 
@@ -101,7 +101,7 @@ describe('MessageController additional sendMessage validations', () => {
   const { requireControllerAfterMocks } = require('../utils/testHelpers')
   const { controller } = requireControllerAfterMocks('../../src/controllers/MessageController')
   const req: any = { params: { receiverId: 'r1' }, user: { _id: 'u1' } }
-  const res: any = { json: jest.fn() }
+  const res: any = { json: jest.fn(), status: jest.fn().mockReturnThis() }
 
   await controller.getConversations(req, res)
 

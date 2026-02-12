@@ -30,7 +30,7 @@ describe('MessageController (extra)', () => {
     global.fetch = jest.fn()
 
     const req: any = { body: { receiverId: 'r1', message: 'not-a-json' }, user: { _id: 's1', email: 'a@b.com', username: 'u' } }
-    const res: any = { json: jest.fn().mockImplementation((v) => v) }
+    const res: any = { json: jest.fn().mockImplementation((v) => v), status: jest.fn().mockReturnThis() }
 
   const outRaw = await MessageController.sendMessage(req, res)
   const out: any = outRaw as any
@@ -50,7 +50,7 @@ describe('MessageController (extra)', () => {
     // create a valid envelope
     const envelope = JSON.stringify({ __encrypted: true, body: 'c' })
     const req: any = { body: { receiverId: 'r1', message: envelope }, user: { _id: 's1', email: 'a@b.com', username: 'u' } }
-    const res: any = { json: jest.fn().mockImplementation((v) => v) }
+    const res: any = { json: jest.fn().mockImplementation((v) => v), status: jest.fn().mockReturnThis() }
 
   const outRaw = await MessageController.sendMessage(req, res)
   const out: any = outRaw as any

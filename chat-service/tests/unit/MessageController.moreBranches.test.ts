@@ -12,7 +12,7 @@ describe('MessageController more branch exercises', () => {
   const { requireControllerAfterMocks } = require('../utils/testHelpers')
   const { controller } = requireControllerAfterMocks('../../src/controllers/MessageController')
   const MC = controller.default || controller
-    const res: any = { json: jest.fn() }
+    const res: any = { json: jest.fn(), status: jest.fn().mockReturnThis() }
 
     await MC.sendMessage({ user: { _id: 'u1', username: 'u' }, body: { receiverId: 'u2', message: 123 } } as any, res)
     expect(res.json).toHaveBeenCalled()
@@ -25,7 +25,7 @@ describe('MessageController more branch exercises', () => {
   const { requireControllerAfterMocks } = require('../utils/testHelpers')
   const { controller } = requireControllerAfterMocks('../../src/controllers/MessageController')
   const MC = controller.default || controller
-    const res: any = { json: jest.fn() }
+    const res: any = { json: jest.fn(), status: jest.fn().mockReturnThis() }
 
     await MC.sendMessage({ user: { _id: 'u1', username: 'u' }, body: { receiverId: 'u2', message: '   ' } } as any, res)
     expect(res.json).toHaveBeenCalled()
@@ -38,7 +38,7 @@ describe('MessageController more branch exercises', () => {
   const { requireControllerAfterMocks } = require('../utils/testHelpers')
   const { controller } = requireControllerAfterMocks('../../src/controllers/MessageController')
   const MC = controller.default || controller
-    const res: any = { json: jest.fn() }
+    const res: any = { json: jest.fn(), status: jest.fn().mockReturnThis() }
 
     await MC.fetchConversation({ user: { _id: 'u1' }, params: { receiverId: 'u2' } } as any, res)
     expect(res.json).toHaveBeenCalled()
@@ -52,7 +52,7 @@ describe('MessageController more branch exercises', () => {
   const { requireControllerAfterMocks } = require('../utils/testHelpers')
   const { controller } = requireControllerAfterMocks('../../src/controllers/MessageController')
   const MC = controller.default || controller
-    const res: any = { json: jest.fn() }
+    const res: any = { json: jest.fn(), status: jest.fn().mockReturnThis() }
 
     await MC.markAsRead({ user: { _id: 'u1' }, params: {} } as any, res)
     expect(res.json).toHaveBeenCalled()

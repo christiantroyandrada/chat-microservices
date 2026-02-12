@@ -15,11 +15,6 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "@types/amqplib": "^0.10.8",
-    "@types/cookie-parser": "^1.4.10",
-    "@types/express": "^5.0.5",
-    "@types/jsonwebtoken": "^9.0.10",
-    "@types/uuid": "^10.0.0",
     "amqplib": "^0.10.9",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.6",
@@ -29,21 +24,26 @@
     "express-validator": "^7.3.0",
     "helmet": "^7.0.0",
     "jsonwebtoken": "^9.0.2",
-    "nodemon": "^3.1.10",
     "pg": "^8.17.2",
     "reflect-metadata": "^0.2.2",
     "socket.io": "^4.8.1",
-    "ts-node": "^10.9.2",
     "typeorm": "^0.3.27",
     "typescript": "^5.9.3",
     "uuid": "^13.0.0"
   },
   "devDependencies": {
+    "@types/amqplib": "^0.10.8",
+    "@types/cookie-parser": "^1.4.10",
     "@types/cors": "^2.8.17",
+    "@types/express": "^5.0.5",
     "@types/jest": "^30.0.0",
+    "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^24.10.1",
+    "@types/uuid": "^10.0.0",
     "jest": "^30.2.0",
-    "ts-jest": "^29.4.5"
+    "nodemon": "^3.1.10",
+    "ts-jest": "^29.4.5",
+    "ts-node": "^10.9.2"
   },
   "overrides": {
     "test-exclude": "7.0.1",

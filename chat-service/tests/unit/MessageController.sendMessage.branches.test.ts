@@ -18,7 +18,7 @@ describe('MessageController sendMessage branches', () => {
   const MC = mod.default || mod
 
     const req: any = { user: { _id: 'u1', username: 'u1', email: 'u1@example.com' }, body: { message: JSON.stringify({ __encrypted: true, body: 'cipher' }) } }
-    const res: any = { json: jest.fn() }
+    const res: any = { json: jest.fn(), status: jest.fn().mockReturnThis() }
 
     await MC.sendMessage(req, res)
 
@@ -34,7 +34,7 @@ describe('MessageController sendMessage branches', () => {
   const MC = mod.default || mod
 
     const req: any = { user: { _id: 'u1', username: 'u1', email: 'u1@example.com' }, body: { receiverId: 'u1', message: JSON.stringify({ __encrypted: true, body: 'cipher' }) } }
-    const res: any = { json: jest.fn() }
+    const res: any = { json: jest.fn(), status: jest.fn().mockReturnThis() }
 
     await MC.sendMessage(req, res)
 
@@ -49,7 +49,7 @@ describe('MessageController sendMessage branches', () => {
   const MC = mod.default || mod
 
     const req: any = { user: { _id: 'u1', username: 'u1', email: 'u1@example.com' }, body: { receiverId: 'u2', message: 'plain text' } }
-    const res: any = { json: jest.fn() }
+    const res: any = { json: jest.fn(), status: jest.fn().mockReturnThis() }
 
     await MC.sendMessage(req, res)
 
@@ -66,7 +66,7 @@ describe('MessageController sendMessage branches', () => {
 
     const long = 'a'.repeat(5001)
     const req: any = { user: { _id: 'u1', username: 'u1', email: 'u1@example.com' }, body: { receiverId: 'u2', message: long } }
-    const res: any = { json: jest.fn() }
+    const res: any = { json: jest.fn(), status: jest.fn().mockReturnThis() }
 
     await MC.sendMessage(req, res)
 
@@ -84,7 +84,7 @@ describe('MessageController sendMessage branches', () => {
 
     const envelope = JSON.stringify({ __encrypted: true, body: 'cipher' })
     const req: any = { user: { _id: 'u1', username: 'u1', email: 'u1@example.com' }, body: { receiverId: 'u2', message: envelope } }
-    const res: any = { json: jest.fn() }
+    const res: any = { json: jest.fn(), status: jest.fn().mockReturnThis() }
 
     await MC.sendMessage(req, res)
 

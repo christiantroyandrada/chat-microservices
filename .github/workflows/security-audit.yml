@@ -82,10 +82,10 @@ jobs:
           fi
 
       - name: Setup Trivy (install CLI, no cache)
-        # Pinned to a specific commit SHA for supply-chain security
-        uses: aquasecurity/setup-trivy@e6c2c5e321ed9123bda567646e2f96565e34abe1
+        # Pinned to a specific commit SHA for supply-chain security (v0.2.5)
+        uses: aquasecurity/setup-trivy@3fb12ec12f41e471780db15c232d5dd185dcb514
         with:
-          version: 'v0.69.0'
+          version: 'v0.69.1'
           cache: false
 
       - name: "Debug: Trivy version"
@@ -119,8 +119,8 @@ jobs:
         # CodeQL API with the GITHUB_TOKEN and will fail with "Resource not accessible by integration".
         # We still generate and attach the JSON artifact above so maintainers can inspect results.
         if: always() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
-        # Use CodeQL Action v4 (v3 is deprecated). Pin to the v4 tag for stability.
-        uses: github/codeql-action/upload-sarif@v4
+        # Pinned to codeql-action v4.32.2 for supply-chain security
+        uses: github/codeql-action/upload-sarif@45cbd0c69e560cd9e7cd7f8c32362050c9b7ded2
         with:
           sarif_file: 'trivy-results-${{ matrix.service }}.sarif'
           category: 'trivy-${{ matrix.service }}'

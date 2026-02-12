@@ -101,19 +101,30 @@ export function logDebug(...args: unknown[]) {
 }
 
 export function logInfo(...args: unknown[]) {
-  if (!IS_NON_PROD) return
+  // In production: emit structured log without expensive caller context
+  if (!IS_NON_PROD) {
+    console.log('[INFO]', ...args.map(formatArg))
+    return
+  }
   const caller = getCallerContext()
   console.log('[INFO]', caller, ...args.map(formatArg))
 }
 
 export function logWarn(...args: unknown[]) {
-  if (!IS_NON_PROD) return
+  if (!IS_NON_PROD) {
+    console.warn('[WARN]', ...args.map(formatArg))
+    return
+  }
   const caller = getCallerContext()
   console.warn('[WARN]', caller, ...args.map(formatArg))
 }
 
 export function logError(...args: unknown[]) {
-  if (!IS_NON_PROD) return
+  // Errors must ALWAYS be logged, even in production
+  if (!IS_NON_PROD) {
+    console.error('[ERROR]', ...args.map(formatArg))
+    return
+  }
   const caller = getCallerContext()
   console.error('[ERROR]', caller, ...args.map(formatArg))
 }
