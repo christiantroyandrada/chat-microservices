@@ -173,6 +173,61 @@ docker exec chat-app-postgres-1 pg_dump -U postgres chat_db > backup_$(date +%Y%
 cat backup.sql | docker exec -i chat-app-postgres-1 psql -U postgres chat_db
 ```
 
+## Rollback Procedure
+
+If a deployment introduces regressions and the system is unhealthy after a deploy:
+
+### Quick Rollback (Revert to Previous Image)
+
+```bash
+cd /opt/chat-app/chat-microservices
+
+# 1. Find the previous image tag (the SHA before the current one)
+docker compose images
+
+# 2. Update docker-compose.yml to use the previous image tag
+#    Replace the IMAGE_TAG value with the previous SHA, then:
+export IMAGE_TAG=<previous-commit-sha>
+
+# 3. Pull the old images and restart
+docker compose pull
+for SERVICE in user chat notification; do
+  docker compose up -d --no-deps $SERVICE
+  echo "Waiting for $SERVICE health..."
+  sleep 10
+done
+docker compose up -d --no-deps nginx
+
+# 4. Verify health
+for EP in /health /api/user/health /chat/health /notifications/health; do
+  curl -sf "http://localhost:80${EP}" && echo " ✅ ${EP}" || echo " ❌ ${EP}"
+done
+```
+
+### Database Rollback
+
+If the release included a destructive migration:
+
+```bash
+# 1. Stop all application services (keep postgres running)
+docker compose stop user chat notification
+
+# 2. Restore from latest backup
+cat backup_YYYYMMDD_HHMMSS.sql | docker exec -i chat-app-postgres-1 psql -U postgres chat_db
+
+# 3. Deploy the previous image tag (see Quick Rollback above)
+```
+
+### Post-Rollback Checklist
+
+1. Verify all 4 health endpoints return 200
+2. Test a login + send message flow manually
+3. Check RabbitMQ queue depth is not growing: `docker exec chat-app-rabbitmq-1 rabbitmqctl list_queues`
+4. Monitor logs for 15 minutes: `docker compose logs -f --tail=50`
+5. Open an incident report documenting the failed deployment
+
+---
+
 ## Escalation
 
 If an incident is not resolved within 15 minutes:

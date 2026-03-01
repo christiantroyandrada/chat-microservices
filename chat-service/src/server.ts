@@ -17,8 +17,12 @@ const validateEnv = () => {
     process.exit(1)
   }
   
-  // Warn about default/weak secrets
+  // Reject weak JWT secrets in production; warn in development
   if (process.env.JWT_SECRET === '{{YOUR_SECRET_KEY}}' || process.env.JWT_SECRET === 'CHANGEME') {
+    if (process.env.NODE_ENV === 'production') {
+      logError('[chat-service] FATAL: Using default/weak JWT_SECRET in production!')
+      process.exit(1)
+    }
     logWarn('[chat-service] WARNING: Using default JWT_SECRET. Change this in production!')
   }
 }

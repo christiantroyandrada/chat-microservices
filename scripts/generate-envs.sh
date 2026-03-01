@@ -125,9 +125,9 @@ get_value() {
 generate_jwt_secret() {
   # Generate a cryptographically secure 64-byte random secret
   if command -v openssl >/dev/null 2>&1; then
-    openssl rand -base64 64 | tr -d '\n'
+    openssl rand -base64 64 | tr -d '\r\n'
   elif command -v node >/dev/null 2>&1; then
-    node -e "console.log(require('crypto').randomBytes(64).toString('base64'))"
+    node -e "process.stdout.write(require('crypto').randomBytes(64).toString('base64'))"
   else
     echo "ERROR: Neither openssl nor node found. Cannot generate JWT secret." >&2
     exit 1
@@ -192,7 +192,7 @@ write_env() {
       echo "NODE_ENV=\"$(get_value NODE_ENV)\"" >> "$dest"
       echo "PORT=\"$(get_value PORT_USER)\"" >> "$dest"
       echo "JWT_SECRET=\"$(get_value JWT_SECRET)\"" >> "$dest"
-      echo "MONGO_URI=\"$(get_value MONGO_URI_USER)\"" >> "$dest"
+      echo "DATABASE_URL=\"$(get_value DATABASE_URL)\"" >> "$dest"
       echo "MESSAGE_BROKER_URL=\"$(get_value MESSAGE_BROKER_URL)\"" >> "$dest"
       echo "CORS_ORIGINS=\"$(get_value CORS_ORIGINS)\"" >> "$dest"
       ;;
@@ -200,7 +200,7 @@ write_env() {
       echo "NODE_ENV=\"$(get_value NODE_ENV)\"" >> "$dest"
       echo "PORT=\"$(get_value PORT_CHAT)\"" >> "$dest"
       echo "JWT_SECRET=\"$(get_value JWT_SECRET)\"" >> "$dest"
-      echo "MONGO_URI=\"$(get_value MONGO_URI_CHAT)\"" >> "$dest"
+      echo "DATABASE_URL=\"$(get_value DATABASE_URL)\"" >> "$dest"
       echo "MESSAGE_BROKER_URL=\"$(get_value MESSAGE_BROKER_URL)\"" >> "$dest"
       echo "CORS_ORIGINS=\"$(get_value CORS_ORIGINS)\"" >> "$dest"
       ;;
@@ -208,6 +208,7 @@ write_env() {
       echo "NODE_ENV=\"$(get_value NODE_ENV)\"" >> "$dest"
       echo "PORT=\"$(get_value PORT_NOTIFICATION)\"" >> "$dest"
       echo "JWT_SECRET=\"$(get_value JWT_SECRET)\"" >> "$dest"
+      echo "DATABASE_URL=\"$(get_value DATABASE_URL)\"" >> "$dest"
       echo "MESSAGE_BROKER_URL=\"$(get_value MESSAGE_BROKER_URL)\"" >> "$dest"
       echo "SMTP_HOST=\"$(get_value SMTP_HOST)\"" >> "$dest"
       echo "SMTP_PORT=\"$(get_value SMTP_PORT)\"" >> "$dest"

@@ -1,0 +1,14 @@
+{
+  "name": "integration-tests",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Frontend simulation integration tests for the chat-app backend",
+  "scripts": {
+    "test": "node frontend-simulation-test.js && node websocket-simulation-test.js",
+    "test:http": "node frontend-simulation-test.js",
+    "test:ws": "node websocket-simulation-test.js"
+  },
+  "dependencies": {
+    "socket.io-client": "^4.8.3"
+  }
+}

@@ -70,7 +70,17 @@ class RabbitMQService {
   // Template and logo helpers moved to EmailTemplateService for modularity.
 
   async consumeNotification () {
-    await this.channel.assertQueue(config.queue.notifications)
+    // Assert dead-letter queue for failed messages
+    const dlqName = `${config.queue.notifications}_DLQ`
+    await this.channel.assertQueue(dlqName, { durable: true })
+
+    // Assert main queue with dead-letter routing
+    await this.channel.assertQueue(config.queue.notifications, {
+      durable: true,
+      deadLetterExchange: '',
+      deadLetterRoutingKey: dlqName,
+    })
+
     this.channel.consume(config.queue.notifications, async (msg) => {
       if (!msg) return
       try {

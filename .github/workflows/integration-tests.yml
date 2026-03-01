@@ -1,0 +1,106 @@
+---
+name: CI - Integration Tests
+
+on:
+  workflow_call: {}
+
+jobs:
+  integration-tests:
+    name: Integration Tests (Docker Compose)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    env:
+      ADMIN_USERNAME: ci_admin
+      ADMIN_PASSWORD: CiTestPass1234
+      PGADMIN_EMAIL: ci@test.com
+
+    steps:
+      - name: Checkout
+        # Pinned to specific commit SHA for supply-chain security
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+
+      - name: Use Node.js 22
+        # Pinned to specific commit SHA for supply-chain security
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22
+
+      - name: Create CI secrets file
+        run: |
+          cat > docker-secrets/app_secrets << 'EOF'
+          ADMIN_USERNAME=ci_admin
+          ADMIN_PASSWORD=CiTestPass1234
+          PGADMIN_EMAIL=ci@test.com
+          DATABASE_URL=postgresql://ci_admin:CiTestPass1234@postgres:5432/chat_db
+          MESSAGE_BROKER_URL=amqp://ci_admin:CiTestPass1234@rabbitmq:5672
+          NODE_ENV=development
+          CORS_ORIGINS=http://localhost
+          PORT_USER=8081
+          JWT_SECRET=ci-integration-test-jwt-secret-that-is-definitely-longer-than-sixty-four-characters-for-security
+          PORT_CHAT=8082
+          USER_SERVICE_URL=http://user:8081
+          PORT_NOTIFICATION=8083
+          SMTP_HOST=localhost
+          SMTP_PORT=587
+          SMTP_USER=ci-test
+          SMTP_PASS=ci-test
+          SENDINBLUE_APIKEY=ci-test-key
+          EMAIL_FROM=ci@test.com
+          NOTIFICATIONS_QUEUE=NOTIFICATIONS
+          EOF
+
+      - name: Build Docker images
+        run: docker compose build user chat notification nginx
+
+      - name: Start services and wait for healthy
+        run: docker compose up -d --wait --wait-timeout 300 user chat notification nginx
+
+      - name: Verify service health
+        run: |
+          echo "=== Docker Compose service status ==="
+          docker compose ps
+          echo ""
+          echo "=== Endpoint health checks ==="
+          FAILED=0
+          for ep in /health /api/user/health /chat/health /notifications/health; do
+            STATUS=$(curl -sf -o /dev/null -w "%{http_code}" "http://localhost${ep}" 2>/dev/null || echo "000")
+            if [ "$STATUS" = "200" ]; then
+              echo "✅ $ep -> $STATUS"
+            else
+              echo "❌ $ep -> $STATUS"
+              FAILED=1
+            fi
+          done
+          if [ "$FAILED" -eq 1 ]; then
+            echo ""
+            echo "Some health checks failed. Showing service logs:"
+            docker compose logs --tail=50
+            exit 1
+          fi
+          echo ""
+          echo "All services healthy and responding."
+
+      - name: Install test dependencies
+        working-directory: ./tests
+        run: npm ci
+
+      - name: Run HTTP API integration tests
+        run: node tests/frontend-simulation-test.js
+
+      - name: Run WebSocket integration tests
+        run: node tests/websocket-simulation-test.js
+
+      - name: Show service logs on failure
+        if: failure()
+        run: |
+          echo "=== Service logs (last 200 lines each) ==="
+          for svc in user chat notification nginx; do
+            echo ""
+            echo "--- $svc ---"
+            docker compose logs "$svc" --tail=200
+          done
+
+      - name: Teardown
+        if: always()
+        run: docker compose down -v --remove-orphans
