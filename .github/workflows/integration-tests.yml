@@ -50,6 +50,11 @@ jobs:
           NOTIFICATIONS_QUEUE=NOTIFICATIONS
           EOF
 
+      - name: Generate service .env files
+        run: |
+          chmod +x scripts/generate-envs.sh
+          bash scripts/generate-envs.sh --force --secrets-file=docker-secrets/app_secrets
+
       - name: Build Docker images
         run: docker compose build user chat notification nginx
 
