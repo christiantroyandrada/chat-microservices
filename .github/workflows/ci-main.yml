@@ -28,10 +28,12 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        # Pinned to specific commit SHA for supply-chain security
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
 
       - name: Use Node.js ${{ matrix.node-version }}
-        uses: actions/setup-node@v4
+        # Pinned to specific commit SHA for supply-chain security
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: ${{ matrix.node-version }}
 
@@ -53,11 +55,17 @@ jobs:
           npm ci
           npm run build
 
-      - name: Audit backends
-        run: |
-          npm audit --prefix user-service --audit-level=moderate || true
-          npm audit --prefix chat-service --audit-level=moderate || true
-          npm audit --prefix notification-service --audit-level=moderate || true
+      - name: Audit user-service
+        continue-on-error: true
+        run: npm audit --prefix user-service --audit-level=moderate
+
+      - name: Audit chat-service
+        continue-on-error: true
+        run: npm audit --prefix chat-service --audit-level=moderate
+
+      - name: Audit notification-service
+        continue-on-error: true
+        run: npm audit --prefix notification-service --audit-level=moderate
 
   typescript-check:
     name: TypeScript Type Check
@@ -73,36 +81,48 @@ jobs:
 
   unit-tests:
     name: Unit Tests & Coverage
-    needs: security-audit
+    # Runs after typescript-check; does NOT wait for security-audit
+    # so audit findings never block tests or deployment
+    needs: typescript-check
     if: github.ref == 'refs/heads/main'
     uses: ./.github/workflows/unit-tests.yml
     with:
       coverage: 'true'
     secrets: inherit
 
+  integration-tests:
+    name: Integration Tests
+    needs: unit-tests
+    if: github.ref == 'refs/heads/main'
+    uses: ./.github/workflows/integration-tests.yml
+
   # Build and push Docker images to GitHub Container Registry
   docker-build:
     name: Build & Push Docker Images
-    needs: unit-tests
+    needs: integration-tests
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        # Pinned to specific commit SHA for supply-chain security
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        # Pinned to specific commit SHA for supply-chain security
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f
 
       - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v3
+        # Pinned to specific commit SHA for supply-chain security
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and push user-service
-        uses: docker/build-push-action@v6
+        # Pinned to specific commit SHA for supply-chain security
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8
         with:
           context: ./user-service
           push: true
@@ -113,7 +133,8 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Build and push chat-service
-        uses: docker/build-push-action@v6
+        # Pinned to specific commit SHA for supply-chain security
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8
         with:
           context: ./chat-service
           push: true
@@ -124,7 +145,8 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Build and push notification-service
-        uses: docker/build-push-action@v6
+        # Pinned to specific commit SHA for supply-chain security
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8
         with:
           context: ./notification-service
           push: true
@@ -135,7 +157,8 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Build and push nginx
-        uses: docker/build-push-action@v6
+        # Pinned to specific commit SHA for supply-chain security
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8
         with:
           context: ./nginx
           push: true
@@ -269,7 +292,7 @@ jobs:
                   POSTGRES_PASSWORD: ${ADMIN_PASSWORD}
                   POSTGRES_DB: chat_db
                 healthcheck:
-                  test: ["CMD-SHELL", "pg_isready -U ${ADMIN_USERNAME} -d chat_db"]
+                  test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d chat_db"]
                   interval: 10s
                   timeout: 5s
                   retries: 5
@@ -478,8 +501,18 @@ jobs:
             echo "⏳ Final health verification (30s)..."
             sleep 30
 
-            # Verify health
-            if curl -fsS http://localhost:80/health >/dev/null 2>&1; then
+            # Verify all health endpoints
+            ALL_HEALTHY=true
+            for EP in /health /api/user/health /chat/health /notifications/health; do
+              if curl -fsS "http://localhost:80${EP}" >/dev/null 2>&1; then
+                echo "✅ ${EP} is healthy"
+              else
+                echo "❌ ${EP} health check failed"
+                ALL_HEALTHY=false
+              fi
+            done
+
+            if [ "$ALL_HEALTHY" = true ]; then
               echo "✅ Backend deployment successful!"
               echo "🧹 Cleaning up old images..."
               docker image prune -f --filter "until=24h" || true

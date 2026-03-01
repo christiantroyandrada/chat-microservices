@@ -66,7 +66,22 @@ app.use(express.urlencoded({ extended: true, parameterLimit: 1000 }))
 app.use(cookieParser()) // Parse cookies to read JWT from httpOnly cookies
 
 // Health check endpoint for Docker and monitoring
-app.get('/health', (_req, res) => res.status(200).json({ status: 'ok' }))
+app.get('/health', async (_req, res) => {
+  const checks: Record<string, boolean> = {
+    database: false,
+    rabbitmq: false
+  }
+  try {
+    const { AppDataSource } = await import('./database/connection')
+    checks.database = AppDataSource.isInitialized
+    checks.rabbitmq = rabbitMQService.isHealthy()
+    const healthy = checks.database && checks.rabbitmq
+    return res.status(healthy ? 200 : 503).json({ status: healthy ? 'ok' : 'degraded', service: 'notification-service', checks })
+  } catch (err) {
+    logError('[notification-service] Health check error:', err)
+    return res.status(503).json({ status: 'error', service: 'notification-service', checks, error: String(err) })
+  }
+})
 
 // Mount notification routes (use plural `/notifications` prefix for consistency)
 app.use('/notifications', notificationRouter)
@@ -90,11 +105,21 @@ const start = async () => {
 }
 
 const initializeRabbitMQClient = async () => {
-  try {
-    await rabbitMQService.connect()
-    logInfo('[notification-service] RabbitMQ client initialized. now listening...')
-  } catch (e) {
-    logError(`[notification-service] Failed to initialize RabbitMQ client: ${e}`)
+  const maxRetries = 5
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      await rabbitMQService.connect()
+      logInfo('[notification-service] RabbitMQ client initialized. now listening...')
+      return
+    } catch (e) {
+      if (attempt < maxRetries) {
+        const delay = 2000 * attempt
+        logWarn(`[notification-service] RabbitMQ connection attempt ${attempt}/${maxRetries} failed, retrying in ${delay}ms...`)
+        await new Promise(r => setTimeout(r, delay))
+      } else {
+        logError(`[notification-service] Failed to initialize RabbitMQ client after all retries: ${e}`)
+      }
+    }
   }
 }
 
@@ -103,21 +128,33 @@ start().catch(err => {
   process.exit(1)
 })
 
-const exitHandler = () => {
-  if (server) {
-    server.close(() => {
-      logInfo('[notification-service] Server closed')
-      process.exit(1)
-    })
-  } else {
+const gracefulShutdown = async (signal: string) => {
+  logInfo(`[notification-service] ${signal} received. Starting graceful shutdown...`)
+  try {
+    if (server) {
+      await new Promise<void>((resolve) => server.close(() => resolve()))
+      logInfo('[notification-service] HTTP server closed')
+    }
+    await rabbitMQService.disconnect()
+    const { AppDataSource } = await import('./database/connection')
+    if (AppDataSource.isInitialized) {
+      await AppDataSource.destroy()
+      logInfo('[notification-service] Database connection closed')
+    }
+    logInfo('[notification-service] Graceful shutdown complete')
+    process.exit(0)
+  } catch (err) {
+    logError('[notification-service] Error during graceful shutdown:', err)
     process.exit(1)
   }
 }
 
 const unexpectedErrorHandler = (error: unknown) => {
   logError('[notification-service]: Uncaught Exception', error)
-  exitHandler()
+  gracefulShutdown('UNCAUGHT_EXCEPTION').catch(() => process.exit(1))
 }
 
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'))
+process.on('SIGINT', () => gracefulShutdown('SIGINT'))
 process.on('uncaughtException', unexpectedErrorHandler)
 process.on('unhandledRejection', unexpectedErrorHandler)

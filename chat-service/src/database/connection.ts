@@ -37,16 +37,26 @@ export const connectDB = async () => {
 }
 
 export const runMigrations = async () => {
-  try {
-    logInfo('[chat-service] Running database migrations...')
-    const migrations = await AppDataSource.runMigrations()
-    if (migrations.length > 0) {
-      logInfo(`[chat-service] ✅ Ran ${migrations.length} migration(s): ${migrations.map(m => m.name).join(', ')}`)
-    } else {
-      logInfo('[chat-service] ⏭️ No pending migrations')
+  const maxRetries = 3
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      logInfo('[chat-service] Running database migrations...')
+      const migrations = await AppDataSource.runMigrations()
+      if (migrations.length > 0) {
+        logInfo(`[chat-service] ✅ Ran ${migrations.length} migration(s): ${migrations.map(m => m.name).join(', ')}`)
+      } else {
+        logInfo('[chat-service] ⏭️ No pending migrations')
+      }
+      return
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : String(error)
+      if (attempt < maxRetries && msg.includes('already exists')) {
+        logInfo(`[chat-service] Migrations table conflict (attempt ${attempt}/${maxRetries}), retrying...`)
+        await new Promise(r => setTimeout(r, 1000 * attempt))
+        continue
+      }
+      logError('[chat-service] Error running migrations:', error)
+      throw error
     }
-  } catch (error) {
-    logError('[chat-service] Error running migrations:', error)
-    throw error
   }
 }

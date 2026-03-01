@@ -28,7 +28,10 @@ export function registerSocketHandlers(io: SocketIOServer, socket: Socket): void
   }
 
   socket.on('disconnect', () => handleDisconnect(io, socket, userId))
-  socket.on('receiveMessage', (message) => io.emit('receiveMessage', message))
+  // NOTE: Removed `receiveMessage` relay — allowing clients to emit `receiveMessage`
+  // events directly was a message injection vulnerability (any authenticated user could
+  // broadcast arbitrary payloads to all connected clients). Server-side message delivery
+  // is handled exclusively by `handleSendMessage` which validates and persists first.
   socket.on('typing', (data: { receiverId: string; isTyping: boolean }) => {
     if (userId) handleTyping(io, userId, data)
   })
