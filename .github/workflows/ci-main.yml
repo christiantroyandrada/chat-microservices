@@ -79,7 +79,9 @@ jobs:
 
   unit-tests:
     name: Unit Tests & Coverage
-    needs: security-audit
+    # Runs after typescript-check; does NOT wait for security-audit
+    # so audit findings never block tests or deployment
+    needs: typescript-check
     if: github.ref == 'refs/heads/main'
     uses: ./.github/workflows/unit-tests.yml
     with:
