@@ -105,11 +105,21 @@ const start = async () => {
 }
 
 const initializeRabbitMQClient = async () => {
-  try {
-    await rabbitMQService.connect()
-    logInfo('[notification-service] RabbitMQ client initialized. now listening...')
-  } catch (e) {
-    logError(`[notification-service] Failed to initialize RabbitMQ client: ${e}`)
+  const maxRetries = 5
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      await rabbitMQService.connect()
+      logInfo('[notification-service] RabbitMQ client initialized. now listening...')
+      return
+    } catch (e) {
+      if (attempt < maxRetries) {
+        const delay = 2000 * attempt
+        logWarn(`[notification-service] RabbitMQ connection attempt ${attempt}/${maxRetries} failed, retrying in ${delay}ms...`)
+        await new Promise(r => setTimeout(r, delay))
+      } else {
+        logError(`[notification-service] Failed to initialize RabbitMQ client after all retries: ${e}`)
+      }
+    }
   }
 }
 

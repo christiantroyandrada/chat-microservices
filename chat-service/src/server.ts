@@ -39,11 +39,21 @@ const start = async () => {
   await runMigrations()
 
   // ensure the RPC/notification client is connected before handling messages
-  try {
-    await rabbitMQService.connect()
-    logInfo('[chat-service] RabbitMQ client connected')
-  } catch (err) {
-    logError('[chat-service] Failed to connect RabbitMQ client:', err)
+  const maxRetries = 5
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      await rabbitMQService.connect()
+      logInfo('[chat-service] RabbitMQ client connected')
+      break
+    } catch (err) {
+      if (attempt < maxRetries) {
+        const delay = 2000 * attempt
+        logWarn(`[chat-service] RabbitMQ connection attempt ${attempt}/${maxRetries} failed, retrying in ${delay}ms...`)
+        await new Promise(r => setTimeout(r, delay))
+      } else {
+        logError('[chat-service] Failed to connect RabbitMQ after all retries:', err)
+      }
+    }
   }
 
   server = app.listen(config.PORT, () => {
