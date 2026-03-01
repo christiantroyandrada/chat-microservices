@@ -53,11 +53,17 @@ jobs:
           npm ci
           npm run build
 
-      - name: Audit backends
-        run: |
-          npm audit --prefix user-service --audit-level=moderate || true
-          npm audit --prefix chat-service --audit-level=moderate || true
-          npm audit --prefix notification-service --audit-level=moderate || true
+      - name: Audit user-service
+        continue-on-error: true
+        run: npm audit --prefix user-service --audit-level=moderate
+
+      - name: Audit chat-service
+        continue-on-error: true
+        run: npm audit --prefix chat-service --audit-level=moderate
+
+      - name: Audit notification-service
+        continue-on-error: true
+        run: npm audit --prefix notification-service --audit-level=moderate
 
   typescript-check:
     name: TypeScript Type Check

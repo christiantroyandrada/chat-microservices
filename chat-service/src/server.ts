@@ -55,21 +55,33 @@ start().catch(err => {
   process.exit(1)
 })
 
-const exitHandler = () => {
-  if (server) {
-    server.close(() => {
-      logInfo('[chat-service]: Server closed')
-      process.exit(1)
-    })
-  } else {
+const gracefulShutdown = async (signal: string) => {
+  logInfo(`[chat-service] ${signal} received. Starting graceful shutdown...`)
+  try {
+    if (server) {
+      await new Promise<void>((resolve) => server.close(() => resolve()))
+      logInfo('[chat-service] HTTP server closed')
+    }
+    await rabbitMQService.disconnect()
+    const { AppDataSource } = await import('./database/connection')
+    if (AppDataSource.isInitialized) {
+      await AppDataSource.destroy()
+      logInfo('[chat-service] Database connection closed')
+    }
+    logInfo('[chat-service] Graceful shutdown complete')
+    process.exit(0)
+  } catch (err) {
+    logError('[chat-service] Error during graceful shutdown:', err)
     process.exit(1)
   }
 }
 
 const unexpectedErrorHandler = (error: unknown) => {
   logError('[chat-service]: Uncaught Exception', error)
-  exitHandler()
+  gracefulShutdown('UNCAUGHT_EXCEPTION').catch(() => process.exit(1))
 }
 
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'))
+process.on('SIGINT', () => gracefulShutdown('SIGINT'))
 process.on('uncaughtException', unexpectedErrorHandler)
 process.on('unhandledRejection', unexpectedErrorHandler)

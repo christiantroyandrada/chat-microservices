@@ -36,8 +36,8 @@ describe('MessageController non-Error catch branches', () => {
   })
 
   it('fetchConversation handles non-Error rejection from getMany', async () => {
-    const mockReq: any = { params: { receiverId: 'r1' }, user: { _id: 's1' } }
-    const repo: any = { createQueryBuilder: jest.fn(() => ({ where: jest.fn().mockReturnThis(), orderBy: jest.fn().mockReturnThis(), getMany: jest.fn().mockRejectedValue('bad') })) }
+    const mockReq: any = { params: { receiverId: 'r1' }, user: { _id: 's1' }, query: {} }
+    const repo: any = { createQueryBuilder: jest.fn(() => ({ where: jest.fn().mockReturnThis(), orderBy: jest.fn().mockReturnThis(), skip: jest.fn().mockReturnThis(), take: jest.fn().mockReturnThis(), getManyAndCount: jest.fn().mockRejectedValue('bad') })) }
     ;(AppDataSource.getRepository as jest.Mock).mockReturnValue(repo)
     const mockRes: any = { json: jest.fn(), status: jest.fn().mockReturnThis() }
 

@@ -16,15 +16,15 @@ describe('MessageController - query builder and repository branches', () => {
   const { controller, repo, qb } = requireControllerWithMock('../../src/controllers/MessageController', { getManyResult: messages })
   const MC = controller.default || controller
 
-    const req: any = { params: { receiverId: 'u2' }, user: { _id: 'u1' } }
-    const res: any = { json: jest.fn() }
+    const req: any = { params: { receiverId: 'u2' }, user: { _id: 'u1' }, query: {} }
+    const res: any = { json: jest.fn(), status: jest.fn().mockReturnThis() }
 
       await MC.fetchConversation(req, res)
 
     expect(repo.createQueryBuilder).toHaveBeenCalledWith('message')
     expect(qb.where).toHaveBeenCalled()
-    expect(qb.orderBy).toHaveBeenCalledWith('message.createdAt', 'ASC')
-    expect(qb.getMany).toHaveBeenCalled()
+    expect(qb.orderBy).toHaveBeenCalledWith('message.createdAt', 'DESC')
+    expect(qb.getManyAndCount).toHaveBeenCalled()
     expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ status: 200, data: messages }))
   })
 

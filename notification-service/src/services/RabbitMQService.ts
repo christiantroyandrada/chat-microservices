@@ -1,4 +1,4 @@
-import amqp, { Channel } from 'amqplib'
+import amqp, { Channel, ChannelModel } from 'amqplib'
 import config from '../config/config'
 import { FCMService } from './FCMService'
 import { SecureEmailService } from './SecureEmailService'
@@ -6,27 +6,65 @@ import { UserStatusStore } from '../utils'
 import { Notification } from '../database'
 import { NotificationType } from '../database/models/NotificationModel'
 import { AppDataSource } from '../database/connection'
-import { logError } from '../utils/logger'
+import { logInfo, logWarn, logError } from '../utils/logger'
 import { loadTemplate, renderTemplate, loadLogoDataUri } from './EmailTemplateService'
 import { handleMessageReceived } from './handlers/messageHandler'
 import { handleUserRegistered } from './handlers/welcomeHandler'
 
+const MAX_RECONNECT_ATTEMPTS = 10
+const INITIAL_RECONNECT_DELAY_MS = 1000
+
 class RabbitMQService {
   private channel!: Channel
+  private connection!: ChannelModel
   private readonly fcmService = FCMService
   private readonly emailService = new SecureEmailService()
   private readonly userStatusStore = new UserStatusStore()
+  private reconnectAttempts = 0
+  private isReconnecting = false
 
   async connect () {
-    // Ensure the broker URL is present at runtime and narrow its type for TS.
     const brokerUrl = config.msgBrokerURL
     if (!brokerUrl) {
-      logError('[chat-service] MESSAGE_BROKER_URL is not configured')
+      logError('[notification-service] MESSAGE_BROKER_URL is not configured')
       throw new Error('Missing MESSAGE_BROKER_URL')
     }
-    const connection = await amqp.connect(brokerUrl)
-    this.channel = await connection.createChannel()
+    this.connection = await amqp.connect(brokerUrl)
+    this.channel = await this.connection.createChannel()
+    this.reconnectAttempts = 0
+
+    // Handle connection errors and closures for automatic reconnection
+    this.connection.on('error', (err) => {
+      logError('[notification-service] RabbitMQ connection error:', err)
+    })
+    this.connection.on('close', () => {
+      logWarn('[notification-service] RabbitMQ connection closed. Attempting reconnect...')
+      this.scheduleReconnect()
+    })
+
     await this.consumeNotification()
+  }
+
+  private scheduleReconnect () {
+    if (this.isReconnecting) return
+    if (this.reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
+      logError(`[notification-service] RabbitMQ reconnect failed after ${MAX_RECONNECT_ATTEMPTS} attempts. Giving up.`)
+      return
+    }
+    this.isReconnecting = true
+    const delay = INITIAL_RECONNECT_DELAY_MS * Math.pow(2, this.reconnectAttempts)
+    this.reconnectAttempts++
+    logInfo(`[notification-service] RabbitMQ reconnect attempt ${this.reconnectAttempts} in ${delay}ms...`)
+    setTimeout(async () => {
+      try {
+        await this.connect()
+        logInfo('[notification-service] RabbitMQ reconnected successfully')
+      } catch (err) {
+        logError('[notification-service] RabbitMQ reconnect failed:', err)
+      } finally {
+        this.isReconnecting = false
+      }
+    }, delay)
   }
 
   // Template and logo helpers moved to EmailTemplateService for modularity.
@@ -94,6 +132,20 @@ class RabbitMQService {
         this.channel.ack(msg)
         return
       }
+    }
+  }
+
+  isHealthy (): boolean {
+    return !!this.channel && !!this.connection
+  }
+
+  async disconnect (): Promise<void> {
+    try {
+      if (this.channel) await this.channel.close()
+      if (this.connection) await this.connection.close()
+      logInfo('[notification-service] RabbitMQ connection closed gracefully')
+    } catch (err) {
+      logError('[notification-service] Error closing RabbitMQ connection:', err)
     }
   }
 }

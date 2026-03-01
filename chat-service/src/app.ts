@@ -7,6 +7,8 @@ import cookieParser from 'cookie-parser'
 import chatServiceRouter from './routes/messageRoutes'
 import { errorMiddleware, errorHandler } from './middleware'
 import { logError } from './utils/logger'
+import { rabbitMQService } from './services/RabbitMQService'
+import { AppDataSource } from './database/connection'
 
 const app: Express = express()
 
@@ -38,12 +40,18 @@ app.use(cors({
 app.use(helmet())
 
 app.get('/health', async (req, res) => {
+	const checks: Record<string, boolean> = {
+		database: false,
+		rabbitmq: false
+	}
 	try {
-		// Simple health check - database connection verified on startup
-		return res.status(200).json({ status: 'ok', service: 'chat-service' })
+		checks.database = AppDataSource.isInitialized
+		checks.rabbitmq = rabbitMQService.isHealthy()
+		const healthy = checks.database && checks.rabbitmq
+		return res.status(healthy ? 200 : 503).json({ status: healthy ? 'ok' : 'degraded', service: 'chat-service', checks })
 	} catch (err) {
-    logError('[chat-service] Health check error:', err)
-		return res.status(503).json({ status: 'error', error: String(err) })
+		logError('[chat-service] Health check error:', err)
+		return res.status(503).json({ status: 'error', service: 'chat-service', checks, error: String(err) })
 	}
 })
 
