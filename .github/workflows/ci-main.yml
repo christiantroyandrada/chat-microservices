@@ -292,7 +292,7 @@ jobs:
                   POSTGRES_PASSWORD: ${ADMIN_PASSWORD}
                   POSTGRES_DB: chat_db
                 healthcheck:
-                  test: ["CMD-SHELL", "pg_isready -U ${ADMIN_USERNAME} -d chat_db"]
+                  test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d chat_db"]
                   interval: 10s
                   timeout: 5s
                   retries: 5
