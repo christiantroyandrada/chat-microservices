@@ -37,16 +37,26 @@ export const connectDB = async () => {
 }
 
 export const runMigrations = async () => {
-  try {
-    logInfo('[notification-service] Running database migrations...')
-    const migrations = await AppDataSource.runMigrations()
-    if (migrations.length > 0) {
-      logInfo(`[notification-service] ✅ Ran ${migrations.length} migration(s): ${migrations.map(m => m.name).join(', ')}`)
-    } else {
-      logInfo('[notification-service] ⏭️ No pending migrations')
+  const maxRetries = 3
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      logInfo('[notification-service] Running database migrations...')
+      const migrations = await AppDataSource.runMigrations()
+      if (migrations.length > 0) {
+        logInfo(`[notification-service] ✅ Ran ${migrations.length} migration(s): ${migrations.map(m => m.name).join(', ')}`)
+      } else {
+        logInfo('[notification-service] ⏭️ No pending migrations')
+      }
+      return
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : String(error)
+      if (attempt < maxRetries && msg.includes('already exists')) {
+        logInfo(`[notification-service] Migrations table conflict (attempt ${attempt}/${maxRetries}), retrying...`)
+        await new Promise(r => setTimeout(r, 1000 * attempt))
+        continue
+      }
+      logError('[notification-service] Error running migrations:', error)
+      throw error
     }
-  } catch (error) {
-    logError('[notification-service] Error running migrations:', error)
-    throw error
   }
 }

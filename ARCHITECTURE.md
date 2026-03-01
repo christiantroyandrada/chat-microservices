@@ -1,6 +1,6 @@
 # Chat Application — Architecture & Engineering Documentation
 
-> Last updated: February 2026
+> Last updated: June 2025
 
 ## Table of Contents
 
@@ -10,11 +10,31 @@
 4. [Backend Services](#backend-services)
 5. [Frontend (SvelteKit)](#frontend-sveltekit)
 6. [Security Model](#security-model)
-7. [Infrastructure & DevOps](#infrastructure--devops)
-8. [Environment & Secrets](#environment--secrets)
-9. [Performance Considerations](#performance-considerations)
-10. [Conventions & Standards](#conventions--standards)
-11. [Onboarding Guide](#onboarding-guide)
+7. [Resilience & Reliability](#resilience--reliability)
+8. [Infrastructure & DevOps](#infrastructure--devops)
+9. [Environment & Secrets](#environment--secrets)
+10. [Performance Considerations](#performance-considerations)
+11. [Conventions & Standards](#conventions--standards)
+12. [Architecture Decision Records](#architecture-decision-records)
+13. [Onboarding Guide](#onboarding-guide)
+
+---
+
+## Recent Engineering Improvements (June 2025)
+
+Changes applied during FAANG production readiness review:
+
+| Area | Change | Impact |
+|------|--------|--------|
+| **WebSocket Security** | Removed `receiveMessage` server-side relay (clients can no longer spoof messages to arbitrary users) | Critical vulnerability fix |
+| **RabbitMQ Resilience** | Added exponential-backoff reconnection (max 10 attempts, 1s→30s) to all 3 services | Prevents cascade failure on broker restart |
+| **Health Checks** | Deep `/health` endpoints now verify DB + RabbitMQ connectivity; return 503 with per-check breakdown on degradation | Enables proper container orchestration and load balancer routing |
+| **Graceful Shutdown** | All services handle SIGTERM/SIGINT: drain HTTP → close RabbitMQ → close DB | Zero-downtime deployments, no orphaned connections |
+| **Message Pagination** | `GET /chat/get/:receiverId` supports `?limit=50&offset=0`, returns `pagination` metadata | Prevents unbounded memory on large conversations |
+| **Docker Compose** | Added RabbitMQ 3.13 service with health check; all services depend on `rabbitmq: service_healthy` | Docker-native development actually works now |
+| **CI/CD** | Per-service `npm audit` steps with `continue-on-error` (replaces single `\|\| true` step) | Audit failures are visible per-service without blocking pipeline |
+| **Dead Code** | Removed `signal.ts.old`, unused `getUserDetails` function, phantom `csrf-csrf` dependency | Smaller attack surface, cleaner dependency tree |
+| **Documentation** | Added ADR-001 (microservices rationale), production incident runbook | Onboarding and incident response readiness |
 
 ---
 
@@ -196,7 +216,7 @@ Client ← 'presence' → Update online/offline status
 | Endpoint | Auth | Description |
 |----------|------|-------------|
 | `POST /send` | JWT | Send encrypted message |
-| `GET /get/:receiverId` | JWT | Fetch conversation |
+| `GET /get/:receiverId` | JWT | Fetch conversation (paginated: `?limit=50&offset=0`) |
 | `GET /conversations` | JWT | List all conversations |
 | `PUT /messages/read/:senderId` | JWT | Mark messages as read |
 
@@ -259,6 +279,54 @@ Layer 8: CI/CD          → npm audit, Trivy scanning, TypeScript checks
 
 ---
 
+## Resilience & Reliability
+
+### RabbitMQ Reconnection
+
+All three services implement automatic reconnection with exponential backoff:
+
+```
+Attempt 1: wait 1s   → reconnect
+Attempt 2: wait 2s   → reconnect
+Attempt 3: wait 4s   → reconnect
+...
+Attempt N: wait min(2^N * 1000, 30000)ms → reconnect
+Max attempts: 10 (then logs critical failure, service degrades gracefully)
+```
+
+The `RabbitMQService` class exposes:
+- `isHealthy(): boolean` — returns `true` only when both connection AND channel are alive
+- `disconnect(): Promise<void>` — cleanly closes channel then connection (used during shutdown)
+
+### Deep Health Checks
+
+Each service exposes `GET /health` that returns:
+
+```json
+// Healthy (200)
+{ "status": "ok", "checks": { "database": "ok", "rabbitmq": "ok" } }
+
+// Degraded (503)
+{ "status": "degraded", "checks": { "database": "ok", "rabbitmq": "fail" } }
+```
+
+Docker Compose `healthcheck` and orchestrators use this endpoint for readiness gating.
+
+### Graceful Shutdown
+
+On `SIGTERM` or `SIGINT` (e.g., `docker stop`, Kubernetes pod termination):
+
+```
+1. Stop accepting new HTTP connections (server.close())
+2. Close RabbitMQ channel + connection (rabbitMQService.disconnect())
+3. Close PostgreSQL connection pool (AppDataSource.destroy())
+4. Exit with code 0
+```
+
+`uncaughtException` and `unhandledRejection` also trigger shutdown with exit code 1.
+
+---
+
 ## Infrastructure & DevOps
 
 ### Docker Composition
@@ -268,6 +336,12 @@ docker-compose.yml          → Development environment (HTTP, auto-sync)
 docker-compose.prod.yml     → Production overrides (HTTPS, NODE_ENV=production)
 ```
 
+**Services**: `user-service`, `chat-service`, `notification-service`, `postgres`, `rabbitmq`, `nginx`
+
+All backend services declare `depends_on` with `condition: service_healthy` for both `postgres` and `rabbitmq`, ensuring infrastructure is ready before app containers start.
+
+**RabbitMQ**: `rabbitmq:3.13-management-alpine` with `rabbitmq-diagnostics -q ping` healthcheck and management UI on `localhost:15672`.
+
 **Build Strategy**: Multi-stage builds
 1. **Builder stage**: `node:22-bookworm-slim` — Install, compile TypeScript
 2. **Runtime stage**: `gcr.io/distroless/nodejs22-debian12:nonroot` — Minimal runtime
@@ -276,9 +350,9 @@ docker-compose.prod.yml     → Production overrides (HTTPS, NODE_ENV=production
 
 ```
 Push to main:
-  ├── Build & Audit (all services)
+  ├── Build & Audit (per-service, continue-on-error for visibility)
   ├── TypeScript Type Check
-  ├── Security Audit (npm audit + Trivy scanning)
+  ├── Security Audit (npm audit per-service + Trivy scanning)
   ├── Unit Tests & Coverage
   └── Docker Build & Push (GHCR)
 
@@ -395,6 +469,16 @@ service/
 ├── tsconfig.json
 └── jest.config.js
 ```
+
+---
+
+## Architecture Decision Records
+
+| ADR | Title | Status |
+|-----|-------|--------|
+| [ADR-001](docs/adr/001-microservices-architecture.md) | Microservices Architecture | Accepted |
+
+See also: [Production Incident Runbook](docs/runbooks/incident-response.md)
 
 ---
 

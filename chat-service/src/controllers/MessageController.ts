@@ -180,19 +180,29 @@ const fetchConversation = async (
   try {
     const { receiverId } = req.params
     const { _id: senderId } = req.user  
+
+    // Pagination: defaults to last 50 messages, supports limit/offset via query params
+    const limit = Math.min(Number(req.query.limit) || 50, 200) // max 200 per request
+    const offset = Math.max(Number(req.query.offset) || 0, 0)
     
     const messageRepo = AppDataSource.getRepository(Message)
-    const messages = await messageRepo
+    const [messages, total] = await messageRepo
       .createQueryBuilder('message')
       .where('(message.senderId = :senderId AND message.receiverId = :receiverId) OR (message.senderId = :receiverId AND message.receiverId = :senderId)', 
         { senderId, receiverId })
-      .orderBy('message.createdAt', 'ASC')
-      .getMany()
+      .orderBy('message.createdAt', 'DESC') // newest first for pagination
+      .skip(offset)
+      .take(limit)
+      .getManyAndCount()
+
+    // Reverse to chronological order for display
+    messages.reverse()
 
     return res.json({
       status: 200,
       message: 'Conversation fetched successfully',
       data: messages,
+      pagination: { total, limit, offset, hasMore: offset + limit < total },
     })
   } catch (error: unknown) {
     if (error instanceof APIError) {

@@ -8,7 +8,10 @@ export function createQueryBuilderMock(options: { getManyResult?: any; executeRe
   const qb: any = {
     where: jest.fn().mockReturnThis(),
     orderBy: jest.fn().mockReturnThis(),
+    skip: jest.fn().mockReturnThis(),
+    take: jest.fn().mockReturnThis(),
     getMany: jest.fn().mockResolvedValue(getManyResult),
+    getManyAndCount: jest.fn().mockResolvedValue([getManyResult, Array.isArray(getManyResult) ? getManyResult.length : 0]),
     update: jest.fn().mockReturnThis(),
     set: jest.fn().mockReturnThis(),
     andWhere: jest.fn().mockReturnThis(),

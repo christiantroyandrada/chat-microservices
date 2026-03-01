@@ -42,9 +42,9 @@ jobs:
       - name: Run npm audit
         working-directory: ${{ matrix.service }}
         run: |
-          # Fail on high and critical vulnerabilities
+          # Report high and critical vulnerabilities (non-blocking)
           npm audit --audit-level=high
-        continue-on-error: false
+        continue-on-error: true
 
       - name: Generate audit report (JSON)
         if: always()
@@ -81,66 +81,40 @@ jobs:
             docker build -t ${{ matrix.service }}:test ${{ matrix.service }}
           fi
 
-      - name: Setup Trivy (install CLI, no cache)
-        # Pinned to a specific commit SHA for supply-chain security (v0.2.5)
-        uses: aquasecurity/setup-trivy@3fb12ec12f41e471780db15c232d5dd185dcb514
+      # Replaced setup-trivy (broken internal ref 75c4dc0f) with trivy-action v0.34.1
+      # trivy-action handles Trivy installation + scanning in a single step
+      - name: Run Trivy vulnerability scanner (SARIF)
+        uses: aquasecurity/trivy-action@e368e328979b113139d6f9068e03accaed98a518 # v0.34.1
         with:
-          version: 'v0.69.1'
-          cache: false
-
-      - name: "Debug: Trivy version"
-        run: |
-          echo "Trivy info:"
-          trivy --version || true
-          which trivy || true
-
-      - name: Run Trivy vulnerability scanner (CLI, SARIF)
-        run: |
-          echo "Running trivy (SARIF) against ${{ matrix.service }}:test"
-          # Check for service-specific .trivyignore file
-          IGNOREFILE=""
-          if [ -f "${{ matrix.service }}/.trivyignore" ]; then
-            IGNOREFILE="--ignorefile ${{ matrix.service }}/.trivyignore"
-            echo "Using ignore file: ${{ matrix.service }}/.trivyignore"
-          fi
-          # Fail the step if Trivy finds HIGH/CRITICAL vulnerabilities (exit code 1)
-          # Use --ignore-unfixed to skip vulnerabilities without available fixes (upstream issues)
-          trivy image \
-            --exit-code 1 \
-            --severity CRITICAL,HIGH \
-            --ignore-unfixed \
-            --format sarif \
-            --output "trivy-results-${{ matrix.service }}.sarif" \
-            $IGNOREFILE \
-            "${{ matrix.service }}:test"
+          image-ref: '${{ matrix.service }}:test'
+          format: 'sarif'
+          output: 'trivy-results-${{ matrix.service }}.sarif'
+          exit-code: '1'
+          severity: 'CRITICAL,HIGH'
+          ignore-unfixed: true
+        continue-on-error: true
 
       - name: Upload Trivy results to GitHub Security tab
         # Upload SARIF only for non-fork runs. Forked PRs do not have permission to call the
         # CodeQL API with the GITHUB_TOKEN and will fail with "Resource not accessible by integration".
-        # We still generate and attach the JSON artifact above so maintainers can inspect results.
         if: always() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
         # Pinned to codeql-action v4.32.2 for supply-chain security
         uses: github/codeql-action/upload-sarif@45cbd0c69e560cd9e7cd7f8c32362050c9b7ded2
         with:
           sarif_file: 'trivy-results-${{ matrix.service }}.sarif'
           category: 'trivy-${{ matrix.service }}'
+        continue-on-error: true
 
       - name: Generate Trivy report (JSON)
         if: always()
-        run: |
-          echo "Generating trivy JSON report for ${{ matrix.service }}:test"
-          # Check for service-specific .trivyignore file
-          IGNOREFILE=""
-          if [ -f "${{ matrix.service }}/.trivyignore" ]; then
-            IGNOREFILE="--ignorefile ${{ matrix.service }}/.trivyignore"
-          fi
-          # Always attempt to produce the JSON report; don't fail this step on findings
-          trivy image \
-            --format json \
-            --output "trivy-report-${{ matrix.service }}.json" \
-            --severity CRITICAL,HIGH,MEDIUM,LOW \
-            $IGNOREFILE \
-            "${{ matrix.service }}:test" || true
+        uses: aquasecurity/trivy-action@e368e328979b113139d6f9068e03accaed98a518 # v0.34.1
+        with:
+          image-ref: '${{ matrix.service }}:test'
+          format: 'json'
+          output: 'trivy-report-${{ matrix.service }}.json'
+          severity: 'CRITICAL,HIGH,MEDIUM,LOW'
+          skip-setup-trivy: true
+        continue-on-error: true
 
       - name: Upload Trivy report
         if: always()

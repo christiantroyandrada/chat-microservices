@@ -1,44 +1,66 @@
-import amqp, { Channel } from 'amqplib'
+import amqp, { Channel, ChannelModel } from 'amqplib'
 import config from '../config/config'
 import { User, AppDataSource } from '../database'
 import { APIError } from '../utils'
-import { logError } from '../utils/logger'
+import { logInfo, logError, logWarn } from '../utils/logger'
 
-
-const getUserDetails = async (userId:string) => {
-  const userRepo = AppDataSource.getRepository(User)
-  const userDetails = await userRepo.findOne({ 
-    where: { id: userId },
-    select: ['id', 'username', 'email', 'createdAt', 'updatedAt']
-  })
-  if (!userDetails) {
-    throw new APIError(404, 'User not found')
-  }
-  return userDetails
-}
+const MAX_RECONNECT_ATTEMPTS = 10
+const INITIAL_RECONNECT_DELAY_MS = 1000
 
 class RabbitMQService {
   private readonly requestQueue = "USER_DETAILS_REQUEST"
   private readonly responseQueue = "USER_DETAILS_RESPONSE"
   private channel!: Channel
+  private connection!: ChannelModel
+  private reconnectAttempts = 0
+  private isReconnecting = false
 
   async connect () {
-    // Initiate connection to RabbitMQ Server
-    // Ensure the broker URL is present at runtime and narrow its type for TS.
     const brokerUrl = config.msgBrokerURL
     if (!brokerUrl) {
-      logError('[chat-service] MESSAGE_BROKER_URL is not configured')
+      logError('[user-service] MESSAGE_BROKER_URL is not configured')
       throw new Error('Missing MESSAGE_BROKER_URL')
     }
 
-    const connection = await amqp.connect(brokerUrl)
-    this.channel = await connection.createChannel()
-    // assert queue that it exists
+    this.connection = await amqp.connect(brokerUrl)
+    this.channel = await this.connection.createChannel()
+    this.reconnectAttempts = 0
+
+    // Handle connection errors and closures for automatic reconnection
+    this.connection.on('error', (err) => {
+      logError('[user-service] RabbitMQ connection error:', err)
+    })
+    this.connection.on('close', () => {
+      logWarn('[user-service] RabbitMQ connection closed. Attempting reconnect...')
+      this.scheduleReconnect()
+    })
+
     await this.channel.assertQueue(this.requestQueue)
     await this.channel.assertQueue(this.responseQueue)
 
-    // start listening
     this.listenForRequests()
+  }
+
+  private scheduleReconnect () {
+    if (this.isReconnecting) return
+    if (this.reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
+      logError(`[user-service] RabbitMQ reconnect failed after ${MAX_RECONNECT_ATTEMPTS} attempts. Giving up.`)
+      return
+    }
+    this.isReconnecting = true
+    const delay = INITIAL_RECONNECT_DELAY_MS * Math.pow(2, this.reconnectAttempts)
+    this.reconnectAttempts++
+    logInfo(`[user-service] RabbitMQ reconnect attempt ${this.reconnectAttempts} in ${delay}ms...`)
+    setTimeout(async () => {
+      try {
+        await this.connect()
+        logInfo('[user-service] RabbitMQ reconnected successfully')
+      } catch (err) {
+        logError('[user-service] RabbitMQ reconnect failed:', err)
+      } finally {
+        this.isReconnecting = false
+      }
+    }, delay)
   }
 
   private async listenForRequests () {
@@ -87,6 +109,20 @@ class RabbitMQService {
       } catch (err) {
         logError('[user-service] publishNotification failed:', err)
         return false
+      }
+    }
+
+    isHealthy (): boolean {
+      return !!this.channel && !!this.connection
+    }
+
+    async disconnect (): Promise<void> {
+      try {
+        if (this.channel) await this.channel.close()
+        if (this.connection) await this.connection.close()
+        logInfo('[user-service] RabbitMQ connection closed gracefully')
+      } catch (err) {
+        logError('[user-service] Error closing RabbitMQ connection:', err)
       }
     }
 }

@@ -28,10 +28,10 @@
     "nodemailer": "^7.0.10",
     "pg": "^8.17.2",
     "reflect-metadata": "^0.2.2",
-    "typeorm": "^0.3.27",
-    "typescript": "^5.9.3"
+    "typeorm": "^0.3.27"
   },
   "devDependencies": {
+    "typescript": "^5.9.3",
     "@types/amqplib": "^0.10.8",
     "@types/cookie-parser": "^1.4.10",
     "@types/cors": "^2.8.17",

@@ -3,13 +3,15 @@ import { AppDataSource } from '../../src/database'
 
 describe('MessageController.fetchConversation', () => {
   it('returns messages for conversation', async () => {
-    const req: any = { params: { receiverId: 'user2' }, user: { _id: 'user1' } }
-    const res: any = { json: jest.fn() }
+    const req: any = { params: { receiverId: 'user2' }, user: { _id: 'user1' }, query: {} }
+    const res: any = { json: jest.fn(), status: jest.fn().mockReturnThis() }
 
     const queryBuilder = {
       where: jest.fn().mockReturnThis(),
       orderBy: jest.fn().mockReturnThis(),
-      getMany: jest.fn().mockResolvedValue([{ id: 'm1' }])
+      skip: jest.fn().mockReturnThis(),
+      take: jest.fn().mockReturnThis(),
+      getManyAndCount: jest.fn().mockResolvedValue([[{ id: 'm1' }], 1])
     }
 
     const messageRepo: any = {

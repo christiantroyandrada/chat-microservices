@@ -1,0 +1,3 @@
+.trivyignore
+Dockerfile
+.dockerignore

@@ -65,7 +65,8 @@ jobs:
 
       - name: Upload LCOV (if present)
         if: ${{ inputs.coverage == 'true' }}
-        uses: actions/upload-artifact@v4
+        # Pinned to specific commit SHA for supply-chain security
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: lcov-${{ matrix.service }}
           path: upload/${{ matrix.service }}/*
@@ -79,26 +80,16 @@ jobs:
     name: Merge LCOV reports and upload combined artifact
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        # Pinned to specific commit SHA for supply-chain security
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
 
-      - name: Download LCOV artifacts
-        uses: actions/download-artifact@v4
+      - name: Download all LCOV artifacts
+        # Pinned to specific commit SHA for supply-chain security
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
-          # download each per-service artifact we uploaded above
-          name: lcov-user-service
+          pattern: lcov-*
           path: ./artifacts
-
-      - name: Download LCOV for notification-service
-        uses: actions/download-artifact@v4
-        with:
-          name: lcov-notification-service
-          path: ./artifacts
-
-      - name: Download LCOV for chat-service
-        uses: actions/download-artifact@v4
-        with:
-          name: lcov-chat-service
-          path: ./artifacts
+          merge-multiple: true
 
       - name: Merge LCOV files
         run: |
@@ -139,7 +130,8 @@ jobs:
           fi
 
       - name: Upload combined LCOV
-        uses: actions/upload-artifact@v4
+        # Pinned to specific commit SHA for supply-chain security
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: combined-lcov
           path: coverage/combined-lcov.info

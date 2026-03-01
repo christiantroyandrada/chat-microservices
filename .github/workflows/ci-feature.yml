@@ -62,3 +62,8 @@ jobs:
     with:
       coverage: 'false'
     # No secrets required for feature-branch unit tests in this repo; add `secrets: inherit` if needed
+
+  integration-tests:
+    name: Integration Tests
+    needs: unit-tests
+    uses: ./.github/workflows/integration-tests.yml

@@ -1,10 +1,31 @@
 import admin from 'firebase-admin'
 import type { FCMMessagePayload } from '../types'
-import { logInfo, logError } from '../utils/logger'
+import { logInfo, logWarn, logError } from '../utils/logger'
 
-admin.initializeApp({
-  credential: admin.credential.applicationDefault(),
-})
+let firebaseInitialized = false
+
+/**
+ * Lazily initialize Firebase Admin SDK on first use.
+ * Returns true if Firebase is ready, false otherwise.
+ */
+function ensureFirebaseInitialized(): boolean {
+  if (firebaseInitialized) return true
+  if (!process.env.GOOGLE_APPLICATION_CREDENTIALS) {
+    logWarn('[FCMService] GOOGLE_APPLICATION_CREDENTIALS not set — push notifications disabled')
+    return false
+  }
+  try {
+    admin.initializeApp({
+      credential: admin.credential.applicationDefault(),
+    })
+    firebaseInitialized = true
+    logInfo('[FCMService] Firebase Admin SDK initialized')
+    return true
+  } catch (err) {
+    logError('[FCMService] Failed to initialize Firebase Admin SDK:', err)
+    return false
+  }
+}
 
 export const FCMService = {
   /**
@@ -13,6 +34,8 @@ export const FCMService = {
    * The visible `body` should never contain decrypted plaintext for E2EE messages.
    */
   sendPushNotification: async (token: string, message: string, data?: Record<string, string>) => {
+    if (!ensureFirebaseInitialized()) return
+
     const payload: FCMMessagePayload = {
       notification: {
         title: 'New Message',
