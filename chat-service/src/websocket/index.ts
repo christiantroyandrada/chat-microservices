@@ -5,6 +5,7 @@ import config from '../config/config'
 import type { TokenPayload } from '../types'
 import { registerSocketHandlers } from './socketHandler'
 import { logDebug, logError } from '../utils/logger'
+import { socketConnectionsActive } from '../utils/metrics'
 
 /**
  * Create and configure the Socket.IO server with JWT authentication
@@ -77,6 +78,12 @@ export function createSocketServer(httpServer: Server): SocketIOServer {
   // Register connection handler
   io.on('connection', (socket: Socket) => {
     logDebug('[chat-service] New client connected:', socket.id)
+    socketConnectionsActive.inc()
+
+    socket.on('disconnect', () => {
+      socketConnectionsActive.dec()
+    })
+
     registerSocketHandlers(io, socket)
   })
 
