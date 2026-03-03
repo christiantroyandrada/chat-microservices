@@ -39,6 +39,8 @@ class RabbitMQService {
 
     await this.channel.assertQueue(this.requestQueue)
     await this.channel.assertQueue(this.responseQueue)
+    // Assert notification queue once at connect — avoids redundant RPC per publish
+    await this.channel.assertQueue(config.queue.notifications)
 
     this.channel.consume(
       this.responseQueue,
@@ -133,7 +135,7 @@ class RabbitMQService {
         notificationPayload.envelope = envelope
       }
 
-      await this.channel.assertQueue(config.queue.notifications)
+      // Queue was asserted once during connect() — no need to re-assert per publish
       this.channel.sendToQueue(
         config.queue.notifications,
         Buffer.from(JSON.stringify(notificationPayload)),

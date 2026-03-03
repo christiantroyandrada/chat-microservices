@@ -24,6 +24,7 @@
     "express-validator": "^7.3.0",
     "helmet": "^7.0.0",
     "jsonwebtoken": "^9.0.2",
+    "lru-cache": "^11.2.6",
     "pg": "^8.17.2",
     "reflect-metadata": "^0.2.2",
     "socket.io": "^4.8.1",
@@ -31,7 +32,6 @@
     "uuid": "^13.0.0"
   },
   "devDependencies": {
-    "typescript": "^5.9.3",
     "@types/amqplib": "^0.10.8",
     "@types/cookie-parser": "^1.4.10",
     "@types/cors": "^2.8.17",
@@ -43,7 +43,8 @@
     "jest": "^30.2.0",
     "nodemon": "^3.1.10",
     "ts-jest": "^29.4.5",
-    "ts-node": "^10.9.2"
+    "ts-node": "^10.9.2",
+    "typescript": "^5.9.3"
   },
   "overrides": {
     "test-exclude": "7.0.1",

@@ -5,10 +5,27 @@ import { handleMessageReceived, UserStatusStore } from '../utils'
 import { logDebug, logInfo, logWarn, logError } from '../utils/logger'
 
 // Track active user connections (userId -> Set of socket IDs)
-const activeUsers = new Map<string, Set<string>>()
+let activeUsers = new Map<string, Set<string>>()
 
 // Track typing status with timeout (userId -> timeout reference)
-const typingTimeouts = new Map<string, NodeJS.Timeout>()
+let typingTimeouts = new Map<string, NodeJS.Timeout>()
+
+// V8 never shrinks Map capacity after deletions. Periodically rebuild
+// the Maps so freed memory is actually reclaimed. Runs every 5 minutes.
+const COMPACT_INTERVAL_MS = 5 * 60 * 1000
+setInterval(() => {
+  const newActiveUsers = new Map<string, Set<string>>()
+  activeUsers.forEach((sockets, userId) => {
+    if (sockets.size > 0) newActiveUsers.set(userId, sockets)
+  })
+  activeUsers = newActiveUsers
+
+  const newTypingTimeouts = new Map<string, NodeJS.Timeout>()
+  typingTimeouts.forEach((timeout, userId) => newTypingTimeouts.set(userId, timeout))
+  typingTimeouts = newTypingTimeouts
+
+  logDebug('[chat-service] Compacted presence Maps — activeUsers:', activeUsers.size, 'typingTimeouts:', typingTimeouts.size)
+}, COMPACT_INTERVAL_MS)
 
 // In-process status store for presence tracking
 const userStatusStore = UserStatusStore.getInstance()
@@ -58,12 +75,18 @@ function registerPresence(io: SocketIOServer, socket: Socket, userId: string): v
 }
 
 function sendInitialPresence(socket: Socket, userId: string): void {
+  // Send a single bulk payload instead of O(n) individual emits per user.
+  // With 10k online users, this reduces 10k emits to 1 emit per connection.
+  const onlineUserIds: string[] = []
   activeUsers.forEach((sockets, onlineUserId) => {
     if (onlineUserId !== userId && sockets.size > 0) {
-      socket.emit('presence', { userId: onlineUserId, online: true })
+      onlineUserIds.push(onlineUserId)
     }
   })
-  logDebug('[chat-service] Sent initial presence state to:', userId, 'for', activeUsers.size - 1, 'other users')
+  if (onlineUserIds.length > 0) {
+    socket.emit('presenceBulk', { onlineUserIds })
+  }
+  logDebug('[chat-service] Sent bulk initial presence to:', userId, 'count:', onlineUserIds.length)
 }
 
 function handleDisconnect(io: SocketIOServer, socket: Socket, userId: string | undefined): void {

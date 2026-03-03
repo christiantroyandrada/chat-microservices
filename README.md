@@ -42,7 +42,7 @@ cp docker-secrets/app_secrets.example docker-secrets/app_secrets
 docker compose up -d
 
 # Verify health
-curl http://localhost:85/health
+curl http://localhost:80/health
 ```
 
 ## 📁 Project Structure
@@ -95,7 +95,7 @@ cd notification-service && npm run test:unit
 | Component | Technology |
 |-----------|------------|
 | Runtime | Node.js 22 |
-| Language | TypeScript 5.4 |
+| Language | TypeScript 5.9 |
 | Framework | Express.js |
 | Database | PostgreSQL 17 + TypeORM |
 | Message Queue | RabbitMQ |

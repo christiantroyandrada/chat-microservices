@@ -4,6 +4,7 @@ import config from '../config/config'
 import { logInfo, logError } from '../utils/logger'
 import { Message } from './models/MessageModel'
 import { InitialSchema1733150000000 } from './migrations/1733150000000-InitialSchema'
+import { AddPerformanceIndexes1740000000000 } from './migrations/1740000000000-AddPerformanceIndexes'
 
 export const AppDataSource = new DataSource({
   type: 'postgres',
@@ -11,7 +12,7 @@ export const AppDataSource = new DataSource({
   synchronize: config.env === 'development', // Auto-sync in dev, use migrations in production
   logging: config.env === 'development',
   entities: [Message],
-  migrations: [InitialSchema1733150000000],
+  migrations: [InitialSchema1733150000000, AddPerformanceIndexes1740000000000],
   migrationsRun: false, // We run migrations explicitly before starting services
   migrationsTableName: 'typeorm_migrations',
   subscribers: [],
@@ -41,7 +42,7 @@ export const runMigrations = async () => {
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
       logInfo('[chat-service] Running database migrations...')
-      const migrations = await AppDataSource.runMigrations()
+      const migrations = await AppDataSource.runMigrations({ transaction: 'each' })
       if (migrations.length > 0) {
         logInfo(`[chat-service] ✅ Ran ${migrations.length} migration(s): ${migrations.map(m => m.name).join(', ')}`)
       } else {

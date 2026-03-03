@@ -19,7 +19,7 @@ class RabbitMQService {
   private connection!: ChannelModel
   private readonly fcmService = FCMService
   private readonly emailService = new SecureEmailService()
-  private readonly userStatusStore = new UserStatusStore()
+  private readonly userStatusStore = UserStatusStore.getInstance()
   private reconnectAttempts = 0
   private isReconnecting = false
 
