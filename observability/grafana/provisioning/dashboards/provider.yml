@@ -1,0 +1,12 @@
+apiVersion: 1
+
+providers:
+  - name: 'chat-app'
+    orgId: 1
+    folder: 'Chat App'
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    allowUiUpdates: true
+    options:
+      path: /etc/grafana/provisioning/dashboards

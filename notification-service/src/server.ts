@@ -9,6 +9,8 @@ import { rabbitMQService } from './services/RabbitMQService'
 import { logInfo, logWarn, logError } from './utils/logger'
 import { connectDB, runMigrations } from './database'
 import notificationRouter from './routes/notificationRoutes'
+import { requestLogger } from './middleware/requestLogger'
+import { getMetrics, getContentType } from './utils/metrics'
 
 // Validate required environment variables on startup
 const validateEnv = () => {
@@ -59,6 +61,19 @@ app.use(cors({
 
 // Basic HTTP hardening (applied after CORS)
 app.use(helmet())
+
+// ── Observability ────────────────────────────────────────────────────────────
+app.use(requestLogger)
+
+app.get('/metrics', async (_req, res) => {
+  try {
+    res.set('Content-Type', getContentType())
+    res.end(await getMetrics())
+  } catch (err) {
+    logError('[notification-service] Failed to collect metrics:', err)
+    res.status(500).end()
+  }
+})
 
 // Limit body size
 app.use(express.json({ limit: '100kb' }))

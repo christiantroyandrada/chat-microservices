@@ -1,0 +1,33 @@
+global:
+  scrape_interval: 15s       # How often to scrape targets
+  scrape_timeout: 10s        # Per-scrape timeout
+  evaluation_interval: 15s   # How often to evaluate rules
+
+# Scrape configs — all targets are on the internal Docker network.
+# These ports are NOT exposed via nginx, so metrics are never public.
+scrape_configs:
+
+  - job_name: 'user-service'
+    static_configs:
+      - targets: ['user:8081']
+    metrics_path: '/metrics'
+
+  - job_name: 'chat-service'
+    static_configs:
+      - targets: ['chat:8082']
+    metrics_path: '/metrics'
+
+  - job_name: 'notification-service'
+    static_configs:
+      - targets: ['notification:8083']
+    metrics_path: '/metrics'
+
+  - job_name: 'frontend'
+    static_configs:
+      - targets: ['frontend:3000']
+    metrics_path: '/metrics'
+
+  # Prometheus self-monitoring
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']

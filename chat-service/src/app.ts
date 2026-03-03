@@ -6,7 +6,9 @@ import rateLimit from 'express-rate-limit'
 import cookieParser from 'cookie-parser'
 import chatServiceRouter from './routes/messageRoutes'
 import { errorMiddleware, errorHandler } from './middleware'
+import { requestLogger } from './middleware/requestLogger'
 import { logError } from './utils/logger'
+import { getMetrics, getContentType } from './utils/metrics'
 import { rabbitMQService } from './services/RabbitMQService'
 import { AppDataSource } from './database/connection'
 
@@ -38,6 +40,24 @@ app.use(cors({
 }))
 
 app.use(helmet())
+
+// ── Observability ────────────────────────────────────────────────────────────
+// Request ID + HTTP access log + Prometheus counter/histogram
+app.use(requestLogger)
+
+// Prometheus metrics — only reachable within the Docker network (nginx blocks
+// public access to /chat/metrics). No auth needed inside the private network.
+// Not rate-limited intentionally: Docker/Prometheus scrape this on schedule;
+// rate-limiting would break orchestration.
+app.get('/metrics', async (_req, res) => {
+  try {
+    res.set('Content-Type', getContentType())
+    res.end(await getMetrics())
+  } catch (err) {
+    logError('[chat-service] Failed to collect metrics:', err)
+    res.status(500).end()
+  }
+})
 
 app.get('/health', async (req, res) => {
 	const checks: Record<string, boolean> = {

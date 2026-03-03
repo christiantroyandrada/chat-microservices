@@ -83,6 +83,7 @@ SMTP_PASS=${SMTP_PASS}
 SENDINBLUE_APIKEY=${SENDINBLUE_APIKEY}
 EMAIL_FROM=notifications@example.com
 NOTIFICATIONS_QUEUE=NOTIFICATIONS
+GRAFANA_PASSWORD=${GRAFANA_PASSWORD:-admin}
 EOF
     chmod 600 docker-secrets/app_secrets || true
     echo "✅ Wrote docker-secrets/app_secrets with all required configuration"

@@ -7,10 +7,12 @@ import cookieParser from 'cookie-parser'
 import { Server } from 'node:http'
 import userServiceRouter from './routes/userServiceRouter'
 import { errorMiddleware, errorHandler } from './middleware'
+import { requestLogger } from './middleware/requestLogger'
 import { connectDB, runMigrations } from './database'
 import config from './config/config'
 import { rabbitMQService } from './services/RabbitMQService'
 import { logInfo, logWarn, logError } from './utils/logger'
+import { getMetrics, getContentType } from './utils/metrics'
 
 // Validate required environment variables on startup
 const validateEnv = () => {
@@ -85,6 +87,19 @@ app.get('/health', async (_req, res) => {
 })
 
 app.use(helmet())
+
+// ── Observability ────────────────────────────────────────────────────────────
+app.use(requestLogger)
+
+app.get('/metrics', async (_req, res) => {
+  try {
+    res.set('Content-Type', getContentType())
+    res.end(await getMetrics())
+  } catch (err) {
+    logError('[user-service] Failed to collect metrics:', err)
+    res.status(500).end()
+  }
+})
 
 app.use(cookieParser())
 

@@ -240,7 +240,65 @@ services:
       driver: "json-file"
       options: { max-size: "10m", max-file: "3" }
 
+  # ── Observability stack ────────────────────────────────────────────────────
+  # Opt-in profile — does NOT start by default.
+  # Start with:  docker compose --profile observability up -d
+  # Access via SSH tunnel:
+  #   ssh -L 3001:localhost:3001 -L 9090:localhost:9090 vps
+  #   Grafana    → http://localhost:3001  (admin / ${GRAFANA_PASSWORD:-admin})
+  #   Prometheus → http://localhost:9090
+  # RAM budget: ~100 MB (Prometheus) + ~150 MB (Grafana) = ~250 MB total.
+  # ──────────────────────────────────────────────────────────────────────────
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    profiles: [observability]
+    restart: unless-stopped
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=7d'
+      - '--web.enable-lifecycle'
+    volumes:
+      - ./observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    ports:
+      - "127.0.0.1:9090:9090"   # Localhost-only — access via SSH tunnel
+    depends_on:
+      user:
+        condition: service_healthy
+      chat:
+        condition: service_healthy
+      notification:
+        condition: service_healthy
+    logging:
+      driver: "json-file"
+      options: { max-size: "10m", max-file: "3" }
+
+  grafana:
+    image: grafana/grafana:11.4.0
+    profiles: [observability]
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: 'false'
+      GF_ANALYTICS_REPORTING_ENABLED: 'false'
+      GF_ANALYTICS_CHECK_FOR_UPDATES: 'false'
+      GF_INSTALL_PLUGINS: ''
+    volumes:
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - grafana-data:/var/lib/grafana
+    ports:
+      - "127.0.0.1:3001:3000"   # Localhost-only — access via SSH tunnel
+    depends_on:
+      - prometheus
+    logging:
+      driver: "json-file"
+      options: { max-size: "10m", max-file: "3" }
+
 volumes:
   postgres-data:
   pgadmin-data:
   rabbitmq-data:
+  prometheus-data:
+  grafana-data:

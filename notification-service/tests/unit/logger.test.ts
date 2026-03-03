@@ -60,16 +60,15 @@ describe('logger utilities (notification-service)', () => {
     jest.resetModules()
     const logger = require('../../src/utils/logger')
     const sdebug = jest.spyOn(console, 'debug').mockImplementation(() => {})
-    const sprint = jest.spyOn(console, 'log').mockImplementation(() => {})
-    const swarn = jest.spyOn(console, 'warn').mockImplementation(() => {})
-    const serr = jest.spyOn(console, 'error').mockImplementation(() => {})
+    // Production: logInfo → process.stdout.write (JSON), logWarn/logError → process.stderr.write
+    const sout = jest.spyOn(process.stdout, 'write').mockImplementation(() => true)
+    const serr = jest.spyOn(process.stderr, 'write').mockImplementation(() => true)
     logger.logDebug('x')
     logger.logInfo('x')
     logger.logWarn('x')
     logger.logError('x')
     expect(sdebug).not.toHaveBeenCalled()
-    expect(sprint).toHaveBeenCalled()
-    expect(swarn).toHaveBeenCalled()
-    expect(serr).toHaveBeenCalled()
+    expect(sout).toHaveBeenCalled()          // logInfo emits JSON to stdout
+    expect(serr).toHaveBeenCalledTimes(2)    // logWarn + logError emit JSON to stderr
   })
 })

@@ -3,6 +3,57 @@ import util from 'node:util'
 
 const IS_NON_PROD = process.env.NODE_ENV !== 'production'
 
+const SERVICE_NAME = process.env.npm_package_name ?? 'user-service'
+
+/**
+ * Safely serialize an unknown value to a JSON-compatible form.
+ * Errors get { message, stack }; objects get deep-cloned via structuredClone;
+ * primitives pass through unchanged.
+ *
+ * Fallback strategy when cloning an object:
+ *   1. structuredClone available + succeeds  → return the clone
+ *   2. structuredClone available but throws  → return original (uncloned) object
+ *   3. structuredClone not available         → return bounded util.inspect() string
+ */
+function serializeArg(arg: unknown): unknown {
+  if (arg instanceof Error) return { message: arg.message, stack: arg.stack }
+  if (typeof arg === 'object' && arg !== null) {
+    const sc = (globalThis as { structuredClone?: typeof structuredClone }).structuredClone
+    if (typeof sc === 'function') {
+      try { return sc(arg) } catch { /* fall through to return original below */ }
+      return arg  // structuredClone threw — return original object unmodified
+    }
+    // structuredClone unavailable — bounded string representation (depth:3 avoids OOM on huge objects)
+    return util.inspect(arg, { depth: 3 })
+  }
+  return arg
+}
+
+function buildJsonEntry(level: string, caller: string, args: unknown[]): string {
+  const ts = new Date().toISOString()
+  const base = { level, ts, service: SERVICE_NAME, caller }
+
+  if (
+    args.length === 1 &&
+    typeof args[0] === 'object' &&
+    args[0] !== null &&
+    !(args[0] instanceof Error)
+  ) {
+    try {
+      return JSON.stringify({ ...base, ...(serializeArg(args[0]) as Record<string, unknown>) })
+    } catch { /* fall through */ }
+  }
+
+  const msg = args
+    .map(a => (typeof a === 'string' ? a : JSON.stringify(serializeArg(a))))
+    .join(' ')
+  try {
+    return JSON.stringify({ ...base, msg })
+  } catch {
+    return JSON.stringify({ ...base, msg: String(args) })
+  }
+}
+
 function getCallerContext(): string {
   try {
     const err = new Error('getCallerContext stack')
@@ -73,25 +124,7 @@ function getCallerContext(): string {
 }
 
 function formatArg(arg: unknown): unknown {
-  if (arg instanceof Error) return { message: arg.message, stack: arg.stack }
-  if (typeof arg === 'object' && arg !== null) {
-    try {
-      // Prefer structuredClone when available (native deep clone). Some
-      // runtimes may not implement it or it may throw for certain inputs
-      const sc = (globalThis).structuredClone
-      if (typeof sc === 'function') {
-        try {
-          return sc(arg)
-        } catch {
-          // structuredClone failed for this value; fall through
-        }
-      }
-    } catch {
-      // Fall back to util.inspect so objects are displayed readably
-      return util.inspect(arg, { depth: null })
-    }
-  }
-  return arg
+  return serializeArg(arg)
 }
 
 export function logDebug(...args: unknown[]) {
@@ -101,31 +134,29 @@ export function logDebug(...args: unknown[]) {
 }
 
 export function logInfo(...args: unknown[]) {
-  // In production: emit structured log without expensive caller context
+  const caller = getCallerContext()
   if (!IS_NON_PROD) {
-    console.log('[INFO]', ...args.map(formatArg))
+    process.stdout.write(buildJsonEntry('info', caller, args) + '\n')
     return
   }
-  const caller = getCallerContext()
   console.log('[INFO]', caller, ...args.map(formatArg))
 }
 
 export function logWarn(...args: unknown[]) {
+  const caller = getCallerContext()
   if (!IS_NON_PROD) {
-    console.warn('[WARN]', ...args.map(formatArg))
+    process.stderr.write(buildJsonEntry('warn', caller, args) + '\n')
     return
   }
-  const caller = getCallerContext()
   console.warn('[WARN]', caller, ...args.map(formatArg))
 }
 
 export function logError(...args: unknown[]) {
-  // Errors must ALWAYS be logged, even in production
+  const caller = getCallerContext()
   if (!IS_NON_PROD) {
-    console.error('[ERROR]', ...args.map(formatArg))
+    process.stderr.write(buildJsonEntry('error', caller, args) + '\n')
     return
   }
-  const caller = getCallerContext()
   console.error('[ERROR]', caller, ...args.map(formatArg))
 }
 
