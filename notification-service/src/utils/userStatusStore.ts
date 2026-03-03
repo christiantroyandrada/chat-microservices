@@ -1,9 +1,9 @@
 export class UserStatusStore {
   private static instance: UserStatusStore
-  private userStatus: Record<string, boolean>
+  private onlineUsers: Set<string>
 
-  constructor() {
-    this.userStatus = {}
+  private constructor() {
+    this.onlineUsers = new Set()
   }
 
   public static getInstance(): UserStatusStore {
@@ -14,14 +14,15 @@ export class UserStatusStore {
   }
 
   setUserOnline(userId: string) {
-    this.userStatus[userId] = true
+    this.onlineUsers.add(userId)
   }
 
   setUserOffline(userId: string) {
-    this.userStatus[userId] = false
+    // Delete instead of storing false — prevents unbounded memory growth
+    this.onlineUsers.delete(userId)
   }
 
   isUserOnline(userId: string): boolean {
-    return !!this.userStatus[userId]
+    return this.onlineUsers.has(userId)
   }
 }

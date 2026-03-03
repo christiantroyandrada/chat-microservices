@@ -15,6 +15,9 @@ jobs:
     name: Unit tests - ${{ matrix.service }}
     runs-on: ubuntu-latest
     strategy:
+      # Run all 3 service test suites even if one fails — gives complete visibility
+      # into the full test health of the repo on every push.
+      fail-fast: false
       matrix:
         service: ["user-service", "notification-service", "chat-service"]
     steps:

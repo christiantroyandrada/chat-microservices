@@ -4,7 +4,7 @@ import type { Channel, ConsumeMessage } from 'amqplib'
 import { FCMService } from '../FCMService'
 import { SecureEmailService } from '../SecureEmailService'
 import { UserStatusStore } from '../../utils'
-import { loadTemplate, renderTemplate, loadLogoDataUri, loadLogoAttachment } from '../EmailTemplateService'
+import { loadTemplate, renderTemplate } from '../EmailTemplateService'
 import config from '../../config/config'
 import { logError } from '../../utils/logger'
 
@@ -48,13 +48,10 @@ export async function handleMessageReceived (payload: any, msg: ConsumeMessage, 
     const messageTpl = loadTemplate('message.html')
     const sendEmail = async () => {
       const emailBody = isEncrypted ? 'You have a new encrypted message. Open the app to view it.' : (message || '')
-      const logoAttachment = loadLogoAttachment()
 
       // Hard-coded public logo URL (preferred). This ensures mail clients fetch the image over HTTPS.
       const LOGO_URL = 'https://res.cloudinary.com/dpqt9h7cn/image/upload/v1764081536/logo_blqxwc.png'
-      // Prefer the public URL and do not attach inline image when using the hosted logo.
       const logoSrc = LOGO_URL
-      const attachments: { filename: string; contentBase64: string; cid?: string }[] | undefined = undefined
 
       const html = renderTemplate(messageTpl, {
         TITLE: `New message from ${fromName || 'Unknown'}`,
@@ -65,7 +62,7 @@ export async function handleMessageReceived (payload: any, msg: ConsumeMessage, 
         LOGO_DATA_URI: logoSrc,
       })
 
-      await emailService.sendEmail(userEmail, `New message from ${fromName || 'Unknown'}`, html, attachments)
+      await emailService.sendEmail(userEmail, `New message from ${fromName || 'Unknown'}`, html)
     }
 
     if (online && userToken) {

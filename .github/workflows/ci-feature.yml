@@ -11,43 +11,34 @@ on:
 
 jobs:
   build:
-    name: Build services
+    name: Build — ${{ matrix.service }}
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
-        node-version: [22.x]
+        service: [user-service, chat-service, notification-service]
 
     steps:
       - name: Checkout
         # Pinned to specific commit SHA for supply-chain security
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
 
-      - name: Use Node.js ${{ matrix.node-version }}
+      - name: Use Node.js 22
         # Pinned to specific commit SHA for supply-chain security
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
-          node-version: ${{ matrix.node-version }}
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: '${{ matrix.service }}/package-lock.json'
 
-      - name: Build user-service
-        working-directory: ./user-service
-        run: |
-          npm ci
-          npm run build
-
-      - name: Build chat-service
-        working-directory: ./chat-service
-        run: |
-          npm ci
-          npm run build
-
-      - name: Build notification-service
-        working-directory: ./notification-service
+      - name: Build ${{ matrix.service }}
+        working-directory: ./${{ matrix.service }}
         run: |
           npm ci
           npm run build
 
       - name: Summary
-        run: echo "Feature branch build completed successfully"
+        run: echo "${{ matrix.service }} build completed successfully"
 
   typescript-check:
     name: TypeScript Type Check

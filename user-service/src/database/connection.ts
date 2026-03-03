@@ -5,6 +5,7 @@ import { logInfo, logError } from '../utils/logger'
 import { User } from './models/UserModel'
 import { Prekey } from './models/PrekeyModel'
 import { InitialSchema1733150000000 } from './migrations/1733150000000-InitialSchema'
+import { AddTrigramSearchIndexes1740000000000 } from './migrations/1740000000000-AddTrigramSearchIndexes'
 
 export const AppDataSource = new DataSource({
   type: 'postgres',
@@ -12,7 +13,7 @@ export const AppDataSource = new DataSource({
   synchronize: config.env === 'development', // Auto-sync in dev, use migrations in production
   logging: config.env === 'development',
   entities: [User, Prekey],
-  migrations: [InitialSchema1733150000000],
+  migrations: [InitialSchema1733150000000, AddTrigramSearchIndexes1740000000000],
   migrationsRun: false, // We run migrations explicitly before starting services
   migrationsTableName: 'typeorm_migrations',
   subscribers: [],
@@ -42,7 +43,7 @@ export const runMigrations = async () => {
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
       logInfo('[user-service] Running database migrations...')
-      const migrations = await AppDataSource.runMigrations()
+      const migrations = await AppDataSource.runMigrations({ transaction: 'each' })
       if (migrations.length > 0) {
         logInfo(`[user-service] ✅ Ran ${migrations.length} migration(s): ${migrations.map(m => m.name).join(', ')}`)
       } else {
