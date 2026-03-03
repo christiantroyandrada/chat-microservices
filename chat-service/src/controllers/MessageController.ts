@@ -1,4 +1,5 @@
 import { Response, Request } from 'express'
+import { LRUCache } from 'lru-cache'
 import type { ConversationRow } from '../types'
 import { AuthenticatedRequest } from '../middleware'
 import { Message, AppDataSource } from '../database'
@@ -6,18 +7,24 @@ import { APIError, handleMessageReceived } from '../utils'
 import { logWarn, logError } from '../utils/logger'
 import { MessageStatus } from '../database/models/MessageModel'
 
-// Helper to fetch user details from user service with caching
-// Simple in-memory cache with TTL to avoid N+1 HTTP calls per conversation load
-const userDetailCache = new Map<string, { data: { username?: string } | null; expiresAt: number }>()
+// LRU cache for user details — bounded to 500 entries with 60s TTL.
+// Prevents unbounded memory growth from the old Map<string, ...> approach
+// while still avoiding N+1 HTTP calls per conversation load.
+// We wrap values in { data: ... } because LRU cache does not store null directly.
 const USER_CACHE_TTL_MS = 60_000 // 1 minute TTL
+type CachedUserDetail = { data: { username?: string } | null }
+const userDetailCache = new LRUCache<string, CachedUserDetail>({
+  max: 500,
+  ttl: USER_CACHE_TTL_MS,
+})
 
 /** Clear the user detail cache — exposed for testing */
 export const clearUserDetailCache = () => userDetailCache.clear()
 
 const fetchUserDetails = async (userId: string, jwtToken?: string): Promise<{ username?: string } | null> => {
-  // Check cache first
+  // LRU cache handles TTL expiration automatically
   const cached = userDetailCache.get(userId)
-  if (cached && cached.expiresAt > Date.now()) {
+  if (cached !== undefined) {
     return cached.data
   }
 
@@ -38,8 +45,8 @@ const fetchUserDetails = async (userId: string, jwtToken?: string): Promise<{ us
     const data = await response.json()
     const result = data?.data || data || null
 
-    // Store in cache
-    userDetailCache.set(userId, { data: result, expiresAt: Date.now() + USER_CACHE_TTL_MS })
+    // Store in LRU cache (TTL managed by lru-cache)
+    userDetailCache.set(userId, { data: result })
 
     return result
   } catch (error) {
@@ -58,7 +65,7 @@ const fetchUserDetailsBatch = async (userIds: string[], jwtToken?: string): Prom
 
   for (const id of userIds) {
     const cached = userDetailCache.get(id)
-    if (cached && cached.expiresAt > Date.now()) {
+    if (cached !== undefined) {
       results.set(id, cached.data)
     } else {
       uncached.push(id)
@@ -229,26 +236,36 @@ const getConversations = async (
     
     const messageRepo = AppDataSource.getRepository(Message)
     
-    // Get all unique conversation partners with their last messages using SQL
+    // Get all unique conversation partners with their last messages using SQL.
+    // Uses UNION ALL instead of OR to let Postgres use individual B-tree indexes
+    // on senderId and receiverId instead of a bitmap union scan.
     const conversationsRaw = await messageRepo.query(`
-      WITH ranked_messages AS (
-        SELECT 
-          CASE 
-            WHEN "senderId" = $1 THEN "receiverId"
-            ELSE "senderId"
-          END as "userId",
-          "senderId" as "lastMessageSenderId",
-          message as "lastMessage",
-          "createdAt" as "lastMessageTime",
-          ROW_NUMBER() OVER (
-            PARTITION BY CASE 
-              WHEN "senderId" = $1 THEN "receiverId"
-              ELSE "senderId"
-            END 
-            ORDER BY "createdAt" DESC
-          ) as rn
+      WITH all_messages AS (
+        SELECT "receiverId" as "userId",
+               "senderId" as "lastMessageSenderId",
+               message as "lastMessage",
+               "createdAt" as "lastMessageTime"
         FROM messages
-        WHERE "senderId" = $1 OR "receiverId" = $1
+        WHERE "senderId" = $1
+        UNION ALL
+        SELECT "senderId" as "userId",
+               "senderId" as "lastMessageSenderId",
+               message as "lastMessage",
+               "createdAt" as "lastMessageTime"
+        FROM messages
+        WHERE "receiverId" = $1
+      ),
+      ranked_messages AS (
+        SELECT
+          "userId",
+          "lastMessageSenderId",
+          "lastMessage",
+          "lastMessageTime",
+          ROW_NUMBER() OVER (
+            PARTITION BY "userId"
+            ORDER BY "lastMessageTime" DESC
+          ) as rn
+        FROM all_messages
       ),
       unread_counts AS (
         SELECT 

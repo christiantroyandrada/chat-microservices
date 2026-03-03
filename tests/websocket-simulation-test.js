@@ -214,8 +214,14 @@ async function main() {
     const freshSocket = connectSocket(charlieToken);
     const initialPresences = [];
 
-    // Collect all presence events within first 2 seconds
+    // Collect individual 'presence' events (legacy) AND expand 'presenceBulk' events
+    // (performance optimization: server sends one bulk payload instead of N individual emits)
     freshSocket.on('presence', (data) => initialPresences.push(data));
+    freshSocket.on('presenceBulk', (data) => {
+      if (Array.isArray(data.onlineUserIds)) {
+        data.onlineUserIds.forEach(uid => initialPresences.push({ userId: uid, online: true }));
+      }
+    });
     await waitForConnect(freshSocket);
     await sleep(2000);
 

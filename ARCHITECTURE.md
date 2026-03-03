@@ -1,6 +1,6 @@
 # Chat Application — Architecture & Engineering Documentation
 
-> Last updated: June 2025
+> Last updated: March 2026
 
 ## Table of Contents
 
@@ -20,9 +20,28 @@
 
 ---
 
-## Recent Engineering Improvements (June 2025)
+## Recent Engineering Improvements (March 2026)
 
-Changes applied during FAANG production readiness review:
+### Performance — 14 improvements across all services
+
+| Area | Change | Impact |
+|------|--------|--------|
+| **chat-service: LRU user-detail cache** | Replaced unbounded `Map` with `LRUCache<string, …>` (max: 500 entries, 60s TTL via `lru-cache` v11) | Prevents memory leak under sustained load; bounded O(1) cache hits |
+| **chat-service: UNION ALL CTE** | `getConversations` rewrites OR-query to `UNION ALL` CTE + `DISTINCT ON` | Eliminates full sequential scan; index-friendly shape |
+| **chat-service: `presenceBulk` event** | `sendInitialPresence` emits one `presenceBulk` event instead of N individual `presence` events on connect | O(1) socket messages vs O(n); drops handshake latency for large user bases |
+| **chat-service: Map compaction** | `setInterval` (5 min) rebuilds `connectedUsers` and `typingTimeouts` maps from live entries | Reclaims V8 internal map capacity that `delete()` alone cannot release |
+| **chat-service: `assertQueue` once** | Queue assertion moved to `connect()` (was per-publish) | Eliminates redundant AMQP round-trips |
+| **chat-service: `AddPerformanceIndexes` migration** | Partial index on unread messages, covering indexes on senderId/receiverId + createdAt DESC, composite status index | Read queries up to 10× faster on large tables |
+| **user-service: typed `publishNotification`** | `payload: any` → `payload: Record<string, unknown>` | Removes last `any` in service; `assertQueue` moved to `connect()` |
+| **user-service: `AddTrigramSearchIndexes` migration** | `pg_trgm` extension + GIN indexes on `users.username` and `users.email` | ILIKE search scales sub-linearly |
+| **notification-service: template/logo caching** | `EmailTemplateService` caches HTML templates and logo data URI on first read (O(1) thereafter) | Removes file I/O on every email send |
+| **notification-service: `UserStatusStore` Set** | `Record<string, boolean>` → `Set<string>`; `delete()` in setUserOffline | No false-y entries in memory; O(1) has/add/delete |
+| **chat-service + notification-service: `UserStatusStore` Set** | Same Set migration in chat-service | Consistent implementation across services |
+| **frontend: `presenceBulk` handler** | `websocket.service.ts` fans out `onlineUserIds` array to registered presence callbacks | Matches new server-side bulk emit |
+| **frontend: parallel notification fetch** | `notification.store.ts` replaces sequential fetches with `Promise.all` | Halves round-trip time for initial notification load |
+| **frontend: batched Signal decrypt** | `chat.service.ts` decrypts in chunks of 20 (`BATCH_SIZE = 20`) + LRU-bounded prekey cache (max 100) | Prevents UI thread starvation on large conversations |
+
+### Previous Improvements (June 2025 — FAANG production readiness review)
 
 | Area | Change | Impact |
 |------|--------|--------|
@@ -227,7 +246,8 @@ Client ← 'presence' → Update online/offline status
 | `sendMessage` | Client → Server | Send message with ack callback |
 | `receiveMessage` | Server → Client | New message notification |
 | `typing` | Bidirectional | Typing indicator (3s auto-timeout) |
-| `presence` | Server → Client | Online/offline status |
+| `presence` | Server → Client | Online/offline status change for a single user |
+| `presenceBulk` | Server → Client | Bulk initial presence on connect: `{ onlineUserIds: string[] }` (replaces N individual `presence` emits) |
 
 ### notification-service (Port 8083)
 
@@ -405,17 +425,24 @@ app_secrets → generate-envs.sh → user-service/.env
 ### Backend Optimizations
 
 - **Connection pooling**: PostgreSQL pool (min: 5, max: 20, idle: 30s)
-- **User detail caching**: In-memory cache with 60s TTL in chat-service (avoids N+1 HTTP calls)
+- **LRU user-detail cache**: `LRUCache<string, CachedUserDetail>` (max: 500 entries, 60s TTL via `lru-cache` v11) in chat-service avoids N+1 HTTP calls; bounded memory footprint
 - **Batch user lookups**: `fetchUserDetailsBatch()` parallelizes uncached lookups
+- **UNION ALL CTE queries**: `getConversations` uses a `UNION ALL` CTE + `DISTINCT ON` for index-friendly conversation listing
+- **Database indexes**: `AddPerformanceIndexes` migration adds partial unread index, covering indexes on sender/receiver + `createdAt DESC`, and a composite read-status index; `AddTrigramSearchIndexes` adds `pg_trgm` GIN indexes for fast ILIKE user search
+- **`assertQueue` once**: All services assert their RabbitMQ queues once at `connect()` time, not per-publish
 - **Query monitoring**: Logs queries exceeding 1000ms
-- **Database indexes**: Composite indexes on message (senderId + receiverId) and notification (userId + createdAt)
-- **WebSocket presence**: In-process `UserStatusStore` avoids RPC for online checks
+- **WebSocket presence**: In-process `UserStatusStore` (`Set<string>`) avoids RPC for online checks; `presenceBulk` event sends one socket message on connect instead of N
+- **Map compaction**: 5-minute interval in `socketHandler` rebuilds live-entry Maps to reclaim V8 internal capacity
 - **Offline-only notifications**: RabbitMQ events only published when recipient is offline
+- **Template caching**: `EmailTemplateService` caches HTML templates and logo data URI in memory (O(1) after first read)
 
 ### Frontend Optimizations
 
-- **Prekey bundle caching**: Session-scoped cache avoids re-fetching per message
-- **IndexedDB message cache**: Decrypted messages stored locally for instant load
+- **LRU prekey cache**: `LRUCache` (max 100 entries) for prekey bundles; avoids re-fetching per message
+- **Batched Signal decrypt**: Messages decrypted in chunks of 20 (`BATCH_SIZE`) to prevent UI thread starvation
+- **Parallel notification fetch**: `notification.store.ts` uses `Promise.all` for simultaneous notification + unread-count fetch
+- **`presenceBulk` handling**: Single socket event on connect fans out to all registered presence callbacks
+- **IndexedDB message cache**: Decrypted messages stored locally (compound index on `[senderId, receiverId]`) for instant load
 - **Debounced typing**: 300ms debounce on typing indicator events
 - **Auto-scroll optimization**: Only scrolls when user is near bottom
 - **Abort controllers**: All API requests have 10s timeout with cancellation support

@@ -6,11 +6,13 @@ import {
   renderTemplate,
   loadLogoDataUri,
   loadLogoAttachment,
+  clearTemplateCaches,
 } from '../../src/services/EmailTemplateService'
 
 describe('EmailTemplateService', () => {
   afterEach(() => {
     jest.restoreAllMocks()
+    clearTemplateCaches()
   })
 
   test('renderTemplate replaces placeholders', () => {

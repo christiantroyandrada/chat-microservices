@@ -20,52 +20,40 @@ env:
 
 jobs:
   build:
-    name: Build & Audit
+    name: Build & Audit — ${{ matrix.service }}
     runs-on: ubuntu-latest
     strategy:
+      # All 3 services build in parallel; fail-fast: false so audit results are
+      # always visible even if one service fails to compile.
+      fail-fast: false
       matrix:
-        node-version: [22.x]
+        service: [user-service, chat-service, notification-service]
 
     steps:
       - name: Checkout
         # Pinned to specific commit SHA for supply-chain security
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
 
-      - name: Use Node.js ${{ matrix.node-version }}
+      - name: Use Node.js 22
         # Pinned to specific commit SHA for supply-chain security
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
-          node-version: ${{ matrix.node-version }}
+          node-version: '22'
+          # Cache the npm store keyed per service so each matrix job gets its
+          # own cache bucket (cache-dependency-path drives the cache key).
+          cache: 'npm'
+          cache-dependency-path: '${{ matrix.service }}/package-lock.json'
 
-      - name: Build user-service
-        working-directory: ./user-service
+      - name: Build ${{ matrix.service }}
+        working-directory: ./${{ matrix.service }}
         run: |
           npm ci
           npm run build
 
-      - name: Build chat-service
-        working-directory: ./chat-service
-        run: |
-          npm ci
-          npm run build
-
-      - name: Build notification-service
-        working-directory: ./notification-service
-        run: |
-          npm ci
-          npm run build
-
-      - name: Audit user-service
+      - name: Audit ${{ matrix.service }}
         continue-on-error: true
-        run: npm audit --prefix user-service --audit-level=moderate
-
-      - name: Audit chat-service
-        continue-on-error: true
-        run: npm audit --prefix chat-service --audit-level=moderate
-
-      - name: Audit notification-service
-        continue-on-error: true
-        run: npm audit --prefix notification-service --audit-level=moderate
+        working-directory: ./${{ matrix.service }}
+        run: npm audit --audit-level=moderate
 
   typescript-check:
     name: TypeScript Type Check

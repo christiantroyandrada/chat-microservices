@@ -1,12 +1,22 @@
 import fs from 'fs'
 import path from 'path'
-import { logError } from '../utils/logger'
+import { logError, logInfo } from '../utils/logger'
+
+// ── In-memory template cache ────────────────────────────────────────
+// Templates are static files that never change at runtime. Reading them
+// from disk on every notification is unnecessary sync I/O that blocks the
+// event loop. We cache on first read so subsequent calls are O(1) lookups.
+const templateCache = new Map<string, string>()
 
 /**
- * Load an HTML template from disk. Tries multiple candidate locations so
- * the function works both from the source tree and from the built image.
+ * Load an HTML template from disk (cached after first read).
+ * Tries multiple candidate locations so the function works both from the
+ * source tree and from the built image.
  */
 export function loadTemplate (name: string): string {
+  const cached = templateCache.get(name)
+  if (cached !== undefined) return cached
+
   try {
     const candidates = [
       path.join(__dirname, '..', 'templates', name), // build/src/templates
@@ -16,7 +26,10 @@ export function loadTemplate (name: string): string {
 
     for (const p of candidates) {
       if (fs.existsSync(p)) {
-        return fs.readFileSync(p, 'utf8')
+        const content = fs.readFileSync(p, 'utf8')
+        templateCache.set(name, content)
+        logInfo(`[notification-service] cached template: ${name}`)
+        return content
       }
     }
 
@@ -37,11 +50,27 @@ export function renderTemplate (tpl: string, vars: Record<string, string>): stri
   })
 }
 
+// ── In-memory logo caches ───────────────────────────────────────────
+let cachedLogoDataUri: string | null = null
+let cachedLogoAttachment: { filename: string; contentBase64: string; cid: string } | null | undefined
+
+/**
+ * Clear all in-memory caches. Exposed for testing so tests can reset
+ * state between runs without module re-imports.
+ */
+export function clearTemplateCaches (): void {
+  templateCache.clear()
+  cachedLogoDataUri = null
+  cachedLogoAttachment = undefined
+}
+
 /**
  * Load a logo (PNG preferred) and return a data URI. Supports pre-encoded
  * .b64 files as well as raw PNG files; falls back to a small SVG data URI.
+ * Cached after first call — the logo never changes at runtime.
  */
 export function loadLogoDataUri (): string {
+  if (cachedLogoDataUri !== null) return cachedLogoDataUri
   try {
     const candidates = [
       path.join(__dirname, '..', 'templates', 'logo.png.b64'),
@@ -54,18 +83,22 @@ export function loadLogoDataUri (): string {
       if (fs.existsSync(p)) {
         if (p.endsWith('.b64')) {
           const b64 = fs.readFileSync(p, 'utf8').trim()
-          return `data:image/png;base64,${b64}`
+          cachedLogoDataUri = `data:image/png;base64,${b64}`
+          return cachedLogoDataUri
         }
 
         const bin = fs.readFileSync(p)
-        return `data:image/png;base64,${bin.toString('base64')}`
+        cachedLogoDataUri = `data:image/png;base64,${bin.toString('base64')}`
+        return cachedLogoDataUri
       }
     }
 
     const svg = `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path d='M21 15a2 2 0 0 1-2 2H8l-4 4V5a2 2 0 0 1 2-2h13a2 2 0 0 1 2 2z' fill='%23ffffff'/></svg>`
-    return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`
+    cachedLogoDataUri = `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`
+    return cachedLogoDataUri
   } catch (e) {
     logError('[notification-service] failed to load logo data uri', e)
+    cachedLogoDataUri = ''
     return ''
   }
 }
@@ -73,8 +106,10 @@ export function loadLogoDataUri (): string {
 /**
  * Load the raw logo as a base64 attachment suitable for SMTP/Brevo.
  * Returns an object with filename, contentBase64 and a stable cid.
+ * Cached after first call — the logo never changes at runtime.
  */
 export function loadLogoAttachment (): { filename: string; contentBase64: string; cid: string } | null {
+  if (cachedLogoAttachment !== undefined) return cachedLogoAttachment
   try {
     const candidates = [
       path.join(__dirname, '..', 'templates', 'logo.png.b64'),
@@ -89,17 +124,21 @@ export function loadLogoAttachment (): { filename: string; contentBase64: string
           let b64 = fs.readFileSync(p, 'utf8').trim()
           // strip possible data URI prefix
           b64 = b64.replace(/^data:image\/[a-zA-Z]+;base64,/, '')
-          return { filename: 'logo.png', contentBase64: b64, cid: 'logo@chat-app' }
+          cachedLogoAttachment = { filename: 'logo.png', contentBase64: b64, cid: 'logo@chat-app' }
+          return cachedLogoAttachment
         }
 
         const bin = fs.readFileSync(p)
-        return { filename: 'logo.png', contentBase64: bin.toString('base64'), cid: 'logo@chat-app' }
+        cachedLogoAttachment = { filename: 'logo.png', contentBase64: bin.toString('base64'), cid: 'logo@chat-app' }
+        return cachedLogoAttachment
       }
     }
 
+    cachedLogoAttachment = null
     return null
   } catch (e) {
     logError('[notification-service] failed to load logo attachment', e)
+    cachedLogoAttachment = null
     return null
   }
 }

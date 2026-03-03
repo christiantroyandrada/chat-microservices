@@ -37,6 +37,9 @@ class RabbitMQService {
 
     await this.channel.assertQueue(this.requestQueue)
     await this.channel.assertQueue(this.responseQueue)
+    // Assert notification queue once at connect — avoids redundant RPC per publish
+    const notifQueue = process.env.NOTIFICATIONS_QUEUE || 'NOTIFICATIONS'
+    await this.channel.assertQueue(notifQueue, { durable: true })
 
     this.listenForRequests()
   }
@@ -99,11 +102,11 @@ class RabbitMQService {
      * Publish a notification payload to the shared notifications queue.
      * Used by other services (e.g. auth) to notify the notification-service.
      */
-    async publishNotification (payload: any) {
+    async publishNotification (payload: Record<string, unknown>) {
       try {
         if (!this.channel) throw new Error('RabbitMQ channel is not initialized')
+        // Queue was asserted once during connect() — no need to re-assert per publish
         const q = process.env.NOTIFICATIONS_QUEUE || 'NOTIFICATIONS'
-        await this.channel.assertQueue(q, { durable: true })
         this.channel.sendToQueue(q, Buffer.from(JSON.stringify(payload)))
         return true
       } catch (err) {
