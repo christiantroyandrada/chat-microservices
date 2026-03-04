@@ -6,14 +6,23 @@ import type { TokenPayload } from '../types'
 import { registerSocketHandlers } from './socketHandler'
 import { logDebug, logError } from '../utils/logger'
 import { socketConnectionsActive } from '../utils/metrics'
+import type { IPresenceStore } from '../services/PresenceStore'
+import type { RedisContext } from '../services/RedisService'
 
 /**
  * Create and configure the Socket.IO server with JWT authentication
  * and register all event handlers.
  *
- * Extracted from server.ts for single-responsibility compliance.
+ * @param httpServer   The Node.js HTTP server to attach Socket.IO to.
+ * @param redisContext Optional Redis context — when provided the server uses
+ *                     the Redis adapter for cross-node broadcasting (12-factor VI).
+ *                     When absent the server runs in single-node in-memory mode.
  */
-export function createSocketServer(httpServer: Server): SocketIOServer {
+export function createSocketServer(
+  httpServer: Server,
+  presenceStore: IPresenceStore,
+  redisContext?: RedisContext,
+): SocketIOServer {
   const io = new SocketIOServer(httpServer, {
     path: '/chat/socket.io',
     pingInterval: 25000,
@@ -41,6 +50,11 @@ export function createSocketServer(httpServer: Server): SocketIOServer {
     },
     transports: ['websocket', 'polling'],
   })
+
+  // Attach Redis adapter when available — enables cross-node emit/broadcast
+  if (redisContext) {
+    io.adapter(redisContext.adapterFactory)
+  }
 
   // JWT authentication middleware
   io.use((socket, next) => {
@@ -84,8 +98,9 @@ export function createSocketServer(httpServer: Server): SocketIOServer {
       socketConnectionsActive.dec()
     })
 
-    registerSocketHandlers(io, socket)
+    registerSocketHandlers(io, socket, presenceStore)
   })
 
   return io
 }
+

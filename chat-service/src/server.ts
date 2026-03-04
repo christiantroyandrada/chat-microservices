@@ -1,9 +1,11 @@
 import { Server } from 'node:http'
-import app from './app'
+import app, { setRedisHealthProvider } from './app'
 import { connectDB, runMigrations } from './database'
 import config from './config/config'
 import { rabbitMQService } from './services/RabbitMQService'
 import { createSocketServer } from './websocket'
+import { createRedisContext, RedisContext } from './services/RedisService'
+import { getPresenceStore, setPresenceStore, LocalPresenceStore } from './services/PresenceStore'
 
 import { logInfo, logWarn, logError } from './utils/logger'
 
@@ -30,6 +32,8 @@ const validateEnv = () => {
 validateEnv()
 
 let server: Server
+let redisContext: RedisContext | undefined
+let compactInterval: ReturnType<typeof setInterval> | undefined
 
 const start = async () => {
   // Connect to database
@@ -37,6 +41,22 @@ const start = async () => {
   
   // Run any pending migrations (idempotent - skips already run migrations)
   await runMigrations()
+
+  // ── Redis context (optional — enables horizontal scaling) ─────────────────
+  if (config.redisUrl) {
+    try {
+      redisContext = await createRedisContext(config.redisUrl)
+      setPresenceStore(redisContext.presenceStore)
+      setRedisHealthProvider(() => redisContext!.isHealthy())
+      logInfo('[chat-service] Redis adapter enabled — horizontal scaling active')
+    } catch (err) {
+      logWarn('[chat-service] Redis init failed, falling back to in-process presence:', err)
+    }
+  } else {
+    logWarn('[chat-service] REDIS_URL not set — running in single-node mode (no horizontal scaling)')
+    // Compact the LocalPresenceStore every 5 min to reclaim memory from V8 Map backing store
+    compactInterval = setInterval(() => (getPresenceStore() as LocalPresenceStore).compact(), 5 * 60 * 1000)
+  }
 
   // ensure the RPC/notification client is connected before handling messages
   const maxRetries = 5
@@ -61,7 +81,7 @@ const start = async () => {
   })
 
   // Initialize Socket.IO with authentication and event handlers
-  createSocketServer(server)
+  createSocketServer(server, getPresenceStore(), redisContext)
 }
 
 start().catch(err => {
@@ -72,10 +92,13 @@ start().catch(err => {
 const gracefulShutdown = async (signal: string) => {
   logInfo(`[chat-service] ${signal} received. Starting graceful shutdown...`)
   try {
+    if (compactInterval) clearInterval(compactInterval)
     if (server) {
       await new Promise<void>((resolve) => server.close(() => resolve()))
       logInfo('[chat-service] HTTP server closed')
     }
+    await getPresenceStore().shutdown()
+    await redisContext?.shutdown()
     await rabbitMQService.disconnect()
     const { AppDataSource } = await import('./database/connection')
     if (AppDataSource.isInitialized) {

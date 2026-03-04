@@ -5,6 +5,7 @@ import { APIError, encryptPassword, isPasswordMatch } from '../utils'
 import config from '../config/config'
 import type { RegistrationBody } from '../types'
 import { rabbitMQService } from '../services/RabbitMQService'
+import { userRegistrationsTotal, userLoginsTotal } from '../utils/metrics'
 
 const JWT_SECRET = config.JWT_SECRET as string
 const COOKIE_EXPIRATION_DAYS = 7
@@ -67,6 +68,8 @@ const registration = async (
     // Token is sent via httpOnly cookie only (not in response body for security)
     // Also create and send JWT cookie so clients are authenticated immediately
     await createSendToken(user as User, res)
+
+    userRegistrationsTotal.inc({ status: 'success' })
 
     // Publish a notification event so the notification-service can create
     // a DB notification and optionally send a welcome email to the user.
@@ -138,11 +141,14 @@ const login = async (
     // Create and send JWT via httpOnly cookie
     await createSendToken(user, res)
 
+    userLoginsTotal.inc({ status: 'success' })
+
     return res.json({
       status: 200,
       message: 'Login successful',
     })
   } catch ( error: unknown ) {
+    userLoginsTotal.inc({ status: 'failure' })
     // Pass error to Express error handling middleware
     next(error)
   }

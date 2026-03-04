@@ -1,7 +1,5 @@
-import { UserStatusStore } from './userStatusStore'
+import { getPresenceStore } from '../services/PresenceStore'
 import { rabbitMQService } from '../services/RabbitMQService'
-
-const userStatusStore = UserStatusStore.getInstance()
 
 export const handleMessageReceived = async (
   senderName: string,
@@ -17,7 +15,9 @@ export const handleMessageReceived = async (
   // Only publish notification events if the recipient is considered offline.
   // This conserves messaging queue budget — when the recipient is online they
   // receive messages over WebSocket and don't need an external notification.
-  const recipientOnline = userStatusStore.isUserOnline(receiverId)
+  // getPresenceStore() is async-safe: works with both LocalPresenceStore (in-process)
+  // and RedisPresenceStore (distributed) without any call-site changes.
+  const recipientOnline = await getPresenceStore().isOnline(receiverId)
   if (!recipientOnline) {
     await rabbitMQService.notifyReceiver(
       receiverId,
