@@ -6,6 +6,7 @@ import { Message, AppDataSource } from '../database'
 import { APIError, handleMessageReceived } from '../utils'
 import { logWarn, logError } from '../utils/logger'
 import { MessageStatus } from '../database/models/MessageModel'
+import { chatMessagesSentTotal, chatMessagesReadTotal } from '../utils/metrics'
 
 // LRU cache for user details — bounded to 500 entries with 60s TTL.
 // Prevents unbounded memory growth from the old Map<string, ...> approach
@@ -146,6 +147,8 @@ const sendMessage = async (
       true,
       trimmedMessage,
     )
+
+    chatMessagesSentTotal.inc({ channel: 'rest' })
 
     return res.json({
       status: 200,
@@ -349,6 +352,8 @@ const markAsRead = async (
       .andWhere('receiverId = :receiverId', { receiverId })
       .andWhere('status != :status', { status: MessageStatus.Seen })
       .execute()
+
+    chatMessagesReadTotal.inc()
 
     return res.json({
       status: 200,

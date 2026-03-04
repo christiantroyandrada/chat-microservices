@@ -1,7 +1,10 @@
 import { config } from 'dotenv'
 
-const configFile = `./.env`
-config({ path: configFile })
+// 12-factor III: Only load .env in non-production environments.
+// In production containers, env vars are injected directly by the orchestrator.
+if (process.env.NODE_ENV !== 'production') {
+  config({ path: './.env' })
+}
 
 const {
   PORT,

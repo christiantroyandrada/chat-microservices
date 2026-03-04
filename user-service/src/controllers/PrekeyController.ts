@@ -175,7 +175,12 @@ const publishPrekey = async (req: Request, res: Response, next: NextFunction) =>
     // Upsert by userId + deviceId
     let existing = await prekeyRepo.findOne({ where: { userId: publisherId, deviceId } })
     if (existing) {
-      existing.bundle = bundle
+      // Merge with existing bundle data so that _encryptedKeyBundle (written by
+      // storeSignalKeys) is preserved.  Replacing the entire column would wipe
+      // the encrypted key backup, forcing the user to rely solely on local
+      // IndexedDB after the next republishPrekeys call.
+      const existingBundle = ((existing.bundle as unknown) as Record<string, unknown>) || {}
+      existing.bundle = { ...existingBundle, ...(bundle as unknown as Record<string, unknown>) } as unknown as PrekeyBundle
       await prekeyRepo.save(existing)
       return res.json({ status: 200, message: 'Prekey bundle updated' })
     }

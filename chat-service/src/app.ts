@@ -4,6 +4,7 @@ import cors from 'cors'
 import helmet from 'helmet'
 import rateLimit from 'express-rate-limit'
 import cookieParser from 'cookie-parser'
+import swaggerUi from 'swagger-ui-express'
 import chatServiceRouter from './routes/messageRoutes'
 import { errorMiddleware, errorHandler } from './middleware'
 import { requestLogger } from './middleware/requestLogger'
@@ -11,7 +12,16 @@ import { logError } from './utils/logger'
 import { getMetrics, getContentType } from './utils/metrics'
 import { rabbitMQService } from './services/RabbitMQService'
 import { AppDataSource } from './database/connection'
+import openapiSpec from './openapi'
 
+// ── Redis health provider ─────────────────────────────────────────────────────
+// Set by server.ts after Redis is initialised (if REDIS_URL is configured).
+// null means Redis is not configured — omitted from health checks (not a failure).
+let _getRedisHealth: (() => boolean | null) | null = null
+
+export function setRedisHealthProvider(fn: () => boolean | null): void {
+  _getRedisHealth = fn
+}
 const app: Express = express()
 
 app.set('trust proxy', 1)
@@ -39,7 +49,32 @@ app.use(cors({
   optionsSuccessStatus: 204
 }))
 
-app.use(helmet())
+// ── Security (Factor XV — explicit CSP, OWASP-compliant) ────────────────────
+const isProduction = process.env.NODE_ENV === 'production'
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc:  isProduction ? ["'self'"] : ["'self'", "'unsafe-inline'"],
+      styleSrc:   ["'self'", "'unsafe-inline'"],
+      imgSrc:     ["'self'", 'data:'],
+      fontSrc:    ["'self'"],
+      objectSrc:  ["'none'"],
+      frameSrc:   ["'none'"],
+      baseUri:    ["'self'"],
+      formAction: ["'self'"],
+      frameAncestors: ["'none'"],
+    },
+  },
+  // HSTS is handled at the nginx TLS-termination layer — avoid duplicate headers
+  strictTransportSecurity: false,
+}))
+
+// ── API contract (Factor XIII — API First) ──────────────────────────────────
+app.get('/api-docs.json', (_req, res) => res.json(openapiSpec))
+if (!isProduction) {
+  app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(openapiSpec, { explorer: true }))
+}
 
 // ── Observability ────────────────────────────────────────────────────────────
 // Request ID + HTTP access log + Prometheus counter/histogram
@@ -60,14 +95,18 @@ app.get('/metrics', async (_req, res) => {
 })
 
 app.get('/health', async (req, res) => {
-	const checks: Record<string, boolean> = {
+	const checks: Record<string, boolean | null> = {
 		database: false,
 		rabbitmq: false
 	}
 	try {
 		checks.database = AppDataSource.isInitialized
 		checks.rabbitmq = rabbitMQService.isHealthy()
-		const healthy = checks.database && checks.rabbitmq
+		// redis: null = not configured (not a failure); false = configured but unhealthy
+		if (_getRedisHealth !== null) {
+			checks.redis = _getRedisHealth()
+		}
+		const healthy = (checks.database ?? false) && (checks.rabbitmq ?? false) && (checks.redis ?? true)
 		return res.status(healthy ? 200 : 503).json({ status: healthy ? 'ok' : 'degraded', service: 'chat-service', checks })
 	} catch (err) {
 		logError('[chat-service] Health check error:', err)

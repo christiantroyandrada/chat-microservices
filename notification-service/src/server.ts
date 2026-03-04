@@ -2,6 +2,7 @@ import express, { Express } from 'express'
 import cors from 'cors'
 import helmet from 'helmet'
 import cookieParser from 'cookie-parser'
+import swaggerUi from 'swagger-ui-express'
 import { Server } from 'node:http'
 import { errorMiddleware, errorHandler } from './middleware'
 import config from './config/config'
@@ -11,6 +12,7 @@ import { connectDB, runMigrations } from './database'
 import notificationRouter from './routes/notificationRoutes'
 import { requestLogger } from './middleware/requestLogger'
 import { getMetrics, getContentType } from './utils/metrics'
+import openapiSpec from './openapi'
 
 // Validate required environment variables on startup
 const validateEnv = () => {
@@ -59,11 +61,33 @@ app.use(cors({
   optionsSuccessStatus: 204
 }))
 
-// Basic HTTP hardening (applied after CORS)
-app.use(helmet())
+// ── Security (Factor XV — explicit CSP, OWASP-compliant) ────────────────────
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc:  config.env === 'production' ? ["'self'"] : ["'self'", "'unsafe-inline'"],
+      styleSrc:   ["'self'", "'unsafe-inline'"],
+      imgSrc:     ["'self'", 'data:'],
+      fontSrc:    ["'self'"],
+      objectSrc:  ["'none'"],
+      frameSrc:   ["'none'"],
+      baseUri:    ["'self'"],
+      formAction: ["'self'"],
+      frameAncestors: ["'none'"],
+    },
+  },
+  strictTransportSecurity: false,
+}))
 
 // ── Observability ────────────────────────────────────────────────────────────
 app.use(requestLogger)
+
+// ── API contract (Factor XIII) ───────────────────────────────────────────────
+app.get('/api-docs.json', (_req, res) => res.json(openapiSpec))
+if (config.env !== 'production') {
+  app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(openapiSpec, { explorer: true }))
+}
 
 app.get('/metrics', async (_req, res) => {
   try {

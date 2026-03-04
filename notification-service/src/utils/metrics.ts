@@ -42,6 +42,19 @@ export const httpRequestDurationSeconds: promClient.Histogram = getOrCreateHisto
   [0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5],
 )
 
+// ── Domain telemetry (Factor XIV) ─────────────────────────────────────────────
+export const notificationsConsumedTotal: promClient.Counter = getOrCreateCounter(
+  'notifications_consumed_total',
+  'Total notification events consumed from RabbitMQ',
+  ['type'],
+)
+
+export const notificationsReadTotal: promClient.Counter = getOrCreateCounter(
+  'notifications_read_total',
+  'Total notifications marked as read',
+  [],
+)
+
 // ── Metrics endpoint helpers ──────────────────────────────────────────────────
 export async function getMetrics(): Promise<string> {
   return promClient.register.metrics()

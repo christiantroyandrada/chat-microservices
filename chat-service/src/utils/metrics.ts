@@ -58,6 +58,34 @@ export const socketConnectionsActive: promClient.Gauge = getOrCreateGauge(
   'Number of currently active Socket.IO connections',
 )
 
+// ── Redis adapter metrics ─────────────────────────────────────────────────────
+// 1 when all three Redis clients (pub/sub/presence) are connected, 0 otherwise.
+// Lets Grafana alert when Redis goes away and the service falls back to single-node mode.
+export const redisConnectedGauge: promClient.Gauge = getOrCreateGauge(
+  'redis_adapter_connected',
+  'Whether the Socket.IO Redis adapter is currently connected (1=yes, 0=no)',
+)
+
+// ── Domain telemetry (Factor XIV) ─────────────────────────────────────────────
+// Business-level counters that feed domain-specific dashboards and alerts.
+export const chatMessagesSentTotal: promClient.Counter = getOrCreateCounter(
+  'chat_messages_sent_total',
+  'Total encrypted messages sent',
+  ['channel'],
+)
+
+export const chatMessagesReadTotal: promClient.Counter = getOrCreateCounter(
+  'chat_messages_read_total',
+  'Total markAsRead operations',
+  [],
+)
+
+export const chatPresenceChangesTotal: promClient.Counter = getOrCreateCounter(
+  'chat_presence_changes_total',
+  'Total presence state transitions emitted',
+  ['direction'],
+)
+
 // ── Metrics endpoint helpers ──────────────────────────────────────────────────
 export async function getMetrics(): Promise<string> {
   return promClient.register.metrics()
