@@ -4,6 +4,7 @@ import cors from 'cors'
 import helmet from 'helmet'
 import rateLimit from 'express-rate-limit'
 import cookieParser from 'cookie-parser'
+import swaggerUi from 'swagger-ui-express'
 import { Server } from 'node:http'
 import userServiceRouter from './routes/userServiceRouter'
 import { errorMiddleware, errorHandler } from './middleware'
@@ -13,6 +14,7 @@ import config from './config/config'
 import { rabbitMQService } from './services/RabbitMQService'
 import { logInfo, logWarn, logError } from './utils/logger'
 import { getMetrics, getContentType } from './utils/metrics'
+import openapiSpec from './openapi'
 
 // Validate required environment variables on startup
 const validateEnv = () => {

@@ -1,127 +1,129 @@
 import { Socket, Server as SocketIOServer } from 'socket.io'
 import { Message, AppDataSource } from '../database'
 import { MessageStatus } from '../database/models/MessageModel'
-import { handleMessageReceived, UserStatusStore } from '../utils'
+import { handleMessageReceived } from '../utils'
 import { logDebug, logInfo, logWarn, logError } from '../utils/logger'
+import type { IPresenceStore } from '../services/PresenceStore'
+import { chatMessagesSentTotal, chatPresenceChangesTotal } from '../utils/metrics'
 
-// Track active user connections (userId -> Set of socket IDs)
-let activeUsers = new Map<string, Set<string>>()
-
-// Track typing status with timeout (userId -> timeout reference)
+// ── Typing-indicator state (per-node, intentionally local) ───────────────────
+// Typing timeouts are ephemeral, auto-correcting signals.  A timeout firing on
+// the originating node issues an io.to(receiverId).emit() that the Redis adapter
+// forwards to all nodes — so there is no correctness issue keeping this local.
 let typingTimeouts = new Map<string, NodeJS.Timeout>()
 
-// V8 never shrinks Map capacity after deletions. Periodically rebuild
-// the Maps so freed memory is actually reclaimed. Runs every 5 minutes.
+// V8 never shrinks Map capacity after deletions.  Compact every 5 minutes so
+// freed entries are actually reclaimed by the GC.
 const COMPACT_INTERVAL_MS = 5 * 60 * 1000
 setInterval(() => {
-  const newActiveUsers = new Map<string, Set<string>>()
-  activeUsers.forEach((sockets, userId) => {
-    if (sockets.size > 0) newActiveUsers.set(userId, sockets)
-  })
-  activeUsers = newActiveUsers
-
-  const newTypingTimeouts = new Map<string, NodeJS.Timeout>()
-  typingTimeouts.forEach((timeout, userId) => newTypingTimeouts.set(userId, timeout))
-  typingTimeouts = newTypingTimeouts
-
-  logDebug('[chat-service] Compacted presence Maps — activeUsers:', activeUsers.size, 'typingTimeouts:', typingTimeouts.size)
+  const fresh = new Map<string, NodeJS.Timeout>()
+  typingTimeouts.forEach((t, uid) => fresh.set(uid, t))
+  typingTimeouts = fresh
+  logDebug('[chat-service] Compacted typingTimeouts:', typingTimeouts.size)
 }, COMPACT_INTERVAL_MS)
 
-// In-process status store for presence tracking
-const userStatusStore = UserStatusStore.getInstance()
+// ── Socket handler registration ───────────────────────────────────────────────
 
 /**
  * Register all event handlers for a single Socket.IO connection.
- * Extracted from server.ts for single-responsibility compliance.
+ *
+ * @param io            The Socket.IO server instance.
+ * @param socket        The individual client socket.
+ * @param presenceStore The active presence store (local or Redis-backed).
  */
-export function registerSocketHandlers(io: SocketIOServer, socket: Socket): void {
+export function registerSocketHandlers(
+  io: SocketIOServer,
+  socket: Socket,
+  presenceStore: IPresenceStore,
+): void {
   const userId = socket.data.user?.id as string | undefined
 
   if (userId) {
-    registerPresence(io, socket, userId)
-    sendInitialPresence(socket, userId)
+    // Fire-and-forget: errors are caught internally
+    registerPresence(io, socket, userId, presenceStore).catch(err =>
+      logError('[chat-service] registerPresence error:', err),
+    )
+    sendInitialPresence(socket, userId, presenceStore).catch(err =>
+      logError('[chat-service] sendInitialPresence error:', err),
+    )
   } else {
     logWarn('[chat-service] No userId found for socket:', socket.id)
   }
 
-  socket.on('disconnect', () => handleDisconnect(io, socket, userId))
-  // NOTE: Removed `receiveMessage` relay — allowing clients to emit `receiveMessage`
-  // events directly was a message injection vulnerability (any authenticated user could
-  // broadcast arbitrary payloads to all connected clients). Server-side message delivery
-  // is handled exclusively by `handleSendMessage` which validates and persists first.
+  socket.on('disconnect', () => handleDisconnect(io, socket, userId, presenceStore))
   socket.on('typing', (data: { receiverId: string; isTyping: boolean }) => {
     if (userId) handleTyping(io, userId, data)
   })
   socket.on('sendMessage', (data, ack?) => handleSendMessage(io, socket, userId, data, ack))
 }
 
-// ---- Presence Management ----
+// ── Presence management ───────────────────────────────────────────────────────
 
-function registerPresence(io: SocketIOServer, socket: Socket, userId: string): void {
+async function registerPresence(
+  io: SocketIOServer,
+  socket: Socket,
+  userId: string,
+  presenceStore: IPresenceStore,
+): Promise<void> {
   socket.join(userId)
   logDebug('[chat-service] User joined room:', userId, 'socket:', socket.id)
 
-  if (!activeUsers.has(userId)) {
-    activeUsers.set(userId, new Set())
-  }
-  activeUsers.get(userId)!.add(socket.id)
-  userStatusStore.setUserOnline(userId)
-
-  // First connection → broadcast online status
-  if (activeUsers.get(userId)!.size === 1) {
+  const isFirst = await presenceStore.connect(userId, socket.id)
+  if (isFirst) {
     logInfo('[chat-service] User came online:', userId)
     io.emit('presence', { userId, online: true })
+    chatPresenceChangesTotal.inc({ direction: 'online' })
   }
 }
 
-function sendInitialPresence(socket: Socket, userId: string): void {
-  // Send a single bulk payload instead of O(n) individual emits per user.
-  // With 10k online users, this reduces 10k emits to 1 emit per connection.
-  const onlineUserIds: string[] = []
-  activeUsers.forEach((sockets, onlineUserId) => {
-    if (onlineUserId !== userId && sockets.size > 0) {
-      onlineUserIds.push(onlineUserId)
-    }
-  })
+async function sendInitialPresence(
+  socket: Socket,
+  userId: string,
+  presenceStore: IPresenceStore,
+): Promise<void> {
+  // Single bulk payload instead of O(n) individual emits per user.
+  const onlineUserIds = await presenceStore.getOnlineUserIds(userId)
   if (onlineUserIds.length > 0) {
     socket.emit('presenceBulk', { onlineUserIds })
   }
-  logDebug('[chat-service] Sent bulk initial presence to:', userId, 'count:', onlineUserIds.length)
+  logDebug('[chat-service] Sent bulk presence to:', userId, 'count:', onlineUserIds.length)
 }
 
-function handleDisconnect(io: SocketIOServer, socket: Socket, userId: string | undefined): void {
+async function handleDisconnect(
+  io: SocketIOServer,
+  socket: Socket,
+  userId: string | undefined,
+  presenceStore: IPresenceStore,
+): Promise<void> {
   logDebug('[chat-service] Client disconnected:', socket.id)
 
-  if (userId && typingTimeouts.has(userId)) {
-    clearTimeout(typingTimeouts.get(userId))
-    typingTimeouts.delete(userId)
-  }
+  if (userId) {
+    // Clear typing indicator (local cleanup — no Redis needed)
+    if (typingTimeouts.has(userId)) {
+      clearTimeout(typingTimeouts.get(userId))
+      typingTimeouts.delete(userId)
+    }
 
-  if (userId && activeUsers.has(userId)) {
-    const userSockets = activeUsers.get(userId)!
-    userSockets.delete(socket.id)
-
-    if (userSockets.size === 0) {
-      activeUsers.delete(userId)
-      userStatusStore.setUserOffline(userId)
+    const isLast = await presenceStore.disconnect(userId, socket.id)
+    if (isLast) {
       const lastSeen = new Date().toISOString()
       logInfo('[chat-service] User went offline:', userId, 'lastSeen:', lastSeen)
       io.emit('presence', { userId, online: false, lastSeen })
+      chatPresenceChangesTotal.inc({ direction: 'offline' })
     }
   }
 }
 
-// ---- Typing Indicators ----
+// ── Typing indicators ─────────────────────────────────────────────────────────
 
 function handleTyping(
   io: SocketIOServer,
   userId: string,
-  data: { receiverId: string; isTyping: boolean }
+  data: { receiverId: string; isTyping: boolean },
 ): void {
   const { receiverId, isTyping } = data
   logDebug('[chat-service] Typing event:', { userId, receiverId, isTyping })
 
-  // Clear existing timeout
   if (typingTimeouts.has(userId)) {
     clearTimeout(typingTimeouts.get(userId))
     typingTimeouts.delete(userId)
@@ -130,7 +132,6 @@ function handleTyping(
   if (isTyping) {
     io.to(receiverId).emit('typing', { userId, isTyping: true })
 
-    // Auto-timeout: stop typing after 3 seconds of inactivity
     const timeout = setTimeout(() => {
       logDebug('[chat-service] Typing timeout for user:', userId)
       io.to(receiverId).emit('typing', { userId, isTyping: false })
@@ -143,11 +144,11 @@ function handleTyping(
   }
 }
 
-// ---- Message Sending ----
+// ── Message sending ───────────────────────────────────────────────────────────
 
 function validateMessage(
   message: unknown,
-  ack?: (res: { ok: boolean; id?: string; error?: string }) => void
+  ack?: (res: { ok: boolean; id?: string; error?: string }) => void,
 ): string | null {
   if (!message || typeof message !== 'string') {
     ack?.({ ok: false, error: 'Invalid message content' })
@@ -217,7 +218,7 @@ async function retrieveOrSaveMessage(params: {
       receiverId,
       '[Encrypted message]',
       true,
-      trimmed
+      trimmed,
     )
   } catch (err) {
     logWarn('[chat-service] notifyReceiver failed:', err)
@@ -249,7 +250,7 @@ async function handleSendMessage(
   socket: Socket,
   userId: string | undefined,
   data: { senderId: string; receiverId: string; message: string; _id?: string },
-  ack?: (res: { ok: boolean; id?: string; error?: string }) => void
+  ack?: (res: { ok: boolean; id?: string; error?: string }) => void,
 ): Promise<void> {
   try {
     const { senderId, receiverId, message, _id } = data
@@ -291,6 +292,7 @@ async function handleSendMessage(
     }
     io.to(receiverId).emit('typing', { userId, isTyping: false })
     io.to(receiverId).emit('receiveMessage', formattedMsg)
+    chatMessagesSentTotal.inc({ channel: 'websocket' })
     ack?.({ ok: true, id: msg.id })
   } catch (err) {
     logError('[chat-service] socket sendMessage error:', err)

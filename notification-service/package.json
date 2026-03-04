@@ -9,7 +9,8 @@
     "test:unit": "jest tests/unit",
     "coverage": "jest tests/unit --coverage --coverageReporters=lcov --coverageDirectory=coverage",
     "build": "rm -rf build/ && tsc -p .",
-    "start": "node build/server.js"
+    "start": "node build/server.js",
+    "migrate": "node build/src/migrate.js"
   },
   "keywords": [],
   "author": "christiantroyandrada",
@@ -29,6 +30,7 @@
     "pg": "^8.17.2",
     "prom-client": "^15.1.3",
     "reflect-metadata": "^0.2.2",
+    "swagger-ui-express": "^5.0.1",
     "typeorm": "^0.3.27"
   },
   "devDependencies": {
@@ -39,6 +41,7 @@
     "@types/jest": "^30.0.0",
     "@types/jsonwebtoken": "^9.0.3",
     "@types/nodemailer": "^7.0.3",
+    "@types/swagger-ui-express": "^4.1.8",
     "jest": "^30.2.0",
     "nodemon": "^3.1.10",
     "ts-jest": "^29.4.5",

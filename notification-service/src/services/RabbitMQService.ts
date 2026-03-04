@@ -10,6 +10,7 @@ import { logInfo, logWarn, logError } from '../utils/logger'
 import { loadTemplate, renderTemplate, loadLogoDataUri } from './EmailTemplateService'
 import { handleMessageReceived } from './handlers/messageHandler'
 import { handleUserRegistered } from './handlers/welcomeHandler'
+import { notificationsConsumedTotal } from '../utils/metrics'
 
 const MAX_RECONNECT_ATTEMPTS = 10
 const INITIAL_RECONNECT_DELAY_MS = 1000
@@ -110,6 +111,8 @@ class RabbitMQService {
       fromName,
     } = payload
     const notificationRepo = AppDataSource.getRepository(Notification)
+
+    notificationsConsumedTotal.inc({ type: type || 'unknown' })
 
     // Handle known event types. MESSAGE_RECEIVED keeps the original behavior.
     switch (type) {

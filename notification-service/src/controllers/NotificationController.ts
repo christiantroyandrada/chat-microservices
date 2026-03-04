@@ -3,6 +3,7 @@ import { Notification, AppDataSource } from '../database'
 import { APIError } from '../utils'
 import { NotificationType } from '../database/models/NotificationModel'
 import type { AuthenticatedRequest } from '../types'
+import { notificationsReadTotal } from '../utils/metrics'
 
 const getNotifications = async (
   req: AuthenticatedRequest & { query: { limit?: string; offset?: string } },
@@ -81,6 +82,8 @@ const markAsRead = async (
     notification.read = true
     await notifRepo.save(notification)
 
+    notificationsReadTotal.inc()
+
     return res.json({
       status: 200,
       message: 'Notification marked as read',
@@ -111,6 +114,8 @@ const markAllAsRead = async (
       .where('userId = :userId', { userId })
       .andWhere('read = :read', { read: false })
       .execute()
+
+    notificationsReadTotal.inc(result.affected || 0)
 
     return res.json({
       status: 200,
