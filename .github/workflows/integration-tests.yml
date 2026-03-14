@@ -4,6 +4,9 @@ name: CI - Integration Tests
 on:
   workflow_call: {}
 
+permissions:
+  contents: read
+
 jobs:
   integration-tests:
     name: Integration Tests (Docker Compose)

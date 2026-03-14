@@ -4,10 +4,14 @@ name: TypeScript Type Check
 on:
   workflow_call:
 
+permissions:
+  contents: read
+
 jobs:
   typecheck:
     name: TypeScript Check
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     strategy:
       matrix:
         service: [user-service, chat-service, notification-service]

@@ -38,7 +38,7 @@ export const authMiddleware = async (
     }
 
     // Verify token
-    const decoded = jwt.verify(token, config.JWT_SECRET as string) as JwtPayload
+    const decoded = jwt.verify(token, config.JWT_SECRET as string, { algorithms: ['HS256'] }) as JwtPayload
 
     // Attach user info to request (map id -> _id for consistency)
     req.user = {

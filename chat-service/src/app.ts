@@ -8,7 +8,7 @@ import swaggerUi from 'swagger-ui-express'
 import chatServiceRouter from './routes/messageRoutes'
 import { errorMiddleware, errorHandler } from './middleware'
 import { requestLogger } from './middleware/requestLogger'
-import { logError } from './utils/logger'
+import { logError, logWarn } from './utils/logger'
 import { getMetrics, getContentType } from './utils/metrics'
 import { rabbitMQService } from './services/RabbitMQService'
 import { AppDataSource } from './database/connection'
@@ -38,7 +38,7 @@ app.use(cors({
       // Return the origin itself to set Access-Control-Allow-Origin header
       callback(null, origin)
     } else {
-      console.warn(`[chat-service] CORS blocked origin: ${origin}`)
+      logWarn(`[chat-service] CORS blocked origin: ${origin}`)
       callback(null, false)
     }
   },

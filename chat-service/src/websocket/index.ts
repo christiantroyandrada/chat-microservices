@@ -4,7 +4,7 @@ import jwt from 'jsonwebtoken'
 import config from '../config/config'
 import type { TokenPayload } from '../types'
 import { registerSocketHandlers } from './socketHandler'
-import { logDebug, logError } from '../utils/logger'
+import { logDebug, logError, logWarn } from '../utils/logger'
 import { socketConnectionsActive } from '../utils/metrics'
 import type { IPresenceStore } from '../services/PresenceStore'
 import type { RedisContext } from '../services/RedisService'
@@ -40,7 +40,7 @@ export function createSocketServer(
         if (allowedOrigins.includes(origin)) {
           callback(null, origin)
         } else {
-          console.warn(`[chat-service] Socket.IO CORS blocked origin: ${origin}`)
+          logWarn(`[chat-service] Socket.IO CORS blocked origin: ${origin}`)
           callback(null, false)
         }
       },
@@ -75,7 +75,7 @@ export function createSocketServer(
         return next(new Error('Authentication required'))
       }
 
-      const decoded = jwt.verify(token, config.JWT_SECRET as string) as TokenPayload
+      const decoded = jwt.verify(token, config.JWT_SECRET as string, { algorithms: ['HS256'] }) as TokenPayload
       socket.data.user = {
         id: decoded.id,
         email: decoded.email,

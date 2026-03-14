@@ -1,5 +1,6 @@
-import amqp, { Channel, ChannelModel } from 'amqplib'
+import amqp, { Channel, ChannelModel, ConsumeMessage } from 'amqplib'
 import config from '../config/config'
+import type { NotificationQueuePayload } from '../types'
 import { FCMService } from './FCMService'
 import { SecureEmailService } from './SecureEmailService'
 import { UserStatusStore } from '../utils'
@@ -99,17 +100,8 @@ class RabbitMQService {
     })
   }
 
-  private async handleMessage(payload: any, msg: any) {
-    const {
-      type,
-      userId,
-      message,
-      envelope,
-      isEncrypted,
-      userEmail,
-      userToken,
-      fromName,
-    } = payload
+  private async handleMessage(payload: NotificationQueuePayload, msg: ConsumeMessage) {
+    const { type } = payload
     const notificationRepo = AppDataSource.getRepository(Notification)
 
     notificationsConsumedTotal.inc({ type: type || 'unknown' })

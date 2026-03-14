@@ -42,14 +42,14 @@ describe('NotificationController branch coverage', () => {
   await NC.createNotification({ body: { userId: 'u2', title: 't' } } as any, resBad)
     expect(resBad.status).toHaveBeenCalled()
 
-    // invalid type
+    // invalid type — user must match userId so IDOR check passes, then type check rejects
     const resInvalid: any = { status: jest.fn().mockReturnThis(), json: jest.fn() }
-  await NC.createNotification({ body: { userId: 'u2', type: 'unknown', title: 't', message: 'm' } } as any, resInvalid)
+  await NC.createNotification({ user: { _id: 'u2' }, body: { userId: 'u2', type: 'unknown', title: 't', message: 'm' } } as any, resInvalid)
   expect(resInvalid.status).toHaveBeenCalledWith(400)
 
-    // success
+    // success — user._id matches userId so IDOR check passes
     const resOk: any = { status: jest.fn().mockReturnThis(), json: jest.fn() }
-    await NC.createNotification({ body: { userId: 'u2', type: 'message', title: 't', message: 'm' } } as any, resOk)
+    await NC.createNotification({ user: { _id: 'u2' }, body: { userId: 'u2', type: 'message', title: 't', message: 'm' } } as any, resOk)
     expect(resOk.status).toHaveBeenCalledWith(201)
     expect(resOk.json).toHaveBeenCalled()
   })

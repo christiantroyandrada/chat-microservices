@@ -11,9 +11,13 @@ on:
       SONAR_PROJECT_KEY:
         required: true
 
+permissions:
+  contents: read
+
 jobs:
   build-and-sonar:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Checkout
         # Pinned to specific commit SHA for supply-chain security

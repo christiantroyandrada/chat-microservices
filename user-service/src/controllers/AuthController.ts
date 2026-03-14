@@ -6,6 +6,7 @@ import config from '../config/config'
 import type { RegistrationBody } from '../types'
 import { rabbitMQService } from '../services/RabbitMQService'
 import { userRegistrationsTotal, userLoginsTotal } from '../utils/metrics'
+import { logWarn } from '../utils/logger'
 
 const JWT_SECRET = config.JWT_SECRET as string
 const COOKIE_EXPIRATION_DAYS = 7
@@ -83,7 +84,7 @@ const registration = async (
       })
     } catch (e) {
       // Log and continue — registration succeeded even if publishing fails
-      console.warn('[user-service] Failed to publish USER_REGISTERED event', e)
+      logWarn('[user-service] Failed to publish USER_REGISTERED event', e)
     }
 
     return res.json({
@@ -105,6 +106,7 @@ const createSendToken = async (
 
   const token = jwt.sign({ username, email, id }, JWT_SECRET, {
     expiresIn: '1d',
+    algorithm: 'HS256',
   })
 
   const cookieOptions = getCookieOptions()
@@ -220,7 +222,7 @@ const search = async (
 
     return res.json({ status: 200, data: mapped })
   } catch (error) {
-    console.warn('[WARN] AuthController.search failed, returning empty result', error)
+    logWarn('[user-service] AuthController.search failed, returning empty result', error)
     return res.json({ status: 200, data: [] })
   }
 }

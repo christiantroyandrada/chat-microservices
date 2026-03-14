@@ -17,10 +17,11 @@ const {
   SMTP_PORT = 587,
   SMTP_USER,
   SMTP_PASS,
-  DATABASE_URL
+  DATABASE_URL,
+  NOTIFICATIONS_QUEUE
 } = process.env
 
-const queue = { notifications: 'NOTIFICATIONS' }
+const queue = { notifications: NOTIFICATIONS_QUEUE || 'NOTIFICATIONS' }
 
 export default {
   PORT,

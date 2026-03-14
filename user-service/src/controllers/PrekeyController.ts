@@ -2,7 +2,7 @@ import { Request, Response, NextFunction } from 'express'
 import { AppDataSource, Prekey } from '../database'
 import { APIError } from '../utils'
 import { logError, logInfo } from '../utils/logger'
-import type { PrekeyBundle, EncryptedKeyBundle } from '../types'
+import type { PrekeyBundle, EncryptedKeyBundle, StoredBundle } from '../types'
 
 /**
  * Audit log helper - logs all key operations for security monitoring
@@ -86,7 +86,7 @@ const storeSignalKeys = async (req: Request, res: Response, next: NextFunction) 
     const record = prekeyRepo.create({ 
       userId, 
       deviceId, 
-      bundle: { _encryptedKeyBundle: encryptedBundle } as any,
+      bundle: { _encryptedKeyBundle: encryptedBundle } as StoredBundle,
       lastBackupTimestamp: new Date()
     })
     await prekeyRepo.save(record)
@@ -136,7 +136,7 @@ const getSignalKeys = async (req: Request, res: Response, next: NextFunction) =>
     })
 
     // CVE-011 FIX: Generic error message - don't reveal whether keys exist
-    if (!record || !(record.bundle as any)?._encryptedKeyBundle) {
+    if (!record || !(record.bundle as PrekeyBundle)?._encryptedKeyBundle) {
       auditLog('FETCH_KEYS', userId, deviceId, clientIp, false, 'No keys found')
       return res.json({ status: 404, message: 'Operation failed' })
     }
@@ -146,7 +146,7 @@ const getSignalKeys = async (req: Request, res: Response, next: NextFunction) =>
       status: 200, 
       data: { 
         deviceId: record.deviceId, 
-        encryptedBundle: (record.bundle as any)._encryptedKeyBundle 
+        encryptedBundle: (record.bundle as PrekeyBundle)._encryptedKeyBundle 
       } 
     })
   } catch (error) {
@@ -227,9 +227,10 @@ const getPrekeyBundle = async (req: Request, res: Response, next: NextFunction) 
     }
 
     // Prefer a bundle that has at least one one-time prekey
-    let chosen = bundles.find((b) => Array.isArray(b.bundle?.preKeys) && b.bundle.preKeys.length > 0) || bundles[0]
+    // Cast to PrekeyBundle for preKeys access — encrypted-only bundles don't have preKeys
+    let chosen = bundles.find((b) => Array.isArray((b.bundle as PrekeyBundle)?.preKeys) && (b.bundle as PrekeyBundle).preKeys.length > 0) || bundles[0]
 
-    if (Array.isArray(chosen.bundle?.preKeys) && chosen.bundle.preKeys.length > 0) {
+    if (Array.isArray((chosen.bundle as PrekeyBundle)?.preKeys) && (chosen.bundle as PrekeyBundle).preKeys.length > 0) {
       // persist updated bundle
       await repo.save(chosen)
       await qr.commitTransaction()

@@ -10,10 +10,14 @@ on:
         default: 'false'
         type: string
 
+permissions:
+  contents: read
+
 jobs:
   unit-tests:
     name: Unit tests - ${{ matrix.service }}
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     strategy:
       # Run all 3 service test suites even if one fails — gives complete visibility
       # into the full test health of the repo on every push.
@@ -80,6 +84,7 @@ jobs:
     if: ${{ inputs.coverage == 'true' }}
     needs: unit-tests
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     name: Merge LCOV reports and upload combined artifact
     steps:
       - name: Checkout repository

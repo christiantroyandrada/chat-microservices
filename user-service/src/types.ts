@@ -41,6 +41,13 @@ export interface PrekeyBundle {
   // usual PrekeyBundle shape (client-side encrypted backups).
   _encryptedKeyBundle?: EncryptedKeyBundle
 }
+/**
+ * Union type for the `bundle` JSON column on the Prekey entity.
+ * The column stores either a full PrekeyBundle (published prekeys) or an
+ * encrypted-only backup blob written by `storeSignalKeys`.
+ */
+export type StoredBundle = PrekeyBundle | { _encryptedKeyBundle: EncryptedKeyBundle }
+
 // Stored in `prekeys` table and used by `PrekeyController` and other Signal helpers
 
 // Complete Signal Protocol key set (including private keys)

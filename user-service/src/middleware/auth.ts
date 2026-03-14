@@ -37,7 +37,7 @@ export const authenticated = async (
     }
 
     // Verify token
-    const decoded = jwt.verify(token, config.JWT_SECRET as string) as JwtPayload
+    const decoded = jwt.verify(token, config.JWT_SECRET as string, { algorithms: ['HS256'] }) as JwtPayload
 
     // Attach user info to request
     req.user = decoded
