@@ -7,7 +7,7 @@
     { "type": "panel", "id": "stat", "name": "Stat", "version": "" }
   ],
   "annotations": { "list": [] },
-  "description": "Chat App — HTTP throughput, latency, errors, WebSocket connections, and Node.js runtime health",
+  "description": "Chat App — service health, HTTP traffic, application metrics, and Node.js runtime across all microservices",
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 1,
@@ -18,6 +18,162 @@
       "collapsed": false,
       "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
       "id": 100,
+      "title": "Service Health",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "green", "value": 1 }
+            ]
+          },
+          "unit": "short",
+          "mappings": [
+            { "options": { "0": { "text": "DOWN", "color": "red" }, "1": { "text": "UP", "color": "green" } }, "type": "value" }
+          ]
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 1 },
+      "id": 1,
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "orientation": "auto", "textMode": "auto", "colorMode": "background", "graphMode": "none" },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "expr": "up{job=\"chat-service\"}",
+          "legendFormat": "chat-service",
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "expr": "up{job=\"user-service\"}",
+          "legendFormat": "user-service",
+          "refId": "B"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "expr": "up{job=\"notification-service\"}",
+          "legendFormat": "notification-service",
+          "refId": "C"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "expr": "up{job=\"frontend\"}",
+          "legendFormat": "frontend",
+          "refId": "D"
+        }
+      ],
+      "title": "Service Status",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "orange", "value": 3600 },
+              { "color": "blue", "value": 86400 }
+            ]
+          },
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 1 },
+      "id": 2,
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "orientation": "auto", "textMode": "auto", "colorMode": "background", "graphMode": "none" },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "expr": "min(time() - nodejs_process_start_time_seconds{job=~\"chat-service|user-service|notification-service\"} or time() - process_start_time_seconds{job=\"frontend\"})",
+          "legendFormat": "Min Uptime",
+          "refId": "A"
+        }
+      ],
+      "title": "Min Service Uptime",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "purple", "value": null }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 1 },
+      "id": 3,
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "orientation": "auto", "textMode": "name", "colorMode": "background", "graphMode": "none" },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "expr": "nodejs_nodejs_version_info{job=\"chat-service\"}",
+          "legendFormat": "backend {{version}}",
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "expr": "nodejs_version_info{job=\"frontend\"}",
+          "legendFormat": "frontend {{version}}",
+          "refId": "B"
+        }
+      ],
+      "title": "Node.js Versions",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 50 },
+              { "color": "red", "value": 200 }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 1 },
+      "id": 4,
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "orientation": "auto", "textMode": "auto", "colorMode": "background", "graphMode": "area" },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "expr": "socket_connections_active",
+          "legendFormat": "WebSocket Connections",
+          "refId": "A"
+        }
+      ],
+      "title": "Active WebSocket Connections",
+      "type": "stat"
+    },
+
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 5 },
+      "id": 101,
       "title": "HTTP Traffic",
       "type": "row"
     },
@@ -31,13 +187,13 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 1 },
-      "id": 1,
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 6 },
+      "id": 5,
       "options": { "tooltip": { "mode": "multi", "sort": "desc" }, "legend": { "displayMode": "list", "placement": "bottom" } },
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "Prometheus" },
-          "expr": "sum(rate(http_requests_total[2m])) by (job)",
+          "expr": "sum(rate(http_requests_total{job=~\"user-service|chat-service|notification-service|frontend\"}[2m])) by (job)",
           "legendFormat": "{{job}}",
           "refId": "A"
         }
@@ -62,8 +218,8 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 1 },
-      "id": 2,
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 6 },
+      "id": 6,
       "options": { "tooltip": { "mode": "multi", "sort": "desc" }, "legend": { "displayMode": "list", "placement": "bottom" } },
       "targets": [
         {
@@ -92,8 +248,8 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 9 },
-      "id": 3,
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 14 },
+      "id": 7,
       "options": { "tooltip": { "mode": "multi", "sort": "desc" }, "legend": { "displayMode": "list", "placement": "bottom" } },
       "targets": [
         {
@@ -116,37 +272,207 @@
       "datasource": { "type": "prometheus", "uid": "Prometheus" },
       "fieldConfig": {
         "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "lineWidth": 2, "fillOpacity": 10 },
+          "unit": "reqps"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 14 },
+      "id": 8,
+      "options": { "tooltip": { "mode": "multi", "sort": "desc" }, "legend": { "displayMode": "list", "placement": "bottom" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "expr": "sum(rate(http_requests_total{job=~\"user-service|chat-service|notification-service\"}[2m])) by (route, method)",
+          "legendFormat": "{{method}} {{route}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Request Rate by Route (backend)",
+      "type": "timeseries"
+    },
+
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 22 },
+      "id": 102,
+      "title": "Application Metrics",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "fieldConfig": {
+        "defaults": {
           "color": { "mode": "thresholds" },
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "green", "value": null },
-              { "color": "yellow", "value": 50 },
-              { "color": "red", "value": 200 }
+              { "color": "green", "value": null }
             ]
           },
           "unit": "short"
         },
         "overrides": []
       },
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 9 },
-      "id": 4,
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 23 },
+      "id": 9,
       "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "orientation": "auto", "textMode": "auto", "colorMode": "background", "graphMode": "area" },
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "Prometheus" },
-          "expr": "socket_connections_active",
-          "legendFormat": "Active WebSocket Connections",
+          "expr": "sum(user_logins_total)",
+          "legendFormat": "Logins",
           "refId": "A"
         }
       ],
-      "title": "Active WebSocket Connections",
+      "title": "Total User Logins",
       "type": "stat"
     },
     {
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "blue", "value": null }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 23 },
+      "id": 10,
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "orientation": "auto", "textMode": "auto", "colorMode": "background", "graphMode": "area" },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "expr": "sum(chat_messages_read_total)",
+          "legendFormat": "Messages Read",
+          "refId": "A"
+        }
+      ],
+      "title": "Messages Read",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "orange", "value": null }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 23 },
+      "id": 11,
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "orientation": "auto", "textMode": "auto", "colorMode": "background", "graphMode": "area" },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "expr": "sum(notifications_read_total)",
+          "legendFormat": "Notifications Read",
+          "refId": "A"
+        }
+      ],
+      "title": "Notifications Read",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "green", "value": 1 }
+            ]
+          },
+          "unit": "short",
+          "mappings": [
+            { "options": { "0": { "text": "Disconnected", "color": "red" }, "1": { "text": "Connected", "color": "green" } }, "type": "value" }
+          ]
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 23 },
+      "id": 12,
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "orientation": "auto", "textMode": "auto", "colorMode": "background", "graphMode": "none" },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "expr": "redis_adapter_connected",
+          "legendFormat": "Redis Adapter",
+          "refId": "A"
+        }
+      ],
+      "title": "Redis Adapter Status",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "lineWidth": 2, "fillOpacity": 10 },
+          "unit": "ops"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 27 },
+      "id": 13,
+      "options": { "tooltip": { "mode": "multi", "sort": "desc" }, "legend": { "displayMode": "list", "placement": "bottom" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "expr": "rate(user_logins_total[5m])",
+          "legendFormat": "Login Rate",
+          "refId": "A"
+        }
+      ],
+      "title": "Login Rate",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "lineWidth": 2, "fillOpacity": 10 },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 27 },
+      "id": 14,
+      "options": { "tooltip": { "mode": "multi", "sort": "desc" }, "legend": { "displayMode": "list", "placement": "bottom" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "expr": "socket_connections_active",
+          "legendFormat": "Active Connections",
+          "refId": "A"
+        }
+      ],
+      "title": "WebSocket Connections Over Time",
+      "type": "timeseries"
+    },
+
+    {
       "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 17 },
-      "id": 101,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 35 },
+      "id": 103,
       "title": "Node.js Runtime",
       "type": "row"
     },
@@ -160,24 +486,84 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 18 },
-      "id": 5,
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 36 },
+      "id": 15,
       "options": { "tooltip": { "mode": "multi", "sort": "desc" }, "legend": { "displayMode": "list", "placement": "bottom" } },
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "Prometheus" },
-          "expr": "nodejs_heap_size_used_bytes",
-          "legendFormat": "Heap Used — {{job}}",
+          "expr": "nodejs_process_resident_memory_bytes{job=~\"chat-service|user-service|notification-service\"}",
+          "legendFormat": "{{job}}",
           "refId": "A"
         },
         {
           "datasource": { "type": "prometheus", "uid": "Prometheus" },
-          "expr": "process_resident_memory_bytes",
-          "legendFormat": "RSS — {{job}}",
+          "expr": "process_resident_memory_bytes{job=\"frontend\"}",
+          "legendFormat": "frontend",
           "refId": "B"
         }
       ],
-      "title": "Memory Usage",
+      "title": "Memory RSS",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "lineWidth": 2, "fillOpacity": 10 },
+          "unit": "bytes"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 36 },
+      "id": 16,
+      "options": { "tooltip": { "mode": "multi", "sort": "desc" }, "legend": { "displayMode": "list", "placement": "bottom" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "expr": "nodejs_nodejs_heap_size_used_bytes{job=~\"chat-service|user-service|notification-service\"}",
+          "legendFormat": "{{job}}",
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "expr": "nodejs_heap_size_used_bytes{job=\"frontend\"}",
+          "legendFormat": "frontend",
+          "refId": "B"
+        }
+      ],
+      "title": "Heap Memory Used",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "lineWidth": 2 },
+          "unit": "percentunit"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 36 },
+      "id": 17,
+      "options": { "tooltip": { "mode": "multi", "sort": "desc" }, "legend": { "displayMode": "list", "placement": "bottom" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "expr": "rate(nodejs_process_cpu_seconds_total{job=~\"chat-service|user-service|notification-service\"}[2m])",
+          "legendFormat": "{{job}}",
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "expr": "rate(process_cpu_seconds_total{job=\"frontend\"}[2m])",
+          "legendFormat": "frontend",
+          "refId": "B"
+        }
+      ],
+      "title": "CPU Usage",
       "type": "timeseries"
     },
     {
@@ -198,48 +584,36 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 18 },
-      "id": 6,
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 44 },
+      "id": 18,
       "options": { "tooltip": { "mode": "multi", "sort": "desc" }, "legend": { "displayMode": "list", "placement": "bottom" } },
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "Prometheus" },
-          "expr": "nodejs_eventloop_lag_mean_seconds * 1000",
-          "legendFormat": "Event Loop Lag (mean) — {{job}}",
+          "expr": "nodejs_nodejs_eventloop_lag_mean_seconds{job=~\"chat-service|user-service|notification-service\"} * 1000",
+          "legendFormat": "mean — {{job}}",
           "refId": "A"
         },
         {
           "datasource": { "type": "prometheus", "uid": "Prometheus" },
-          "expr": "nodejs_eventloop_lag_p99_seconds * 1000",
-          "legendFormat": "Event Loop Lag (p99) — {{job}}",
+          "expr": "nodejs_eventloop_lag_mean_seconds{job=\"frontend\"} * 1000",
+          "legendFormat": "mean — frontend",
           "refId": "B"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "expr": "nodejs_nodejs_eventloop_lag_p99_seconds{job=~\"chat-service|user-service|notification-service\"} * 1000",
+          "legendFormat": "p99 — {{job}}",
+          "refId": "C"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "expr": "nodejs_eventloop_lag_p99_seconds{job=\"frontend\"} * 1000",
+          "legendFormat": "p99 — frontend",
+          "refId": "D"
         }
       ],
       "title": "Event Loop Lag",
-      "type": "timeseries"
-    },
-    {
-      "datasource": { "type": "prometheus", "uid": "Prometheus" },
-      "fieldConfig": {
-        "defaults": {
-          "color": { "mode": "palette-classic" },
-          "custom": { "lineWidth": 2 },
-          "unit": "percentunit"
-        },
-        "overrides": []
-      },
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 26 },
-      "id": 7,
-      "options": { "tooltip": { "mode": "multi", "sort": "desc" }, "legend": { "displayMode": "list", "placement": "bottom" } },
-      "targets": [
-        {
-          "datasource": { "type": "prometheus", "uid": "Prometheus" },
-          "expr": "rate(process_cpu_seconds_total[2m])",
-          "legendFormat": "CPU — {{job}}",
-          "refId": "A"
-        }
-      ],
-      "title": "CPU Usage",
       "type": "timeseries"
     },
     {
@@ -252,24 +626,54 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 26 },
-      "id": 8,
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 44 },
+      "id": 19,
       "options": { "tooltip": { "mode": "multi", "sort": "desc" }, "legend": { "displayMode": "list", "placement": "bottom" } },
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "Prometheus" },
-          "expr": "nodejs_active_handles_total",
-          "legendFormat": "Active Handles — {{job}}",
+          "expr": "nodejs_nodejs_active_handles_total{job=~\"chat-service|user-service|notification-service\"}",
+          "legendFormat": "{{job}}",
           "refId": "A"
         },
         {
           "datasource": { "type": "prometheus", "uid": "Prometheus" },
-          "expr": "nodejs_active_requests_total",
-          "legendFormat": "Active Requests — {{job}}",
+          "expr": "nodejs_active_handles_total{job=\"frontend\"}",
+          "legendFormat": "frontend",
           "refId": "B"
         }
       ],
-      "title": "Active Handles & Requests",
+      "title": "Active Handles",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "lineWidth": 2 },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 44 },
+      "id": 20,
+      "options": { "tooltip": { "mode": "multi", "sort": "desc" }, "legend": { "displayMode": "list", "placement": "bottom" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "expr": "nodejs_process_open_fds{job=~\"chat-service|user-service|notification-service\"}",
+          "legendFormat": "{{job}}",
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "expr": "process_open_fds{job=\"frontend\"}",
+          "legendFormat": "frontend",
+          "refId": "B"
+        }
+      ],
+      "title": "Open File Descriptors",
       "type": "timeseries"
     }
   ],

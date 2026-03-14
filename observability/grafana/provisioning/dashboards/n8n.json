@@ -1,0 +1,526 @@
+{
+  "__inputs": [],
+  "__requires": [
+    { "type": "grafana", "id": "grafana", "name": "Grafana", "version": "10.0.0" },
+    { "type": "datasource", "id": "prometheus", "name": "Prometheus", "version": "1.0.0" },
+    { "type": "panel", "id": "timeseries", "name": "Time series", "version": "" },
+    { "type": "panel", "id": "stat", "name": "Stat", "version": "" },
+    { "type": "panel", "id": "gauge", "name": "Gauge", "version": "" }
+  ],
+  "annotations": { "list": [] },
+  "description": "n8n Workflow Automation — instance health, workflow executions, and Node.js runtime metrics",
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "id": 100,
+      "title": "Overview",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "green", "value": 1 }
+            ]
+          },
+          "unit": "short",
+          "mappings": [
+            { "options": { "0": { "text": "DOWN", "color": "red" }, "1": { "text": "UP", "color": "green" } }, "type": "value" }
+          ]
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 1 },
+      "id": 1,
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "orientation": "auto", "textMode": "auto", "colorMode": "background", "graphMode": "none" },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "expr": "up{job=\"n8n\"}",
+          "legendFormat": "n8n",
+          "refId": "A"
+        }
+      ],
+      "title": "Instance Status",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "blue", "value": null }
+            ]
+          },
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 1 },
+      "id": 2,
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "orientation": "auto", "textMode": "auto", "colorMode": "background", "graphMode": "none" },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "expr": "time() - n8n_process_start_time_seconds{job=\"n8n\"}",
+          "legendFormat": "Uptime",
+          "refId": "A"
+        }
+      ],
+      "title": "Uptime",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "semi-dark-blue", "value": null }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 1 },
+      "id": 13,
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "orientation": "auto", "textMode": "name", "colorMode": "background", "graphMode": "none" },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "expr": "n8n_version_info{job=\"n8n\"}",
+          "legendFormat": "{{version}}",
+          "refId": "A"
+        }
+      ],
+      "title": "n8n Version",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "purple", "value": null }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 4, "w": 4, "x": 12, "y": 1 },
+      "id": 3,
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "orientation": "auto", "textMode": "name", "colorMode": "background", "graphMode": "none" },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "expr": "n8n_nodejs_version_info{job=\"n8n\"}",
+          "legendFormat": "{{version}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Node.js Version",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 4, "w": 4, "x": 16, "y": 1 },
+      "id": 14,
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "orientation": "auto", "textMode": "auto", "colorMode": "background", "graphMode": "area" },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "expr": "n8n_active_workflow_count{job=\"n8n\"}",
+          "legendFormat": "Active Workflows",
+          "refId": "A"
+        }
+      ],
+      "title": "Active Workflows",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 402653184 },
+              { "color": "red", "value": 494927872 }
+            ]
+          },
+          "unit": "bytes",
+          "max": 536870912
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 4, "w": 4, "x": 20, "y": 1 },
+      "id": 4,
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "orientation": "auto", "showThresholdLabels": false, "showThresholdMarkers": true },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "expr": "n8n_process_resident_memory_bytes{job=\"n8n\"}",
+          "legendFormat": "RSS",
+          "refId": "A"
+        }
+      ],
+      "title": "Memory vs 512 MB",
+      "type": "gauge"
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 5 },
+      "id": 101,
+      "title": "Workflow Executions",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "lineWidth": 2, "fillOpacity": 10 },
+          "unit": "ops"
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "Failed" },
+            "properties": [{ "id": "color", "value": { "fixedColor": "red", "mode": "fixed" } }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Success" },
+            "properties": [{ "id": "color", "value": { "fixedColor": "green", "mode": "fixed" } }]
+          }
+        ]
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 6 },
+      "id": 5,
+      "options": { "tooltip": { "mode": "multi", "sort": "desc" }, "legend": { "displayMode": "list", "placement": "bottom" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "expr": "sum(rate(n8n_workflow_production_success_total{job=\"n8n\"}[5m]))",
+          "legendFormat": "Success",
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "expr": "sum(rate(n8n_workflow_production_failed_total{job=\"n8n\"}[5m]))",
+          "legendFormat": "Failed",
+          "refId": "B"
+        }
+      ],
+      "title": "Workflow Execution Rate (production)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 6 },
+      "id": 6,
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "orientation": "auto", "textMode": "auto", "colorMode": "background", "graphMode": "area" },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "expr": "sum(n8n_workflow_production_success_total{job=\"n8n\"}) or vector(0)",
+          "legendFormat": "Total Success",
+          "refId": "A"
+        }
+      ],
+      "title": "Total Successful Executions",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 1 }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 6 },
+      "id": 7,
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "orientation": "auto", "textMode": "auto", "colorMode": "background", "graphMode": "area" },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "expr": "sum(n8n_workflow_production_failed_total{job=\"n8n\"}) or vector(0)",
+          "legendFormat": "Total Failed",
+          "refId": "A"
+        }
+      ],
+      "title": "Total Failed Executions",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "lineWidth": 2, "fillOpacity": 10 },
+          "unit": "ops"
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "Success (all)" },
+            "properties": [{ "id": "color", "value": { "fixedColor": "semi-dark-green", "mode": "fixed" } }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Failed (all)" },
+            "properties": [{ "id": "color", "value": { "fixedColor": "semi-dark-red", "mode": "fixed" } }]
+          }
+        ]
+      },
+      "gridPos": { "h": 4, "w": 12, "x": 12, "y": 10 },
+      "id": 8,
+      "options": { "tooltip": { "mode": "multi", "sort": "desc" }, "legend": { "displayMode": "list", "placement": "bottom" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "expr": "sum(rate(n8n_workflow_success_total{job=\"n8n\"}[5m]))",
+          "legendFormat": "Success (all)",
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "expr": "sum(rate(n8n_workflow_failed_total{job=\"n8n\"}[5m]))",
+          "legendFormat": "Failed (all)",
+          "refId": "B"
+        }
+      ],
+      "title": "Workflow Execution Rate (all — incl. manual/test)",
+      "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 14 },
+      "id": 102,
+      "title": "Node.js Runtime",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "lineWidth": 2, "fillOpacity": 10 },
+          "unit": "bytes",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 402653184 },
+              { "color": "red", "value": 494927872 }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "512 MB Limit" },
+            "properties": [
+              { "id": "color", "value": { "fixedColor": "red", "mode": "fixed" } },
+              { "id": "custom.lineStyle", "value": { "fill": "dash", "dash": [10, 10] } },
+              { "id": "custom.fillOpacity", "value": 0 },
+              { "id": "custom.lineWidth", "value": 1 }
+            ]
+          }
+        ]
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 15 },
+      "id": 9,
+      "options": { "tooltip": { "mode": "multi", "sort": "desc" }, "legend": { "displayMode": "list", "placement": "bottom" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "expr": "n8n_process_resident_memory_bytes{job=\"n8n\"}",
+          "legendFormat": "RSS",
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "expr": "n8n_nodejs_heap_size_used_bytes{job=\"n8n\"}",
+          "legendFormat": "Heap Used",
+          "refId": "B"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "expr": "n8n_nodejs_heap_size_total_bytes{job=\"n8n\"}",
+          "legendFormat": "Heap Total",
+          "refId": "C"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "expr": "vector(536870912)",
+          "legendFormat": "512 MB Limit",
+          "refId": "D"
+        }
+      ],
+      "title": "Memory Usage (RSS / Heap vs 512 MB limit)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "lineWidth": 2 },
+          "unit": "percentunit"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 15 },
+      "id": 10,
+      "options": { "tooltip": { "mode": "multi", "sort": "desc" }, "legend": { "displayMode": "list", "placement": "bottom" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "expr": "rate(n8n_process_cpu_seconds_total{job=\"n8n\"}[2m])",
+          "legendFormat": "CPU Usage",
+          "refId": "A"
+        }
+      ],
+      "title": "CPU Usage",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "lineWidth": 2 },
+          "unit": "ms",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 100 },
+              { "color": "red", "value": 500 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 23 },
+      "id": 11,
+      "options": { "tooltip": { "mode": "multi", "sort": "desc" }, "legend": { "displayMode": "list", "placement": "bottom" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "expr": "n8n_nodejs_eventloop_lag_mean_seconds{job=\"n8n\"} * 1000",
+          "legendFormat": "Mean",
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "expr": "n8n_nodejs_eventloop_lag_p99_seconds{job=\"n8n\"} * 1000",
+          "legendFormat": "p99",
+          "refId": "B"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "expr": "n8n_nodejs_eventloop_lag_p50_seconds{job=\"n8n\"} * 1000",
+          "legendFormat": "p50",
+          "refId": "C"
+        }
+      ],
+      "title": "Event Loop Lag",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "lineWidth": 2 },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 23 },
+      "id": 12,
+      "options": { "tooltip": { "mode": "multi", "sort": "desc" }, "legend": { "displayMode": "list", "placement": "bottom" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "expr": "n8n_nodejs_active_handles_total{job=\"n8n\"}",
+          "legendFormat": "Active Handles",
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "expr": "n8n_nodejs_active_requests_total{job=\"n8n\"}",
+          "legendFormat": "Active Requests",
+          "refId": "B"
+        }
+      ],
+      "title": "Active Handles & Requests",
+      "type": "timeseries"
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "tags": ["n8n", "automation", "observability"],
+  "templating": { "list": [] },
+  "time": { "from": "now-1h", "to": "now" },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "n8n — Workflow Automation",
+  "uid": "n8n-overview",
+  "version": 1
+}
