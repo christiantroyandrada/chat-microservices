@@ -31,3 +31,11 @@ scrape_configs:
   - job_name: 'prometheus'
     static_configs:
       - targets: ['localhost:9090']
+
+  # n8n automation platform (only available in production)
+  # n8n must have N8N_METRICS=true set in its environment
+  - job_name: 'n8n'
+    static_configs:
+      - targets: ['n8n:5678']
+    metrics_path: '/metrics'
+    scrape_interval: 30s
