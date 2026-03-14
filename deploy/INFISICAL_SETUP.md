@@ -271,3 +271,35 @@ See `GITHUB_SECRETS.md` for manual setup instructions.
 - [Infisical Documentation](https://infisical.com/docs)
 - [Infisical Discord](https://infisical.com/discord)
 - [GitHub Actions Secrets](https://docs.github.com/en/actions/security-guides/encrypted-secrets)
+
+---
+
+## n8n Encryption Key
+
+The n8n instance at `n8n.ctaprojects.xyz` uses an encryption key to encrypt all stored
+credentials (API keys, OAuth tokens, database passwords, etc.) at rest.
+
+> **⚠️  CRITICAL:** If this key is lost, ALL n8n stored credentials become **permanently
+> unrecoverable**. Workflows that reference those credentials will break.
+
+### Current Backup Locations
+
+| Location | Access | Notes |
+|----------|--------|-------|
+| `/opt/n8n/.env` (VPS) | `ubuntu` user | Runtime source — used by the n8n container |
+| `/root/secrets-backup/n8n-encryption-key.txt` (VPS) | `root` only (600) | Disaster-recovery backup |
+
+### Adding to Infisical (Recommended)
+
+Once Infisical CLI is installed on the VPS, store the key there:
+
+```bash
+# On VPS, after installing Infisical CLI:
+infisical secrets set N8N_ENCRYPTION_KEY="$(grep N8N_ENCRYPTION_KEY /opt/n8n/.env | cut -d= -f2)"
+```
+
+### Key Rotation
+
+n8n does **not** support encryption key rotation. Changing the key will make all
+existing credentials unreadable. Only rotate if you suspect the key is compromised,
+and be prepared to re-enter all credentials manually.

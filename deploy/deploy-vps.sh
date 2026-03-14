@@ -213,6 +213,27 @@ for svc_dir in ./user-service ./chat-service ./notification-service; do
 done
 
 echo "✅ Setup completed. Starting database and backend services..."
+
+# ── n8n isolation safeguard ──────────────────────────────────
+# Ensure the shared bridge network exists before docker compose up,
+# otherwise compose will fail on the external network reference.
+echo "🔒 n8n safeguard: verifying bridge network..."
+if ! docker network inspect n8n_nginx_bridge >/dev/null 2>&1; then
+  echo "⚠️  n8n_nginx_bridge not found — creating..."
+  docker network create n8n_nginx_bridge 2>/dev/null || true
+else
+  echo "✅ n8n_nginx_bridge network exists"
+fi
+
+# Snapshot n8n health so we can verify it survives the deploy
+N8N_PRE_HEALTHY=false
+if curl -fsS --max-time 5 "http://localhost:5678/" >/dev/null 2>&1; then
+  N8N_PRE_HEALTHY=true
+  echo "✅ n8n is reachable before deployment"
+else
+  echo "ℹ️  n8n not reachable pre-deploy (skipping post-deploy n8n check)"
+fi
+
 docker compose "${COMPOSE_ARGS[@]}" up -d --remove-orphans --force-recreate postgres pgadmin "${BACKEND_SERVICES[@]}" || {
   echo "⚠️ Some services failed to start"
   docker compose "${COMPOSE_ARGS[@]}" ps || true
@@ -257,6 +278,28 @@ done
 
 echo "🧹 Cleaning up old images..."
 docker image prune -f || true
+
+# ── n8n post-deploy verification ─────────────────────────────
+if [ "$N8N_PRE_HEALTHY" = true ]; then
+  echo "🔍 Verifying n8n survived the deployment..."
+  N8N_OK=false
+  for attempt in $(seq 1 12); do
+    if curl -fsS --max-time 5 "http://localhost:5678/" >/dev/null 2>&1; then
+      N8N_OK=true
+      break
+    fi
+    echo "   ⏳ n8n health check attempt ${attempt}/12..."
+    sleep 5
+  done
+
+  if [ "$N8N_OK" = true ]; then
+    echo "✅ n8n is healthy after deployment"
+  else
+    echo "⚠️  n8n is not responding after deployment!"
+    echo "   Check: docker ps | grep n8n"
+    echo "   Fix:   cd /opt/n8n && docker compose up -d"
+  fi
+fi
 
 echo "✅ Deployment completed successfully!"
 echo ""

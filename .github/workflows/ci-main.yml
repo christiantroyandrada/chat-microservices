@@ -404,6 +404,9 @@ jobs:
                   timeout: 5s
                   retries: 3
                   start_period: 10s
+                networks:
+                  - default
+                  - n8n_nginx_bridge
 
               frontend:
                 image: ghcr.io/${REPO_OWNER}/chat-frontend:latest
@@ -429,6 +432,10 @@ jobs:
             volumes:
               postgres-data:
               pgadmin-data:
+
+            networks:
+              n8n_nginx_bridge:
+                external: true
             COMPOSE_END
 
             # Export all environment variables
@@ -439,6 +446,26 @@ jobs:
 
             # Create certbot directories
             mkdir -p certbot/conf certbot/www
+
+            # ── n8n isolation safeguard ──────────────────────────────────
+            # Ensure the shared bridge network exists so nginx can proxy
+            # to the n8n container without impacting n8n's own stack.
+            echo "🔒 n8n safeguard: verifying bridge network..."
+            if ! docker network inspect n8n_nginx_bridge >/dev/null 2>&1; then
+              echo "⚠️  n8n_nginx_bridge not found — creating..."
+              docker network create n8n_nginx_bridge 2>/dev/null || true
+            else
+              echo "✅ n8n_nginx_bridge network exists"
+            fi
+
+            # Snapshot n8n health so we can verify it survives the deploy
+            N8N_PRE_HEALTHY=false
+            if curl -fsS --max-time 5 "http://localhost:5678/" >/dev/null 2>&1; then
+              N8N_PRE_HEALTHY=true
+              echo "✅ n8n is reachable before deployment"
+            else
+              echo "ℹ️  n8n not reachable pre-deploy (skipping post-deploy n8n check)"
+            fi
 
             echo "🐳 Pre-pulling new images from GHCR..."
             docker compose pull
@@ -506,14 +533,53 @@ jobs:
             done
 
             if [ "$ALL_HEALTHY" = true ]; then
-              echo "✅ Backend deployment successful!"
-              echo "🧹 Cleaning up old images..."
-              docker image prune -f --filter "until=24h" || true
+              echo "✅ Chat-app deployment successful!"
             else
               echo "⚠️ Health check failed, showing logs..."
               docker compose logs --tail=100
               exit 1
             fi
+
+            # ── n8n post-deploy verification ─────────────────────────────
+            if [ "$N8N_PRE_HEALTHY" = true ]; then
+              echo "🔍 Verifying n8n survived the deployment..."
+              N8N_OK=false
+              for attempt in $(seq 1 12); do
+                if curl -fsS --max-time 5 "http://localhost:5678/" >/dev/null 2>&1; then
+                  N8N_OK=true
+                  break
+                fi
+                echo "   ⏳ n8n health check attempt ${attempt}/12..."
+                sleep 5
+              done
+
+              if [ "$N8N_OK" = true ]; then
+                # Also verify nginx can proxy to n8n via the bridge network
+                if curl -fsS --max-time 5 -k -H "Host: n8n.ctaprojects.xyz" "https://localhost/" >/dev/null 2>&1; then
+                  echo "✅ n8n is healthy and nginx→n8n proxy is working"
+                else
+                  echo "⚠️  n8n is running but nginx proxy failed — reconnecting bridge..."
+                  NGINX_ID=$(docker compose ps -q nginx 2>/dev/null || echo "")
+                  if [ -n "$NGINX_ID" ]; then
+                    docker network connect n8n_nginx_bridge "$NGINX_ID" 2>/dev/null || true
+                    sleep 3
+                    if curl -fsS --max-time 5 -k -H "Host: n8n.ctaprojects.xyz" "https://localhost/" >/dev/null 2>&1; then
+                      echo "✅ n8n proxy recovered after bridge reconnect"
+                    else
+                      echo "⚠️  n8n proxy still failing — manual check needed"
+                    fi
+                  fi
+                fi
+              else
+                echo "⚠️  n8n is not responding after deployment!"
+                echo "   This may indicate the n8n container was affected."
+                echo "   Check: docker ps | grep n8n"
+                echo "   Fix:   cd /opt/n8n && docker compose up -d"
+              fi
+            fi
+
+            echo "🧹 Cleaning up old images..."
+            docker image prune -f --filter "until=24h" || true
 
             docker compose ps
 
