@@ -17,6 +17,7 @@ jobs:
   npm-audit:
     name: NPM Security Audit
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     strategy:
       matrix:
         service: [user-service, chat-service, notification-service]
@@ -63,6 +64,7 @@ jobs:
   trivy-scan:
     name: Container Image Security Scan
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     strategy:
       matrix:
         service: [user-service, chat-service, notification-service, nginx]

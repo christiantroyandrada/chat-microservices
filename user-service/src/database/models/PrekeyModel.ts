@@ -1,5 +1,5 @@
 import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn } from 'typeorm'
-import type { PrekeyBundle } from '../../types'
+import type { StoredBundle } from '../../types'
 
 @Entity('prekeys')
 export class Prekey {
@@ -13,8 +13,9 @@ export class Prekey {
   deviceId: string
 
   // Store the bundle as JSON (Postgres JSONB)
+  // StoredBundle is either a full PrekeyBundle or an encrypted-only backup blob
   @Column({ type: 'json' })
-  bundle: PrekeyBundle
+  bundle: StoredBundle
 
   // Track last backup time for rate limiting (CVE-008)
   @Column({ type: 'timestamp', nullable: true })

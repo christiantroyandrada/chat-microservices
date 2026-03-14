@@ -30,14 +30,11 @@ const authMiddleware = async (
       return next(new APIError(401, 'Authentication required'))
     }
     
-    const decoded = jwt.verify(token, jwtSecret) as TokenPayload
+    const decoded = jwt.verify(token, jwtSecret, { algorithms: ['HS256'] }) as TokenPayload
     req.user = {
       _id: decoded.id,
       username: decoded.username,
       email: decoded.email,
-      password: '',
-      createdAt: new Date(decoded.iat * 1000),
-      updatedAt: new Date(decoded.exp * 1000),
     }
     // proceed to next middleware / route handler
     return next()
@@ -53,7 +50,7 @@ const errorMiddleware: ErrorRequestHandler = (
   let error = err
   if ( !(error instanceof APIError) ) {
     const statusCode = error.statusCode || (
-      error instanceof APIError ? 400 : 500
+      error instanceof Error ? 400 : 500
     )
     const message = error.message || (
       statusCode === 500 ? 'Internal Server Error' : 'Bad Request'

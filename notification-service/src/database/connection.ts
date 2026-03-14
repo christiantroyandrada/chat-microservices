@@ -41,7 +41,7 @@ export const runMigrations = async () => {
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
       logInfo('[notification-service] Running database migrations...')
-      const migrations = await AppDataSource.runMigrations()
+      const migrations = await AppDataSource.runMigrations({ transaction: 'each' })
       if (migrations.length > 0) {
         logInfo(`[notification-service] ✅ Ran ${migrations.length} migration(s): ${migrations.map(m => m.name).join(', ')}`)
       } else {

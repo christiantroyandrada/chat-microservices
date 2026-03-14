@@ -176,6 +176,11 @@ const createNotification = async (
       throw new APIError(400, 'Missing required fields: userId, type, title, message')
     }
 
+    // IDOR fix: ensure the authenticated user can only create notifications for themselves
+    if (userId !== req.user!._id) {
+      throw new APIError(403, 'Forbidden: Cannot create notifications for other users')
+    }
+
     // Validate type
     if (!['message', 'system', 'alert'].includes(type)) {
       throw new APIError(400, 'Invalid notification type. Must be: message, system, or alert')

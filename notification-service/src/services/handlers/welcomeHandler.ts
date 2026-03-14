@@ -1,18 +1,21 @@
 import { Notification } from '../../database'
 import { NotificationType } from '../../database/models/NotificationModel'
 import type { Channel, ConsumeMessage } from 'amqplib'
+import type { Repository } from 'typeorm'
 import { SecureEmailService } from '../SecureEmailService'
 import { loadTemplate, renderTemplate } from '../EmailTemplateService'
 import config from '../../config/config'
 import { logError } from '../../utils/logger'
+import { LOGO_URL, APP_URL } from '../../config/constants'
+import type { UserRegisteredPayload } from '../../types'
 
 type Deps = {
   emailService: SecureEmailService
-  notificationRepo: any
+  notificationRepo: Repository<Notification>
   channel: Channel
 }
 
-export async function handleUserRegistered (payload: any, msg: ConsumeMessage, deps: Deps) {
+export async function handleUserRegistered (payload: UserRegisteredPayload, msg: ConsumeMessage, deps: Deps) {
   const { userId, message, userEmail } = payload
   const { emailService, notificationRepo, channel } = deps
 
@@ -30,16 +33,12 @@ export async function handleUserRegistered (payload: any, msg: ConsumeMessage, d
       try {
         const welcomeTpl = loadTemplate('welcome.html')
 
-        // Hard-coded public logo URL (preferred). This ensures mail clients fetch the image over HTTPS.
-        const LOGO_URL = 'https://res.cloudinary.com/dpqt9h7cn/image/upload/v1764081536/logo_blqxwc.png'
-        const logoSrc = LOGO_URL
-
         const html = renderTemplate(welcomeTpl, {
           BODY: welcomeMessage,
-          APP_URL: (process.env.PUBLIC_URL || 'http://localhost:85'),
+          APP_URL,
           YEAR: String(new Date().getFullYear()),
           EMAIL_FROM: config.EMAIL_FROM || 'notifications@chat-app',
-          LOGO_DATA_URI: logoSrc,
+          LOGO_DATA_URI: LOGO_URL,
         })
 
         await emailService.sendEmail(userEmail, 'Welcome to Chat App', html)

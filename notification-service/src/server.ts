@@ -1,6 +1,7 @@
 import express, { Express } from 'express'
 import cors from 'cors'
 import helmet from 'helmet'
+import rateLimit from 'express-rate-limit'
 import cookieParser from 'cookie-parser'
 import swaggerUi from 'swagger-ui-express'
 import { Server } from 'node:http'
@@ -34,6 +35,10 @@ validateEnv()
 
 const app: Express = express()
 let server: Server
+
+// Trust the first proxy hop — required for express-rate-limit to read the
+// real client IP via X-Forwarded-For (set by nginx in production).
+app.set('trust proxy', 1)
 
 // CORS must be applied before helmet to ensure preflight requests are handled properly
 const allowedOrigins = process.env.CORS_ORIGINS
@@ -121,6 +126,16 @@ app.get('/health', async (_req, res) => {
     return res.status(503).json({ status: 'error', service: 'notification-service', checks, error: String(err) })
   }
 })
+
+// Global rate limiter — covers all routes including any future endpoints not under notificationRouter
+const globalLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100,
+  message: 'Too many requests from this IP, please try again later',
+  standardHeaders: true,
+  legacyHeaders: false,
+})
+app.use(globalLimiter)
 
 // Mount notification routes (use plural `/notifications` prefix for consistency)
 app.use('/notifications', notificationRouter)

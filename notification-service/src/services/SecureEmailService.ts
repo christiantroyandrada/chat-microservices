@@ -65,7 +65,7 @@ export class SecureEmailService {
           })
         }
 
-        const mailOptions: any = {
+        const mailOptions: nodemailer.SendMailOptions = {
           from: `${'Chat Service'} <${config.EMAIL_FROM}>`,
           to,
           subject,

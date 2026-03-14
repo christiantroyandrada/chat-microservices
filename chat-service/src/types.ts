@@ -13,12 +13,9 @@ export interface IUser {
   _id: string
   username: string
   email: string
-  password: string
-  createdAt: Date
-  updatedAt: Date
 }
-// Represents the application user shape returned by the User service
-// Used throughout controllers (e.g. MessageController) and middleware
+// Represents the authenticated user context injected by auth middleware.
+// Only contains JWT claims — no entity fields like password or timestamps.
 
 export interface AuthenticatedRequest extends Request {
   user: IUser

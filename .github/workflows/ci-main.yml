@@ -22,6 +22,7 @@ jobs:
   build:
     name: Build & Audit — ${{ matrix.service }}
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     strategy:
       # All 3 services build in parallel; fail-fast: false so audit results are
       # always visible even if one service fails to compile.
@@ -90,6 +91,7 @@ jobs:
     needs: integration-tests
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    timeout-minutes: 20
 
     steps:
       - name: Checkout
@@ -165,6 +167,7 @@ jobs:
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     environment: production
+    timeout-minutes: 40
     concurrency:
       group: production-deployment
       cancel-in-progress: false
@@ -172,7 +175,8 @@ jobs:
     steps:
       - name: Fetch secrets from Infisical
         id: infisical
-        uses: Infisical/secrets-action@v1.0.7
+        # Pinned to specific commit SHA for supply-chain security
+        uses: Infisical/secrets-action@03d3fa38607956c493f53c6633f94006a13c47ae # v1.0.7
         with:
           method: universal
           client-id: ${{ secrets.INFISCAL_CLIENT_ID }}
@@ -207,7 +211,8 @@ jobs:
           echo "✅ All required secrets validated"
 
       - name: Deploy to VPS
-        uses: appleboy/ssh-action@v1.0.3
+        # Pinned to specific commit SHA for supply-chain security
+        uses: appleboy/ssh-action@029f5b4aeeeb58fdfe1410a5d17f967dacf36262 # v1.0.3
         env:
           ADMIN_USERNAME: ${{ env.ADMIN_USERNAME }}
           ADMIN_PASSWORD: ${{ env.ADMIN_PASSWORD }}
@@ -514,7 +519,7 @@ jobs:
 
       - name: Security cleanup
         if: always()
-        uses: appleboy/ssh-action@v1.0.3
+        uses: appleboy/ssh-action@029f5b4aeeeb58fdfe1410a5d17f967dacf36262 # v1.0.3
         env:
           VPS_SUDO_PASSWORD: ${{ secrets.VPS_SUDO_PASSWORD }}
         with:

@@ -61,7 +61,7 @@ app.use(cors({
       // Return the origin itself to set Access-Control-Allow-Origin header
       callback(null, origin)
     } else {
-      console.warn(`[user-service] CORS blocked origin: ${origin}`)
+      logWarn(`[user-service] CORS blocked origin: ${origin}`)
       callback(null, false)
     }
   },

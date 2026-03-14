@@ -62,3 +62,29 @@ export interface AxiosErrorResponse {
   data: unknown
 }
 // Local typing for handling axios error responses in SecureEmailService
+
+// ── RabbitMQ notification queue payloads ──────────────────────────────────
+
+export interface MessageReceivedPayload {
+  type: 'MESSAGE_RECEIVED'
+  userId: string
+  message?: string
+  envelope?: string | object
+  isEncrypted?: boolean
+  userEmail?: string
+  userToken?: string
+  fromName?: string
+}
+
+export interface UserRegisteredPayload {
+  type: 'USER_REGISTERED'
+  userId: string
+  message?: string
+  userEmail?: string
+}
+
+/**
+ * Union of all known notification queue payloads.
+ * Unknown event types are acked and ignored by RabbitMQService.handleMessage.
+ */
+export type NotificationQueuePayload = MessageReceivedPayload | UserRegisteredPayload
