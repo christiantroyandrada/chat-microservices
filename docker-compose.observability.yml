@@ -1,0 +1,81 @@
+# Standalone observability stack — joins the existing app network.
+# Start:  docker compose -f docker-compose.observability.yml up -d
+# Access via SSH tunnel:
+#   ssh -L 3001:localhost:3001 -L 9090:localhost:9090 vps
+#   Grafana    → http://localhost:3001  (admin / admin)
+#   Prometheus → http://localhost:9090
+
+networks:
+  app-net:
+    external: true
+    name: chat-microservices_default
+  n8n-bridge:
+    external: true
+    name: n8n_nginx_bridge
+
+volumes:
+  prometheus-data:
+  grafana-data:
+
+services:
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    restart: unless-stopped
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=7d'
+      - '--storage.tsdb.wal-compression'
+      - '--web.enable-lifecycle'
+      - '--query.max-concurrency=20'
+      - '--query.timeout=2m'
+    volumes:
+      - ./observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    ports:
+      - "127.0.0.1:9090:9090"
+    networks:
+      - app-net
+      - n8n-bridge
+    logging:
+      driver: "json-file"
+      options: { max-size: "10m", max-file: "3" }
+
+  grafana:
+    image: grafana/grafana:11.4.0
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: 'false'
+      GF_ANALYTICS_REPORTING_ENABLED: 'false'
+      GF_ANALYTICS_CHECK_FOR_UPDATES: 'false'
+      GF_INSTALL_PLUGINS: ''
+      # ── Performance tuning ──────────────────────────────────
+      # Compress all HTTP responses — biggest win for initial page load over SSH tunnel
+      GF_SERVER_ENABLE_GZIP: 'true'
+      # SQLite WAL mode — concurrent reads no longer block on write locks
+      GF_DATABASE_WAL: 'true'
+      GF_DATABASE_CACHE_MODE: 'shared'
+      # Reduce log I/O (default is info/debug)
+      GF_LOG_LEVEL: 'warn'
+      # Disable Grafana Live WebSocket connections (not needed for dashboards-only)
+      GF_LIVE_MAX_CONNECTIONS: '0'
+      # Prevent browsers from hammering with sub-5s refresh intervals
+      GF_DASHBOARDS_MIN_REFRESH_INTERVAL: '5s'
+      # Keep-alive HTTP connections to Prometheus backend
+      GF_DATAPROXY_TIMEOUT: '30'
+      GF_DATAPROXY_KEEP_ALIVE_SECONDS: '30'
+      GF_DATAPROXY_IDLE_CONN_TIMEOUT_SECONDS: '90'
+    volumes:
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - grafana-data:/var/lib/grafana
+    ports:
+      - "127.0.0.1:3001:3000"
+    networks:
+      - app-net
+    depends_on:
+      - prometheus
+    logging:
+      driver: "json-file"
+      options: { max-size: "10m", max-file: "3" }
