@@ -1,0 +1,132 @@
+groups:
+  # ── Service availability ──────────────────────────────────────────────────
+  - name: service_availability
+    rules:
+      - alert: ServiceDown
+        expr: up == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.job }} is down"
+          description: "{{ $labels.job }} ({{ $labels.instance }}) has been unreachable for more than 1 minute."
+
+      - alert: HighErrorRate
+        expr: |
+          (
+            sum(rate(http_requests_total{status_code=~"5.."}[5m])) by (job)
+            /
+            sum(rate(http_requests_total[5m])) by (job)
+          ) > 0.05
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High 5xx error rate on {{ $labels.job }}"
+          description: "{{ $labels.job }} has a 5xx error rate above 5% for the last 2 minutes (current: {{ $value | humanizePercentage }})."
+
+      - alert: CriticalErrorRate
+        expr: |
+          (
+            sum(rate(http_requests_total{status_code=~"5.."}[5m])) by (job)
+            /
+            sum(rate(http_requests_total[5m])) by (job)
+          ) > 0.15
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Critical 5xx error rate on {{ $labels.job }}"
+          description: "{{ $labels.job }} has a 5xx error rate above 15% for the last minute (current: {{ $value | humanizePercentage }})."
+
+  # ── Latency ──────────────────────────────────────────────────────────────
+  - name: latency
+    rules:
+      - alert: HighP95Latency
+        expr: |
+          histogram_quantile(0.95,
+            sum(rate(http_request_duration_seconds_bucket[5m])) by (job, le)
+          ) > 2
+        for: 3m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High p95 latency on {{ $labels.job }}"
+          description: "p95 latency for {{ $labels.job }} is above 2 seconds (current: {{ $value | humanizeDuration }})."
+
+      - alert: CriticalP99Latency
+        expr: |
+          histogram_quantile(0.99,
+            sum(rate(http_request_duration_seconds_bucket[5m])) by (job, le)
+          ) > 5
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Critical p99 latency on {{ $labels.job }}"
+          description: "p99 latency for {{ $labels.job }} is above 5 seconds (current: {{ $value | humanizeDuration }})."
+
+  # ── Chat-specific ────────────────────────────────────────────────────────
+  - name: chat_metrics
+    rules:
+      - alert: NoMessagesSent
+        expr: |
+          sum(increase(chat_messages_sent_total[30m])) == 0
+          and
+          sum(increase(http_requests_total{job="chat-service"}[30m])) > 10
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "No chat messages sent in 30 minutes"
+          description: "Chat service is receiving HTTP traffic but no messages have been sent in the last 30 minutes. May indicate a messaging issue."
+
+  # ── Rate limiting ────────────────────────────────────────────────────────
+  - name: rate_limiting
+    rules:
+      - alert: HighRateLimitHits
+        expr: |
+          sum(rate(http_requests_total{status_code="429"}[5m])) by (job) > 1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High rate of 429 responses on {{ $labels.job }}"
+          description: "{{ $labels.job }} is returning more than 1 rate-limit (429) response per second for the last 5 minutes."
+
+  # ── Health check ─────────────────────────────────────────────────────────
+  - name: health_degraded
+    rules:
+      - alert: ServiceDegraded
+        expr: |
+          probe_success{job=~".*-service"} == 0
+          or
+          http_requests_total{route="/health", status_code!="200"} > 0
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.job }} health check is failing"
+          description: "{{ $labels.job }} health endpoint returned non-200 for more than 2 minutes."
+
+  # ── n8n automation ───────────────────────────────────────────────────────
+  - name: n8n
+    rules:
+      - alert: N8nDown
+        expr: up{job="n8n"} == 0
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "n8n automation platform is down"
+          description: "n8n has been unreachable for more than 2 minutes."
+
+      - alert: N8nHighErrorRate
+        expr: |
+          sum(rate(n8n_workflow_failed_total[15m])) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High n8n workflow failure rate"
+          description: "n8n workflow failures exceed 0.1/sec for the last 5 minutes."

@@ -1,4 +1,4 @@
-import { Response } from 'express'
+import { Response, NextFunction } from 'express'
 import { Notification, AppDataSource } from '../database'
 import { APIError } from '../utils'
 import { NotificationType } from '../database/models/NotificationModel'
@@ -7,7 +7,8 @@ import { notificationsReadTotal } from '../utils/metrics'
 
 const getNotifications = async (
   req: AuthenticatedRequest & { query: { limit?: string; offset?: string } },
-  res: Response
+  res: Response,
+  next: NextFunction,
 ) => {
   try {
     const { _id: userId } = req.user!
@@ -28,17 +29,14 @@ const getNotifications = async (
       data: notifications
     })
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : 'Internal Server Error'
-    return res.status(500).json({
-      status: 500,
-      message
-    })
+    next(error)
   }
 }
 
 const getUnreadCount = async (
   req: AuthenticatedRequest,
-  res: Response
+  res: Response,
+  next: NextFunction,
 ) => {
   try {
     const { _id: userId } = req.user!
@@ -54,17 +52,14 @@ const getUnreadCount = async (
       data: { count }
     })
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : 'Internal Server Error'
-    return res.status(500).json({
-      status: 500,
-      message
-    })
+    next(error)
   }
 }
 
 const markAsRead = async (
   req: AuthenticatedRequest & { params: { notificationId: string } },
-  res: Response
+  res: Response,
+  next: NextFunction,
 ) => {
   try {
     const { _id: userId } = req.user!
@@ -90,18 +85,14 @@ const markAsRead = async (
       data: notification
     })
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : 'Internal Server Error'
-    const status = error instanceof APIError ? error.statusCode : 500
-    return res.status(status).json({
-      status,
-      message
-    })
+    next(error)
   }
 }
 
 const markAllAsRead = async (
   req: AuthenticatedRequest,
-  res: Response
+  res: Response,
+  next: NextFunction,
 ) => {
   try {
     const { _id: userId } = req.user!
@@ -123,17 +114,14 @@ const markAllAsRead = async (
       data: { modifiedCount: result.affected || 0 }
     })
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : 'Internal Server Error'
-    return res.status(500).json({
-      status: 500,
-      message
-    })
+    next(error)
   }
 }
 
 const deleteNotification = async (
   req: AuthenticatedRequest & { params: { notificationId: string } },
-  res: Response
+  res: Response,
+  next: NextFunction,
 ) => {
   try {
     const { _id: userId } = req.user!
@@ -155,18 +143,14 @@ const deleteNotification = async (
       message: 'Notification deleted successfully'
     })
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : 'Internal Server Error'
-    const status = error instanceof APIError ? error.statusCode : 500
-    return res.status(status).json({
-      status,
-      message
-    })
+    next(error)
   }
 }
 
 const createNotification = async (
   req: AuthenticatedRequest & { body: { userId?: string; type: string; title: string; message: string } },
-  res: Response
+  res: Response,
+  next: NextFunction,
 ) => {
   try {
     const { userId, type, title, message } = req.body
@@ -201,12 +185,7 @@ const createNotification = async (
       data: notification
     })
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : 'Internal Server Error'
-    const status = error instanceof APIError ? error.statusCode : 500
-    return res.status(status).json({
-      status,
-      message
-    })
+    next(error)
   }
 }
 

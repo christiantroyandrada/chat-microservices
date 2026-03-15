@@ -1,0 +1,173 @@
+{
+  "name": "Service Health Monitor",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "cron-trigger",
+      "name": "Every 5 Minutes",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [220, 300]
+    },
+    {
+      "parameters": {
+        "url": "http://user:8081/health",
+        "options": {
+          "timeout": 5000
+        }
+      },
+      "id": "user-health",
+      "name": "User Service Health",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [440, 140],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "url": "http://chat:8082/health",
+        "options": {
+          "timeout": 5000
+        }
+      },
+      "id": "chat-health",
+      "name": "Chat Service Health",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [440, 300],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "url": "http://notification:8083/health",
+        "options": {
+          "timeout": 5000
+        }
+      },
+      "id": "notif-health",
+      "name": "Notification Service Health",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [440, 460],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "condition-0",
+              "leftValue": "={{ $('User Service Health').first().json.status }}",
+              "rightValue": "ok",
+              "operator": {
+                "type": "string",
+                "operation": "notEquals"
+              }
+            }
+          ],
+          "combinator": "or"
+        }
+      },
+      "id": "check-user",
+      "name": "User Unhealthy?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [660, 140]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "condition-1",
+              "leftValue": "={{ $('Chat Service Health').first().json.status }}",
+              "rightValue": "ok",
+              "operator": {
+                "type": "string",
+                "operation": "notEquals"
+              }
+            }
+          ],
+          "combinator": "or"
+        }
+      },
+      "id": "check-chat",
+      "name": "Chat Unhealthy?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [660, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "condition-2",
+              "leftValue": "={{ $('Notification Service Health').first().json.status }}",
+              "rightValue": "ok",
+              "operator": {
+                "type": "string",
+                "operation": "notEquals"
+              }
+            }
+          ],
+          "combinator": "or"
+        }
+      },
+      "id": "check-notif",
+      "name": "Notification Unhealthy?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [660, 460]
+    }
+  ],
+  "connections": {
+    "Every 5 Minutes": {
+      "main": [
+        [
+          { "node": "User Service Health", "type": "main", "index": 0 },
+          { "node": "Chat Service Health", "type": "main", "index": 0 },
+          { "node": "Notification Service Health", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "User Service Health": {
+      "main": [
+        [{ "node": "User Unhealthy?", "type": "main", "index": 0 }]
+      ]
+    },
+    "Chat Service Health": {
+      "main": [
+        [{ "node": "Chat Unhealthy?", "type": "main", "index": 0 }]
+      ]
+    },
+    "Notification Service Health": {
+      "main": [
+        [{ "node": "Notification Unhealthy?", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "tags": [
+    {
+      "name": "monitoring"
+    }
+  ]
+}

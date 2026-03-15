@@ -1,0 +1,96 @@
+{
+  "name": "Docker Container Monitor",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 10
+            }
+          ]
+        }
+      },
+      "id": "container-cron",
+      "name": "Every 10 Minutes",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [220, 300]
+    },
+    {
+      "parameters": {
+        "command": "docker ps --format '{{.Names}}|{{.Status}}|{{.Ports}}' | grep -E 'chat-microservices|n8n' || echo 'NO_CONTAINERS'"
+      },
+      "id": "docker-ps",
+      "name": "List Containers",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [440, 300],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "jsCode": "const output = $input.first().json.stdout || '';\nconst lines = output.trim().split('\\n').filter(l => l && l !== 'NO_CONTAINERS');\n\nconst containers = lines.map(line => {\n  const [name, status, ports] = line.split('|');\n  const isHealthy = status && (status.includes('healthy') || status.includes('Up'));\n  const isUnhealthy = status && status.includes('unhealthy');\n  return {\n    name: name || 'unknown',\n    status: status || 'unknown',\n    ports: ports || '',\n    healthy: isHealthy && !isUnhealthy,\n    unhealthy: isUnhealthy\n  };\n});\n\nconst unhealthyContainers = containers.filter(c => c.unhealthy || !c.healthy);\n\nreturn [{\n  json: {\n    timestamp: new Date().toISOString(),\n    totalContainers: containers.length,\n    healthyCount: containers.filter(c => c.healthy).length,\n    unhealthyCount: unhealthyContainers.length,\n    containers,\n    unhealthyContainers,\n    allHealthy: unhealthyContainers.length === 0\n  }\n}];"
+      },
+      "id": "parse-containers",
+      "name": "Parse Container Status",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [660, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "container-unhealthy",
+              "leftValue": "={{ $json.allHealthy }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "notEquals"
+              }
+            }
+          ],
+          "combinator": "or"
+        }
+      },
+      "id": "containers-unhealthy",
+      "name": "Any Unhealthy?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [880, 300]
+    }
+  ],
+  "connections": {
+    "Every 10 Minutes": {
+      "main": [
+        [{ "node": "List Containers", "type": "main", "index": 0 }]
+      ]
+    },
+    "List Containers": {
+      "main": [
+        [{ "node": "Parse Container Status", "type": "main", "index": 0 }]
+      ]
+    },
+    "Parse Container Status": {
+      "main": [
+        [{ "node": "Any Unhealthy?", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "tags": [
+    {
+      "name": "monitoring"
+    }
+  ]
+}

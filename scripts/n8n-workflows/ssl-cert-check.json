@@ -1,0 +1,99 @@
+{
+  "name": "SSL Certificate Expiry Check",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "hoursInterval": 12
+            }
+          ]
+        }
+      },
+      "id": "ssl-cron",
+      "name": "Every 12 Hours",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [220, 300]
+    },
+    {
+      "parameters": {
+        "url": "https://yourdomain.com",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "ssl-check",
+      "name": "Check HTTPS Endpoint",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [440, 300],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Check if the HTTPS request succeeded\nconst items = $input.all();\nconst item = items[0];\n\nconst result = {\n  domain: 'yourdomain.com',\n  timestamp: new Date().toISOString(),\n  httpStatus: item.json.statusCode || 'unknown',\n  success: !item.json.error,\n  message: item.json.error ? `SSL/HTTPS check failed: ${item.json.error}` : 'SSL certificate is valid and HTTPS is working'\n};\n\nreturn [{ json: result }];"
+      },
+      "id": "ssl-evaluate",
+      "name": "Evaluate SSL Status",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [660, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "ssl-fail-check",
+              "leftValue": "={{ $json.success }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "notEquals"
+              }
+            }
+          ],
+          "combinator": "or"
+        }
+      },
+      "id": "ssl-failed",
+      "name": "SSL Failed?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [880, 300]
+    }
+  ],
+  "connections": {
+    "Every 12 Hours": {
+      "main": [
+        [{ "node": "Check HTTPS Endpoint", "type": "main", "index": 0 }]
+      ]
+    },
+    "Check HTTPS Endpoint": {
+      "main": [
+        [{ "node": "Evaluate SSL Status", "type": "main", "index": 0 }]
+      ]
+    },
+    "Evaluate SSL Status": {
+      "main": [
+        [{ "node": "SSL Failed?", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "tags": [
+    {
+      "name": "monitoring"
+    }
+  ]
+}

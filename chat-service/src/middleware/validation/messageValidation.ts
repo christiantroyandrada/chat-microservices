@@ -13,6 +13,8 @@ export const sendMessageValidation: ValidationChain[] = [
     .withMessage('Message is required')
     .isString()
     .withMessage('Message must be a string')
+    .isLength({ max: 5000 })
+    .withMessage('Message exceeds maximum length of 5000 characters')
 ]
 
 export const fetchConversationValidation: ValidationChain[] = [

@@ -19,10 +19,15 @@ services:
     restart: unless-stopped
     volumes:
       - postgres-data:/var/lib/postgresql/data
+      - ./scripts/init-db-users.sh:/docker-entrypoint-initdb.d/10-init-db-users.sh:ro
     environment:
       POSTGRES_USER: ${ADMIN_USERNAME}
       POSTGRES_PASSWORD: ${ADMIN_PASSWORD}
       POSTGRES_DB: chat_db
+      # Per-service DB passwords — used by init-db-users.sh to create least-privilege roles
+      DB_USER_SVC_PASS: ${DB_USER_SVC_PASS:-}
+      DB_CHAT_SVC_PASS: ${DB_CHAT_SVC_PASS:-}
+      DB_NOTIF_SVC_PASS: ${DB_NOTIF_SVC_PASS:-}
     depends_on:
       setup:
         condition: service_completed_successfully
@@ -278,6 +283,7 @@ services:
       - '--web.enable-lifecycle'
     volumes:
       - ./observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./observability/alerting-rules.yml:/etc/prometheus/alerting-rules.yml:ro
       - prometheus-data:/prometheus
     ports:
       - "127.0.0.1:9090:9090"   # Localhost-only — access via SSH tunnel

@@ -3,6 +3,10 @@ global:
   scrape_timeout: 10s        # Per-scrape timeout
   evaluation_interval: 15s   # How often to evaluate rules
 
+# Alerting rules — evaluated every evaluation_interval (15s)
+rule_files:
+  - /etc/prometheus/alerting-rules.yml
+
 # Scrape configs — all targets are on the internal Docker network.
 # These ports are NOT exposed via nginx, so metrics are never public.
 scrape_configs:

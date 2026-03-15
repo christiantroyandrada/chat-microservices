@@ -22,7 +22,7 @@ const userDetailCache = new LRUCache<string, CachedUserDetail>({
 /** Clear the user detail cache — exposed for testing */
 export const clearUserDetailCache = () => userDetailCache.clear()
 
-const fetchUserDetails = async (userId: string, jwtToken?: string): Promise<{ username?: string } | null> => {
+const fetchUserDetails = async (userId: string, jwtToken?: string, requestId?: string): Promise<{ username?: string } | null> => {
   // LRU cache handles TTL expiration automatically
   const cached = userDetailCache.get(userId)
   if (cached !== undefined) {
@@ -35,6 +35,10 @@ const fetchUserDetails = async (userId: string, jwtToken?: string): Promise<{ us
     // Forward JWT for service-to-service auth
     if (jwtToken) {
       headers['Cookie'] = `jwt=${jwtToken}`
+    }
+    // Propagate correlation ID for distributed tracing
+    if (requestId) {
+      headers['X-Request-ID'] = requestId
     }
     const response = await fetch(`${userServiceUrl}/users/${userId}`, { headers })
     
@@ -60,7 +64,7 @@ const fetchUserDetails = async (userId: string, jwtToken?: string): Promise<{ us
  * Batch-fetch user details for multiple user IDs.
  * Checks cache first, then fetches missing ones in parallel.
  */
-const fetchUserDetailsBatch = async (userIds: string[], jwtToken?: string): Promise<Map<string, { username?: string } | null>> => {
+const fetchUserDetailsBatch = async (userIds: string[], jwtToken?: string, requestId?: string): Promise<Map<string, { username?: string } | null>> => {
   const results = new Map<string, { username?: string } | null>()
   const uncached: string[] = []
 
@@ -75,7 +79,7 @@ const fetchUserDetailsBatch = async (userIds: string[], jwtToken?: string): Prom
 
   // Fetch all uncached in parallel
   if (uncached.length > 0) {
-    const fetched = await Promise.all(uncached.map(id => fetchUserDetails(id, jwtToken)))
+    const fetched = await Promise.all(uncached.map(id => fetchUserDetails(id, jwtToken, requestId)))
     uncached.forEach((id, idx) => results.set(id, fetched[idx]))
   }
 
@@ -277,8 +281,9 @@ const getConversations = async (
     // Fetch usernames for all conversation partners in batch (avoids N+1 HTTP calls)
     // Forward JWT for service-to-service auth
     const jwtToken = req.cookies?.jwt
+    const requestId = (req.headers?.['x-request-id'] ?? undefined) as string | undefined
     const userIds = (conversationsArray as ConversationRow[]).map(c => c.userId)
-    const userDetailsMap = await fetchUserDetailsBatch(userIds, jwtToken)
+    const userDetailsMap = await fetchUserDetailsBatch(userIds, jwtToken, requestId)
 
     // Use the shared ConversationRow type from src/types.ts
     const conversationsWithUsernames = (conversationsArray as ConversationRow[]).map((conv) => {
