@@ -290,6 +290,11 @@ jobs:
                   timeout: 5s
                   retries: 5
                   start_period: 10s
+                deploy:
+                  resources:
+                    limits:
+                      memory: 512M
+                      cpus: '1.0'
 
               pgadmin:
                 image: dpage/pgadmin4:latest
@@ -328,6 +333,11 @@ jobs:
                   timeout: 5s
                   retries: 3
                   start_period: 10s
+                deploy:
+                  resources:
+                    limits:
+                      memory: 256M
+                      cpus: '0.50'
 
               chat:
                 image: ghcr.io/${REPO_OWNER}/chat-chat-service:${IMAGE_TAG}
@@ -350,6 +360,11 @@ jobs:
                   timeout: 5s
                   retries: 3
                   start_period: 10s
+                deploy:
+                  resources:
+                    limits:
+                      memory: 384M
+                      cpus: '0.50'
 
               notification:
                 image: ghcr.io/${REPO_OWNER}/chat-notification-service:${IMAGE_TAG}
@@ -379,6 +394,11 @@ jobs:
                   timeout: 5s
                   retries: 3
                   start_period: 10s
+                deploy:
+                  resources:
+                    limits:
+                      memory: 256M
+                      cpus: '0.50'
 
               nginx:
                 image: ghcr.io/${REPO_OWNER}/chat-nginx:${IMAGE_TAG}
@@ -407,6 +427,11 @@ jobs:
                 networks:
                   - default
                   - n8n_nginx_bridge
+                deploy:
+                  resources:
+                    limits:
+                      memory: 128M
+                      cpus: '0.25'
 
               frontend:
                 image: ghcr.io/${REPO_OWNER}/chat-frontend:latest
@@ -428,6 +453,11 @@ jobs:
                   timeout: 5s
                   retries: 3
                   start_period: 15s
+                deploy:
+                  resources:
+                    limits:
+                      memory: 256M
+                      cpus: '0.50'
 
             volumes:
               postgres-data:
