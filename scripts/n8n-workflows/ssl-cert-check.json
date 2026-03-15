@@ -20,7 +20,7 @@
     },
     {
       "parameters": {
-        "url": "https://yourdomain.com",
+        "url": "https://chat.ctaprojects.xyz",
         "options": {
           "timeout": 10000
         }
@@ -34,7 +34,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// Check if the HTTPS request succeeded\nconst items = $input.all();\nconst item = items[0];\n\nconst result = {\n  domain: 'yourdomain.com',\n  timestamp: new Date().toISOString(),\n  httpStatus: item.json.statusCode || 'unknown',\n  success: !item.json.error,\n  message: item.json.error ? `SSL/HTTPS check failed: ${item.json.error}` : 'SSL certificate is valid and HTTPS is working'\n};\n\nreturn [{ json: result }];"
+        "jsCode": "// Check if the HTTPS request succeeded\nconst items = $input.all();\nconst item = items[0];\n\nconst result = {\n  domain: 'chat.ctaprojects.xyz',\n  timestamp: new Date().toISOString(),\n  httpStatus: item.json.statusCode || 'unknown',\n  success: !item.json.error,\n  message: item.json.error ? `SSL/HTTPS check failed: ${item.json.error}` : 'SSL certificate is valid and HTTPS is working'\n};\n\nreturn [{ json: result }];"
       },
       "id": "ssl-evaluate",
       "name": "Evaluate SSL Status",
