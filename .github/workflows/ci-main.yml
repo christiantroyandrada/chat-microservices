@@ -484,8 +484,9 @@ jobs:
               for SERVICE in user chat notification; do
                 echo "🔄 Updating $SERVICE service..."
                 
-                # Store current container ID for rollback reference
-                OLD_CONTAINER=$(docker compose ps -q $SERVICE 2>/dev/null || echo "")
+                # Capture current image for rollback (before updating)
+                PREV_IMAGE=$(docker inspect --format '{{.Config.Image}}' $(docker compose ps -q $SERVICE) 2>/dev/null || echo "")
+                echo "   📸 Current image: ${PREV_IMAGE:-none}"
                 
                 # Update service without forcing recreation of dependencies
                 docker compose up -d --no-deps $SERVICE
@@ -504,8 +505,32 @@ jobs:
                 done
                 
                 if [ $HEALTH_WAIT -ge $MAX_WAIT ]; then
-                  echo "   ⚠️ $SERVICE health check timeout, checking logs..."
+                  echo "   ⚠️ $SERVICE health check timeout!"
                   docker compose logs $SERVICE --tail=20
+                  
+                  # ── Automated rollback ──────────────────────────────
+                  if [ -n "$PREV_IMAGE" ]; then
+                    echo "   🔙 Rolling back $SERVICE to previous image: $PREV_IMAGE"
+                    PREV_TAG=$(echo "$PREV_IMAGE" | rev | cut -d: -f1 | rev)
+                    IMAGE_TAG="$PREV_TAG" docker compose up -d --no-deps $SERVICE
+                    echo "   ⏳ Waiting for rollback health check..."
+                    ROLLBACK_WAIT=0
+                    while [ $ROLLBACK_WAIT -lt 30 ]; do
+                      if docker compose ps $SERVICE 2>/dev/null | grep -q "(healthy)"; then
+                        echo "   ✅ $SERVICE rolled back successfully to $PREV_TAG"
+                        break
+                      fi
+                      sleep 3
+                      ROLLBACK_WAIT=$((ROLLBACK_WAIT + 3))
+                    done
+                    if [ $ROLLBACK_WAIT -ge 30 ]; then
+                      echo "   ❌ $SERVICE rollback also failed — manual intervention needed"
+                    fi
+                  else
+                    echo "   ⚠️ No previous image found — cannot rollback"
+                  fi
+                  echo "   ❌ Deployment failed for $SERVICE — aborting"
+                  exit 1
                 fi
               done
               
@@ -578,8 +603,13 @@ jobs:
               fi
             fi
 
-            echo "🧹 Cleaning up old images..."
-            docker image prune -f --filter "until=24h" || true
+            echo "🧹 Cleaning up old images (keeping last 2 per repo)..."
+            for repo in chat-user-service chat-chat-service chat-notification-service chat-nginx chat-frontend; do
+              docker images "ghcr.io/${REPO_OWNER}/$repo" --format "{{.ID}} {{.CreatedAt}}" \
+                | sort -k2 -r | tail -n +3 | awk '{print $1}' \
+                | xargs -r docker rmi -f 2>/dev/null || true
+            done
+            docker image prune -f || true
 
             docker compose ps
 

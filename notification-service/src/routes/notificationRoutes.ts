@@ -2,6 +2,12 @@ import { Router, RequestHandler } from 'express'
 import rateLimit from 'express-rate-limit'
 import NotificationController from '../controllers/NotificationController'
 import { authMiddleware } from '../middleware/auth'
+import { validateRequest } from '../middleware/validation/validateRequest'
+import {
+  markAsReadValidation,
+  deleteNotificationValidation,
+  createNotificationValidation
+} from '../middleware/validation/notificationValidation'
 
 // General limiter for read/update/delete operations
 const notificationLimiter = rateLimit({
@@ -48,12 +54,16 @@ notificationRouter.put(
 notificationRouter.put(
   '/:notificationId/read',
   authMiddleware as RequestHandler,
+  ...markAsReadValidation,
+  validateRequest,
   NotificationController.markAsRead as unknown as RequestHandler
 )
 
 notificationRouter.delete(
   '/:notificationId',
   authMiddleware as RequestHandler,
+  ...deleteNotificationValidation,
+  validateRequest,
   NotificationController.deleteNotification as unknown as RequestHandler
 )
 
@@ -62,6 +72,8 @@ notificationRouter.post(
   '/',
   createNotificationLimiter,
   authMiddleware as RequestHandler,
+  ...createNotificationValidation,
+  validateRequest,
   NotificationController.createNotification as unknown as RequestHandler
 )
 
