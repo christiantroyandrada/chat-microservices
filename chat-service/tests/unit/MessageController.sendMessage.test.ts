@@ -40,7 +40,7 @@ describe('MessageController.sendMessage', () => {
 
     const mockRes: any = { json: jest.fn(), status: jest.fn().mockReturnThis() }
 
-    await MessageController.sendMessage(mockReq, mockRes)
+    await MessageController.sendMessage(mockReq, mockRes, jest.fn())
 
     expect(repo.save).toHaveBeenCalled()
     expect(handleMessageReceived).toHaveBeenCalledWith(
@@ -67,14 +67,13 @@ describe('MessageController.sendMessage', () => {
     ;(AppDataSource.getRepository as jest.Mock).mockReturnValue(repo)
 
     const mockRes: any = { json: jest.fn(), status: jest.fn().mockReturnThis() }
+    const mockNext = jest.fn()
 
-    await MessageController.sendMessage(mockReq, mockRes)
+    await MessageController.sendMessage(mockReq, mockRes, mockNext)
 
-    // Controller returns 500-level for unhandled errors in catch; but for
-    // invalid envelope it throws APIError which the controller catches and
-    // returns a 500 JSON body in the current implementation. We assert
-    // that a JSON response was sent and that repo.save was not called.
+    // The controller now delegates errors to centralized error middleware via next().
+    // Invalid envelope throws APIError which is passed to next().
     expect(repo.save).not.toHaveBeenCalled()
-    expect(mockRes.json).toHaveBeenCalled()
+    expect(mockNext).toHaveBeenCalled()
   })
 })

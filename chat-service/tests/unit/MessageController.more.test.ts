@@ -24,13 +24,14 @@ describe('MessageController additional sendMessage validations', () => {
       body: { receiverId: 'u2', message: '   ' }
     }
     const res: any = { json: jest.fn(), status: jest.fn().mockReturnThis() }
+    const next = jest.fn()
 
-    await MessageController.sendMessage(req, res)
+    await MessageController.sendMessage(req, res, next)
 
-    expect(res.json).toHaveBeenCalled()
-    const resp = res.json.mock.calls[0][0]
-    expect(resp).toHaveProperty('status', 400)
-    expect(resp.message).toMatch(/Message cannot be empty/)
+    expect(next).toHaveBeenCalled()
+    const error = next.mock.calls[0][0]
+    expect(error.statusCode).toBe(400)
+    expect(error.message).toMatch(/Message cannot be empty/)
   })
 
   it('rejects messages exceeding length limit', async () => {
@@ -55,12 +56,13 @@ describe('MessageController additional sendMessage validations', () => {
       body: { receiverId: 'u2', message: long }
     }
     const res: any = { json: jest.fn(), status: jest.fn().mockReturnThis() }
+    const next = jest.fn()
 
-    await MessageController.sendMessage(req, res)
+    await MessageController.sendMessage(req, res, next)
 
-    expect(res.json).toHaveBeenCalled()
-    const resp = res.json.mock.calls[0][0]
-    expect(resp.message).toMatch(/exceeds maximum length/)
+    expect(next).toHaveBeenCalled()
+    const error = next.mock.calls[0][0]
+    expect(error.message).toMatch(/exceeds maximum length/)
   })
 
   it('rejects when sender and receiver are the same', async () => {
@@ -82,12 +84,13 @@ describe('MessageController additional sendMessage validations', () => {
     const env = JSON.stringify({ __encrypted: true, type: 1, body: 'a' })
     const req: any = { user: { _id: 'same', username: 's', email: 's@example.com' }, body: { receiverId: 'same', message: env } }
     const res: any = { json: jest.fn(), status: jest.fn().mockReturnThis() }
+    const next = jest.fn()
 
-    await MessageController.sendMessage(req, res)
+    await MessageController.sendMessage(req, res, next)
 
-    expect(res.json).toHaveBeenCalled()
-    const resp = res.json.mock.calls[0][0]
-    expect(resp.message).toMatch(/Sender and receiver cannot be the same user/)
+    expect(next).toHaveBeenCalled()
+    const error = next.mock.calls[0][0]
+    expect(error.message).toMatch(/Sender and receiver cannot be the same user/)
   })
 
   it('maps unknown usernames to "Unknown User" in getConversations', async () => {
@@ -103,7 +106,7 @@ describe('MessageController additional sendMessage validations', () => {
   const req: any = { params: { receiverId: 'r1' }, user: { _id: 'u1' } }
   const res: any = { json: jest.fn(), status: jest.fn().mockReturnThis() }
 
-  await controller.getConversations(req, res)
+  await controller.getConversations(req, res, jest.fn())
 
     expect(res.json).toHaveBeenCalled()
     const resp = res.json.mock.calls[0][0]

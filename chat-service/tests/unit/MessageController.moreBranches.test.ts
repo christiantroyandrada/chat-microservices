@@ -13,9 +13,10 @@ describe('MessageController more branch exercises', () => {
   const { controller } = requireControllerAfterMocks('../../src/controllers/MessageController')
   const MC = controller.default || controller
     const res: any = { json: jest.fn(), status: jest.fn().mockReturnThis() }
+    const next = jest.fn()
 
-    await MC.sendMessage({ user: { _id: 'u1', username: 'u' }, body: { receiverId: 'u2', message: 123 } } as any, res)
-    expect(res.json).toHaveBeenCalled()
+    await MC.sendMessage({ user: { _id: 'u1', username: 'u' }, body: { receiverId: 'u2', message: 123 } } as any, res, next)
+    expect(next).toHaveBeenCalled()
   })
 
   it('sendMessage rejects when message is only whitespace', async () => {
@@ -26,9 +27,10 @@ describe('MessageController more branch exercises', () => {
   const { controller } = requireControllerAfterMocks('../../src/controllers/MessageController')
   const MC = controller.default || controller
     const res: any = { json: jest.fn(), status: jest.fn().mockReturnThis() }
+    const next = jest.fn()
 
-    await MC.sendMessage({ user: { _id: 'u1', username: 'u' }, body: { receiverId: 'u2', message: '   ' } } as any, res)
-    expect(res.json).toHaveBeenCalled()
+    await MC.sendMessage({ user: { _id: 'u1', username: 'u' }, body: { receiverId: 'u2', message: '   ' } } as any, res, next)
+    expect(next).toHaveBeenCalled()
   })
 
   it('fetchConversation returns 500 when query builder throws', async () => {
@@ -39,11 +41,11 @@ describe('MessageController more branch exercises', () => {
   const { controller } = requireControllerAfterMocks('../../src/controllers/MessageController')
   const MC = controller.default || controller
     const res: any = { json: jest.fn(), status: jest.fn().mockReturnThis() }
+    const next = jest.fn()
 
-    await MC.fetchConversation({ user: { _id: 'u1' }, params: { receiverId: 'u2' } } as any, res)
-    expect(res.json).toHaveBeenCalled()
-    const called = res.json.mock.calls[0][0]
-    expect(called).toHaveProperty('status')
+    await MC.fetchConversation({ user: { _id: 'u1' }, params: { receiverId: 'u2' }, query: {} } as any, res, next)
+    expect(next).toHaveBeenCalled()
+    expect(next.mock.calls[0][0]).toBeInstanceOf(Error)
   })
 
   it('markAsRead returns error when senderId missing', async () => {
@@ -53,8 +55,9 @@ describe('MessageController more branch exercises', () => {
   const { controller } = requireControllerAfterMocks('../../src/controllers/MessageController')
   const MC = controller.default || controller
     const res: any = { json: jest.fn(), status: jest.fn().mockReturnThis() }
+    const next = jest.fn()
 
-    await MC.markAsRead({ user: { _id: 'u1' }, params: {} } as any, res)
-    expect(res.json).toHaveBeenCalled()
+    await MC.markAsRead({ user: { _id: 'u1' }, params: {} } as any, res, next)
+    expect(next).toHaveBeenCalled()
   })
 })

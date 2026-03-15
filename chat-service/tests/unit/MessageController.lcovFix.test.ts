@@ -34,7 +34,7 @@ describe('MessageController targeted branch fixes', () => {
 
     ;(global as any).fetch = jest.fn().mockResolvedValue({ ok: false, status: 404 })
 
-    await MessageController.getConversations(mockReq, mockRes)
+    await MessageController.getConversations(mockReq, mockRes, jest.fn())
 
     const callArg = mockRes.json.mock.calls[0][0]
     expect(callArg.status).toBe(200)
@@ -50,7 +50,7 @@ describe('MessageController targeted branch fixes', () => {
 
     ;(global as any).fetch = jest.fn().mockResolvedValue({ ok: true, json: async () => ({ data: { id: 'u2', username: 'bob' } }) })
 
-    await MessageController.getConversations(mockReq, mockRes)
+    await MessageController.getConversations(mockReq, mockRes, jest.fn())
 
     const callArg = mockRes.json.mock.calls[0][0]
     expect(callArg.status).toBe(200)
@@ -66,7 +66,7 @@ describe('MessageController targeted branch fixes', () => {
     const repo: any = { createQueryBuilder: jest.fn(() => qb) }
     ;(AppDataSource.getRepository as jest.Mock).mockReturnValue(repo)
 
-    await MessageController.markAsRead(mockReq, mockRes)
+    await MessageController.markAsRead(mockReq, mockRes, jest.fn())
 
     const callArg = mockRes.json.mock.calls[0][0]
     expect(callArg.status).toBe(200)
@@ -82,7 +82,7 @@ describe('MessageController targeted branch fixes', () => {
     const repo: any = { createQueryBuilder: jest.fn(() => qb) }
     ;(AppDataSource.getRepository as jest.Mock).mockReturnValue(repo)
 
-    await MessageController.markAsRead(mockReq, mockRes)
+    await MessageController.markAsRead(mockReq, mockRes, jest.fn())
 
     const callArg = mockRes.json.mock.calls[0][0]
     expect(callArg.status).toBe(200)
@@ -92,15 +92,17 @@ describe('MessageController targeted branch fixes', () => {
   it('sendMessage: JSON.parse failure branch returns error response', async () => {
     const mockReq: any = { body: { receiverId: 'r2', message: 'not-a-json' }, user: { _id: 's1', email: 'a@b', username: 'sender' } }
     const mockRes: any = { json: jest.fn(), status: jest.fn().mockReturnThis() }
+    const mockNext = jest.fn()
 
     const repo: any = { save: jest.fn() }
     ;(AppDataSource.getRepository as jest.Mock).mockReturnValue(repo)
 
-    await MessageController.sendMessage(mockReq, mockRes)
+    await MessageController.sendMessage(mockReq, mockRes, mockNext)
 
-    const callArg = mockRes.json.mock.calls[0][0]
-    expect(callArg.status).toBe(400)
-    expect(typeof callArg.message).toBe('string')
+    expect(mockNext).toHaveBeenCalled()
+    const error = mockNext.mock.calls[0][0]
+    expect(error.statusCode).toBe(400)
+    expect(typeof error.message).toBe('string')
   })
 
   it('getConversations: respects USER_SERVICE_URL env and treats null json as Unknown User', async () => {
@@ -115,7 +117,7 @@ describe('MessageController targeted branch fixes', () => {
 
     ;(global as any).fetch = jest.fn().mockResolvedValue({ ok: true, json: async () => null })
 
-    await MessageController.getConversations(mockReq, mockRes)
+    await MessageController.getConversations(mockReq, mockRes, jest.fn())
 
     const callArg = mockRes.json.mock.calls[0][0]
     expect(callArg.status).toBe(200)
@@ -138,7 +140,7 @@ describe('MessageController targeted branch fixes', () => {
 
     ;(global as any).fetch = jest.fn().mockResolvedValue({ ok: true, json: async () => ({ data: { id: 'u3', username: 'prod-user' } }) })
 
-    await MessageController.getConversations(mockReq, mockRes)
+    await MessageController.getConversations(mockReq, mockRes, jest.fn())
 
     const callArg = mockRes.json.mock.calls[0][0]
     expect(callArg.status).toBe(200)

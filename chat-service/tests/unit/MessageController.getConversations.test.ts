@@ -31,7 +31,7 @@ describe('MessageController.getConversations', () => {
     const req: any = { user: { _id: userId } , params: { } }
     const res: any = { json: jest.fn().mockImplementation((v) => v) }
 
-    const outRaw = await MessageController.getConversations(req, res)
+    const outRaw = await MessageController.getConversations(req, res, jest.fn())
     const out: any = outRaw as any
 
     expect(repo.query).toHaveBeenCalled()

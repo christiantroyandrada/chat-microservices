@@ -9,7 +9,7 @@ import { userRegistrationsTotal, userLoginsTotal } from '../utils/metrics'
 import { logWarn } from '../utils/logger'
 
 const JWT_SECRET = config.JWT_SECRET as string
-const COOKIE_EXPIRATION_DAYS = 7
+const COOKIE_EXPIRATION_DAYS = 1 // Aligned with JWT expiresIn: '1d'
 
 const getCookieOptions = () => {
   const expirationDate = new Date(

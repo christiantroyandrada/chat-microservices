@@ -1,28 +1,40 @@
 import { Router, RequestHandler } from 'express'
 import MessageController from '../controllers/MessageController'
 import { authMiddleware } from '../middleware'
+import { validateRequest } from '../middleware/validation/validateRequest'
+import {
+  sendMessageValidation,
+  fetchConversationValidation,
+  markAsReadValidation
+} from '../middleware/validation/messageValidation'
 
 const chatServiceRouter = Router()
 
 chatServiceRouter.post(
   '/send',
   authMiddleware as RequestHandler,
-  MessageController.sendMessage as unknown as RequestHandler
+  ...sendMessageValidation,
+  validateRequest,
+  MessageController.sendMessage as RequestHandler
 )
 chatServiceRouter.get(
   '/get/:receiverId',
   authMiddleware as RequestHandler,
-  MessageController.fetchConversation as unknown as RequestHandler
+  ...fetchConversationValidation,
+  validateRequest,
+  MessageController.fetchConversation as RequestHandler
 )
 chatServiceRouter.get(
   '/conversations',
   authMiddleware as RequestHandler,
-  MessageController.getConversations as unknown as RequestHandler
+  MessageController.getConversations as RequestHandler
 )
 chatServiceRouter.put(
   '/messages/read/:senderId',
   authMiddleware as RequestHandler,
-  MessageController.markAsRead as unknown as RequestHandler
+  ...markAsReadValidation,
+  validateRequest,
+  MessageController.markAsRead as RequestHandler
 )
 
 export default chatServiceRouter

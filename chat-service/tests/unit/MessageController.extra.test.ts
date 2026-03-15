@@ -30,14 +30,14 @@ describe('MessageController (extra)', () => {
     global.fetch = jest.fn()
 
     const req: any = { body: { receiverId: 'r1', message: 'not-a-json' }, user: { _id: 's1', email: 'a@b.com', username: 'u' } }
-    const res: any = { json: jest.fn().mockImplementation((v) => v), status: jest.fn().mockReturnThis() }
+    const res: any = { json: jest.fn(), status: jest.fn().mockReturnThis() }
+    const next = jest.fn()
 
-  const outRaw = await MessageController.sendMessage(req, res)
-  const out: any = outRaw as any
+  await MessageController.sendMessage(req, res, next)
 
-  expect(res.json).toHaveBeenCalled()
+  expect(next).toHaveBeenCalled()
   // Expect our friendly API error message about encryption
-  expect(out.message).toMatch(/end-to-end encrypted/i)
+  expect(next.mock.calls[0][0].message).toMatch(/end-to-end encrypted/i)
   })
 
   test('sendMessage - success path stores message and notifies', async () => {
@@ -52,7 +52,7 @@ describe('MessageController (extra)', () => {
     const req: any = { body: { receiverId: 'r1', message: envelope }, user: { _id: 's1', email: 'a@b.com', username: 'u' } }
     const res: any = { json: jest.fn().mockImplementation((v) => v), status: jest.fn().mockReturnThis() }
 
-  const outRaw = await MessageController.sendMessage(req, res)
+  const outRaw = await MessageController.sendMessage(req, res, jest.fn())
   const out: any = outRaw as any
 
   expect(repo.save).toHaveBeenCalled()

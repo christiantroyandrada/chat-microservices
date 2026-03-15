@@ -16,9 +16,10 @@ describe('MessageController branch coverage', () => {
   const { controller } = requireControllerAfterMocks('../../src/controllers/MessageController')
   const MC = controller.default || controller
     const res: any = { json: jest.fn(), status: jest.fn().mockReturnThis() }
+    const next = jest.fn()
 
-    await MC.sendMessage({ user: { _id: 'u1', username: 'u' }, body: { message: 'x' } } as any, res)
-    expect(res.json).toHaveBeenCalled()
+    await MC.sendMessage({ user: { _id: 'u1', username: 'u' }, body: { message: 'x' } } as any, res, next)
+    expect(next).toHaveBeenCalled()
   })
 
   it('sendMessage rejects when sender equals receiver', async () => {
@@ -28,9 +29,10 @@ describe('MessageController branch coverage', () => {
   const { controller } = requireControllerAfterMocks('../../src/controllers/MessageController')
   const MC = controller.default || controller
     const res: any = { json: jest.fn(), status: jest.fn().mockReturnThis() }
+    const next = jest.fn()
 
-    await MC.sendMessage({ user: { _id: 'u1', username: 'u' }, body: { receiverId: 'u1', message: 'x' } } as any, res)
-    expect(res.json).toHaveBeenCalled()
+    await MC.sendMessage({ user: { _id: 'u1', username: 'u' }, body: { receiverId: 'u1', message: 'x' } } as any, res, next)
+    expect(next).toHaveBeenCalled()
   })
 
   it('sendMessage rejects when message too long', async () => {
@@ -41,9 +43,10 @@ describe('MessageController branch coverage', () => {
   const MC = controller.default || controller
     const res: any = { json: jest.fn(), status: jest.fn().mockReturnThis() }
     const long = 'a'.repeat(5001)
+    const next = jest.fn()
 
-    await MC.sendMessage({ user: { _id: 'u1', username: 'u' }, body: { receiverId: 'u2', message: long } } as any, res)
-    expect(res.json).toHaveBeenCalled()
+    await MC.sendMessage({ user: { _id: 'u1', username: 'u' }, body: { receiverId: 'u2', message: long } } as any, res, next)
+    expect(next).toHaveBeenCalled()
   })
 
   it('sendMessage rejects when envelope __encrypted !== true', async () => {
@@ -54,9 +57,10 @@ describe('MessageController branch coverage', () => {
   const MC = controller.default || controller
     const res: any = { json: jest.fn(), status: jest.fn().mockReturnThis() }
     const badEnvelope = JSON.stringify({ __encrypted: false, body: 'x' })
+    const next = jest.fn()
 
-    await MC.sendMessage({ user: { _id: 'u1', username: 'u' }, body: { receiverId: 'u2', message: badEnvelope } } as any, res)
-    expect(res.json).toHaveBeenCalled()
+    await MC.sendMessage({ user: { _id: 'u1', username: 'u' }, body: { receiverId: 'u2', message: badEnvelope } } as any, res, next)
+    expect(next).toHaveBeenCalled()
   })
 
   it('getConversations maps usernames when fetchUserDetails returns name and when null', async () => {
@@ -72,7 +76,7 @@ describe('MessageController branch coverage', () => {
   const { controller } = requireControllerAfterMocks('../../src/controllers/MessageController')
   const MC = controller.default || controller
   const res1: any = { json: jest.fn(), status: jest.fn().mockReturnThis() }
-  await MC.getConversations({ user: { _id: 'u1' } } as any, res1)
+  await MC.getConversations({ user: { _id: 'u1' } } as any, res1, jest.fn())
     expect(res1.json).toHaveBeenCalled()
     const called1 = res1.json.mock.calls[0][0]
     expect(called1.data[0]).toHaveProperty('username', 'bob')
@@ -82,7 +86,7 @@ describe('MessageController branch coverage', () => {
     messageRepo.query.mockResolvedValue([ { userId: 'u3', lastMessage: 'hi', lastMessageSenderId: 'u3', lastMessageTime: new Date().toISOString(), unreadCount: 0 } ])
     global.fetch = jest.fn().mockResolvedValue({ ok: false }) as any
     const res2: any = { json: jest.fn(), status: jest.fn().mockReturnThis() }
-    await MC.getConversations({ user: { _id: 'u1' } } as any, res2)
+    await MC.getConversations({ user: { _id: 'u1' } } as any, res2, jest.fn())
     expect(res2.json).toHaveBeenCalled()
     const called2 = res2.json.mock.calls[0][0]
     expect(called2.data[0]).toHaveProperty('username', 'Unknown User')
@@ -97,7 +101,7 @@ describe('MessageController branch coverage', () => {
   const MC = controller.default || controller
     const res: any = { json: jest.fn(), status: jest.fn().mockReturnThis() }
 
-    await MC.markAsRead({ user: { _id: 'u1' }, params: { senderId: 'u2' } } as any, res)
+    await MC.markAsRead({ user: { _id: 'u1' }, params: { senderId: 'u2' } } as any, res, jest.fn())
     expect(res.json).toHaveBeenCalled()
     const called = res.json.mock.calls[0][0]
     expect(called.data).toHaveProperty('modifiedCount', 3)

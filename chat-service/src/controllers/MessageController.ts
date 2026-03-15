@@ -1,4 +1,4 @@
-import { Response, Request } from 'express'
+import { Response, Request, NextFunction } from 'express'
 import { LRUCache } from 'lru-cache'
 import type { ConversationRow } from '../types'
 import { AuthenticatedRequest } from '../middleware'
@@ -85,6 +85,7 @@ const fetchUserDetailsBatch = async (userIds: string[], jwtToken?: string): Prom
 const sendMessage = async (
   req: AuthenticatedRequest,
   res: Response,
+  next: NextFunction,
 ) => {
   try {
   const { receiverId, message } = req.body
@@ -156,18 +157,7 @@ const sendMessage = async (
       data: newMessage,
     })
   } catch (error: unknown) {
-    if (error instanceof APIError) {
-      return res.status(error.statusCode).json({
-        status: error.statusCode,
-        message: error.message,
-      })
-    }
-    const message =
-      error instanceof Error ? error.message : 'Internal Server Error'
-    return res.status(500).json({
-      status: 500,
-      message,
-    })
+    next(error)
   }
 }
 
@@ -186,6 +176,7 @@ const validateReceiver = (
 const fetchConversation = async (
   req: AuthenticatedRequest,
   res: Response,
+  next: NextFunction,
 ) => {
   try {
     const { receiverId } = req.params
@@ -215,24 +206,14 @@ const fetchConversation = async (
       pagination: { total, limit, offset, hasMore: offset + limit < total },
     })
   } catch (error: unknown) {
-    if (error instanceof APIError) {
-      return res.status(error.statusCode).json({
-        status: error.statusCode,
-        message: error.message,
-      })
-    }
-    const message = 
-      error instanceof Error ? error.message : 'Internal Server Error'
-    return res.status(500).json({
-      status: 500,
-      message,
-    })
+    next(error)
   }
 }
 
 const getConversations = async (
   req: AuthenticatedRequest,
   res: Response,
+  next: NextFunction,
 ) => {
   try {
     const { _id: userId } = req.user
@@ -314,24 +295,14 @@ const getConversations = async (
       data: conversationsWithUsernames,
     })
   } catch (error: unknown) {
-    if (error instanceof APIError) {
-      return res.status(error.statusCode).json({
-        status: error.statusCode,
-        message: error.message,
-      })
-    }
-    const message = 
-      error instanceof Error ? error.message : 'Internal Server Error'
-    return res.status(500).json({
-      status: 500,
-      message,
-    })
+    next(error)
   }
 }
 
 const markAsRead = async (
   req: AuthenticatedRequest,
   res: Response,
+  next: NextFunction,
 ) => {
   try {
     const { senderId } = req.params
@@ -363,18 +334,7 @@ const markAsRead = async (
       }
     })
   } catch (error: unknown) {
-    if (error instanceof APIError) {
-      return res.status(error.statusCode).json({
-        status: error.statusCode,
-        message: error.message,
-      })
-    }
-    const message = 
-      error instanceof Error ? error.message : 'Internal Server Error'
-    return res.status(500).json({
-      status: 500,
-      message,
-    })
+    next(error)
   }
 }
 

@@ -20,7 +20,7 @@ describe('MessageController.fetchConversation', () => {
 
     jest.spyOn(AppDataSource, 'getRepository').mockReturnValue(messageRepo as any)
 
-    await MessageController.fetchConversation(req, res)
+    await MessageController.fetchConversation(req, res, jest.fn())
 
     expect(res.json).toHaveBeenCalled()
   })

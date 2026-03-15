@@ -58,19 +58,16 @@ services:
       - ./certbot/conf:/etc/letsencrypt:ro
       - ./certbot/www:/var/www/certbot:ro
 
-  # pgAdmin configuration for production
-  # Accessible via nginx reverse proxy at /pgadmin/
+  # pgAdmin — tunnel-only access (no public nginx proxy)
+  # Access via: ssh -L 5050:localhost:5050 vps → http://localhost:5050
   pgadmin:
-    # Remove direct port mapping in production - access via nginx only
-    ports: !reset []
-    expose:
-      - "80"
+    # Bind to localhost only — not publicly reachable, SSH tunnel required
+    ports:
+      - "127.0.0.1:5050:80"
     environment:
       PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@admin.com}
       PGADMIN_DEFAULT_PASSWORD: ${ADMIN_PASSWORD}
       PGADMIN_CONFIG_SERVER_MODE: "False"
-      # Required for running behind nginx reverse proxy at /pgadmin/
-      SCRIPT_NAME: /pgadmin
 
   # Prometheus: join the n8n bridge so it can scrape n8n metrics
   prometheus:

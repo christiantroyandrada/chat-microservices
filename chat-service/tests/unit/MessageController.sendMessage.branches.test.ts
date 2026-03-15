@@ -19,12 +19,14 @@ describe('MessageController sendMessage branches', () => {
 
     const req: any = { user: { _id: 'u1', username: 'u1', email: 'u1@example.com' }, body: { message: JSON.stringify({ __encrypted: true, body: 'cipher' }) } }
     const res: any = { json: jest.fn(), status: jest.fn().mockReturnThis() }
+    const next = jest.fn()
 
-    await MC.sendMessage(req, res)
+    await MC.sendMessage(req, res, next)
 
-    const called = res.json.mock.calls[0][0]
-    expect(called).toHaveProperty('message')
-    expect(called.message).toMatch(/Receiver ID is required|Invalid message content/)
+    expect(next).toHaveBeenCalled()
+    const error = next.mock.calls[0][0]
+    expect(error).toHaveProperty('message')
+    expect(error.message).toMatch(/Receiver ID is required|Invalid message content/)
   })
 
   it('returns error when sender and receiver are the same', async () => {
@@ -35,11 +37,13 @@ describe('MessageController sendMessage branches', () => {
 
     const req: any = { user: { _id: 'u1', username: 'u1', email: 'u1@example.com' }, body: { receiverId: 'u1', message: JSON.stringify({ __encrypted: true, body: 'cipher' }) } }
     const res: any = { json: jest.fn(), status: jest.fn().mockReturnThis() }
+    const next = jest.fn()
 
-    await MC.sendMessage(req, res)
+    await MC.sendMessage(req, res, next)
 
-    const called = res.json.mock.calls[0][0]
-    expect(called.message).toContain('Sender and receiver cannot be the same')
+    expect(next).toHaveBeenCalled()
+    const error = next.mock.calls[0][0]
+    expect(error.message).toContain('Sender and receiver cannot be the same')
   })
 
   it('rejects invalid envelope (parse error)', async () => {
@@ -50,11 +54,13 @@ describe('MessageController sendMessage branches', () => {
 
     const req: any = { user: { _id: 'u1', username: 'u1', email: 'u1@example.com' }, body: { receiverId: 'u2', message: 'plain text' } }
     const res: any = { json: jest.fn(), status: jest.fn().mockReturnThis() }
+    const next = jest.fn()
 
-    await MC.sendMessage(req, res)
+    await MC.sendMessage(req, res, next)
 
-    const called = res.json.mock.calls[0][0]
-    expect(called.message).toContain('Messages must be end-to-end encrypted')
+    expect(next).toHaveBeenCalled()
+    const error = next.mock.calls[0][0]
+    expect(error.message).toContain('Messages must be end-to-end encrypted')
   })
 
   it('rejects messages exceeding maximum length', async () => {
@@ -67,11 +73,13 @@ describe('MessageController sendMessage branches', () => {
     const long = 'a'.repeat(5001)
     const req: any = { user: { _id: 'u1', username: 'u1', email: 'u1@example.com' }, body: { receiverId: 'u2', message: long } }
     const res: any = { json: jest.fn(), status: jest.fn().mockReturnThis() }
+    const next = jest.fn()
 
-    await MC.sendMessage(req, res)
+    await MC.sendMessage(req, res, next)
 
-    const called = res.json.mock.calls[0][0]
-    expect(called.message).toContain('Message exceeds maximum length')
+    expect(next).toHaveBeenCalled()
+    const error = next.mock.calls[0][0]
+    expect(error.message).toContain('Message exceeds maximum length')
   })
 
   it('succeeds for a valid envelope and calls save and notify', async () => {
@@ -86,7 +94,7 @@ describe('MessageController sendMessage branches', () => {
     const req: any = { user: { _id: 'u1', username: 'u1', email: 'u1@example.com' }, body: { receiverId: 'u2', message: envelope } }
     const res: any = { json: jest.fn(), status: jest.fn().mockReturnThis() }
 
-    await MC.sendMessage(req, res)
+    await MC.sendMessage(req, res, jest.fn())
 
     expect(repo.save).toHaveBeenCalled()
     expect(handleMessageReceived).toHaveBeenCalled()

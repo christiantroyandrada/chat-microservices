@@ -27,12 +27,12 @@ describe('MessageController non-Error catch branches', () => {
     const repo: any = { save: jest.fn().mockRejectedValue('string-error') }
     ;(AppDataSource.getRepository as jest.Mock).mockReturnValue(repo)
     const mockRes: any = { json: jest.fn(), status: jest.fn().mockReturnThis() }
+    const mockNext = jest.fn()
 
-    await MessageController.sendMessage(mockReq, mockRes)
+    await MessageController.sendMessage(mockReq, mockRes, mockNext)
 
-    const called = mockRes.json.mock.calls[0][0]
-    expect(called.status).toBe(500)
-    expect(called.message).toBe('Internal Server Error')
+    expect(mockNext).toHaveBeenCalled()
+    expect(mockNext.mock.calls[0][0]).toBe('string-error')
   })
 
   it('fetchConversation handles non-Error rejection from getMany', async () => {
@@ -40,11 +40,11 @@ describe('MessageController non-Error catch branches', () => {
     const repo: any = { createQueryBuilder: jest.fn(() => ({ where: jest.fn().mockReturnThis(), orderBy: jest.fn().mockReturnThis(), skip: jest.fn().mockReturnThis(), take: jest.fn().mockReturnThis(), getManyAndCount: jest.fn().mockRejectedValue('bad') })) }
     ;(AppDataSource.getRepository as jest.Mock).mockReturnValue(repo)
     const mockRes: any = { json: jest.fn(), status: jest.fn().mockReturnThis() }
+    const mockNext = jest.fn()
 
-    await MessageController.fetchConversation(mockReq, mockRes)
-    const called = mockRes.json.mock.calls[0][0]
-    expect(called.status).toBe(500)
-    expect(called.message).toBe('Internal Server Error')
+    await MessageController.fetchConversation(mockReq, mockRes, mockNext)
+    expect(mockNext).toHaveBeenCalled()
+    expect(mockNext.mock.calls[0][0]).toBe('bad')
   })
 
   it('getConversations handles non-Error rejection from query', async () => {
@@ -52,11 +52,11 @@ describe('MessageController non-Error catch branches', () => {
     const repo: any = { query: jest.fn().mockRejectedValue(null) }
     ;(AppDataSource.getRepository as jest.Mock).mockReturnValue(repo)
     const mockRes: any = { json: jest.fn(), status: jest.fn().mockReturnThis() }
+    const mockNext = jest.fn()
 
-    await MessageController.getConversations(mockReq, mockRes)
-    const called = mockRes.json.mock.calls[0][0]
-    expect(called.status).toBe(500)
-    expect(called.message).toBe('Internal Server Error')
+    await MessageController.getConversations(mockReq, mockRes, mockNext)
+    expect(mockNext).toHaveBeenCalled()
+    expect(mockNext.mock.calls[0][0]).toBeNull()
   })
 
   it('markAsRead handles non-Error rejection from execute', async () => {
@@ -65,10 +65,10 @@ describe('MessageController non-Error catch branches', () => {
     const repo: any = { createQueryBuilder: jest.fn(() => qb) }
     ;(AppDataSource.getRepository as jest.Mock).mockReturnValue(repo)
     const mockRes: any = { json: jest.fn(), status: jest.fn().mockReturnThis() }
+    const mockNext = jest.fn()
 
-    await MessageController.markAsRead(mockReq, mockRes)
-    const called = mockRes.json.mock.calls[0][0]
-    expect(called.status).toBe(500)
-    expect(called.message).toBe('Internal Server Error')
+    await MessageController.markAsRead(mockReq, mockRes, mockNext)
+    expect(mockNext).toHaveBeenCalled()
+    expect(mockNext.mock.calls[0][0]).toBeUndefined()
   })
 })

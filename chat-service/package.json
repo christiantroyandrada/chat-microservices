@@ -8,7 +8,7 @@
     "build": "rm -rf build/ && tsc -p .",
     "start": "node build/server.js",
     "migrate": "node build/src/migrate.js",
-    "test": "npm run test:unit -- --run && playwright test",
+    "test": "npm run test:unit && playwright test",
     "test:unit": "jest --config jest.config.js --runInBand",
     "coverage": "jest --config jest.config.js --coverage --coverageReporters=lcov --coverageDirectory=coverage"
   },
