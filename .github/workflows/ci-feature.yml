@@ -55,8 +55,9 @@ jobs:
     needs: typescript-check
     uses: ./.github/workflows/unit-tests.yml
     with:
-      coverage: 'false'
-    # No secrets required for feature-branch unit tests in this repo; add `secrets: inherit` if needed
+      coverage: 'true'
+    # Needed for reusable sonar workflow when coverage is enabled.
+    secrets: inherit
 
   integration-tests:
     name: Integration Tests

@@ -76,7 +76,9 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: lcov-${{ matrix.service }}
-          path: upload/${{ matrix.service }}/*
+          # Upload the folder (not wildcard) so service path is preserved.
+          # This prevents lcov.info name collisions when artifacts are merged.
+          path: upload/${{ matrix.service }}
           # don't fail if no file is found
           if-no-files-found: ignore
 
