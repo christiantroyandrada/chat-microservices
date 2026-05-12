@@ -1,0 +1,524 @@
+# Manual deploy — re-injects secrets from Infisical and runs the same
+# deploy + security-cleanup logic as ci-main.yml's automatic deploy job.
+#
+# Use when:
+#   - Containers on the VPS lost their secrets (e.g. after a host-side recreate)
+#   - You need to redeploy without pushing a new commit
+#   - Rolling back to a previous image tag
+#
+# Trigger from the GitHub UI (Actions → "Manual Deploy" → Run workflow)
+# or via the CLI:
+#
+#   gh workflow run deploy.yml --ref main \
+#       -f image_tag=<sha or "latest"> \
+#       -f reason="Post-reboot recovery"
+#
+# Defaults: image_tag falls back to the ref's HEAD SHA when left blank.
+name: Manual Deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: "Image tag to deploy (defaults to ref HEAD SHA)"
+        required: false
+        type: string
+      reason:
+        description: "Why are you running this deploy?"
+        required: false
+        type: string
+        default: "Manual redeploy"
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  deploy:
+    name: Deploy to VPS
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 40
+    concurrency:
+      # Serialise with ci-main.yml's auto-deploys so the two never collide.
+      group: production-deployment
+      cancel-in-progress: false
+
+    steps:
+      - name: Log invocation context
+        run: |
+          echo "🛠  Manual deploy"
+          echo "   ref       : ${{ github.ref }}"
+          echo "   actor     : ${{ github.actor }}"
+          echo "   image_tag : ${{ inputs.image_tag || github.sha }}"
+          echo "   reason    : ${{ inputs.reason }}"
+
+      - name: Fetch secrets from Infisical
+        id: infisical
+        uses: Infisical/secrets-action@03d3fa38607956c493f53c6633f94006a13c47ae # v1.0.7
+        with:
+          method: universal
+          client-id: ${{ secrets.INFISCAL_CLIENT_ID }}
+          client-secret: ${{ secrets.INFISCAL_CLIENT_SECRET }}
+          project-slug: ${{ secrets.INFISCAL_PROJECT_SLUG }}
+          env-slug: prod
+          secret-path: /
+
+      - name: Validate secrets
+        run: |
+          echo "🔍 Validating required secrets..."
+          MISSING=0
+
+          [ -z "$ADMIN_USERNAME" ] && echo "❌ ADMIN_USERNAME missing" && MISSING=1 || echo "✅ ADMIN_USERNAME"
+          [ -z "$ADMIN_PASSWORD" ] && echo "❌ ADMIN_PASSWORD missing" && MISSING=1 || echo "✅ ADMIN_PASSWORD"
+          [ -z "$ADMIN_PASSWORD_ENCODED" ] && echo "❌ ADMIN_PASSWORD_ENCODED missing" && MISSING=1 || echo "✅ ADMIN_PASSWORD_ENCODED"
+
+          [ -z "$SMTP_HOST" ] && echo "⚠️ SMTP_HOST missing (defaulting to smtp-relay.brevo.com)" || echo "✅ SMTP_HOST"
+          [ -z "$EMAIL_FROM" ] && echo "⚠️ EMAIL_FROM missing (defaulting to admin@yourdomain.com)" || echo "✅ EMAIL_FROM"
+          [ -z "$SMTP_USER" ] && echo "⚠️ SMTP_USER missing" || echo "✅ SMTP_USER"
+          [ -z "$SMTP_PASS" ] && echo "⚠️ SMTP_PASS missing" || echo "✅ SMTP_PASS"
+
+          echo "::add-mask::$ADMIN_PASSWORD"
+          echo "::add-mask::$ADMIN_PASSWORD_ENCODED"
+          echo "::add-mask::$SMTP_PASS"
+          echo "::add-mask::$SENDINBLUE_APIKEY"
+
+          [ "$MISSING" -eq 1 ] && exit 1
+          echo "✅ All required secrets validated"
+
+      - name: Deploy to VPS
+        uses: appleboy/ssh-action@029f5b4aeeeb58fdfe1410a5d17f967dacf36262 # v1.0.3
+        env:
+          ADMIN_USERNAME: ${{ env.ADMIN_USERNAME }}
+          ADMIN_PASSWORD: ${{ env.ADMIN_PASSWORD }}
+          ADMIN_PASSWORD_ENCODED: ${{ env.ADMIN_PASSWORD_ENCODED }}
+          CORS_ORIGINS: ${{ env.CORS_ORIGINS }}
+          MESSAGE_BROKER_URL: ${{ env.MESSAGE_BROKER_URL }}
+          SENDINBLUE_APIKEY: ${{ env.SENDINBLUE_APIKEY }}
+          SMTP_HOST: ${{ env.SMTP_HOST }}
+          SMTP_PASS: ${{ env.SMTP_PASS }}
+          SMTP_USER: ${{ env.SMTP_USER }}
+          EMAIL_FROM: ${{ env.EMAIL_FROM }}
+          PGADMIN_EMAIL: ${{ secrets.PGADMIN_EMAIL }}
+          VPS_SUDO_PASSWORD: ${{ secrets.VPS_SUDO_PASSWORD }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          IMAGE_TAG: ${{ inputs.image_tag || github.sha }}
+          REPO_OWNER: ${{ github.repository_owner }}
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_PRIVATE_KEY }}
+          port: ${{ secrets.VPS_PORT }}
+          command_timeout: 30m
+          envs: ADMIN_USERNAME,ADMIN_PASSWORD,ADMIN_PASSWORD_ENCODED,CORS_ORIGINS,MESSAGE_BROKER_URL,SENDINBLUE_APIKEY,SMTP_HOST,SMTP_PASS,SMTP_USER,EMAIL_FROM,PGADMIN_EMAIL,VPS_SUDO_PASSWORD,GITHUB_TOKEN,IMAGE_TAG,REPO_OWNER
+          script: |
+            set -euo pipefail
+            DEPLOY_PATH="/opt/chat-app"
+
+            echo "🚀 Starting backend deployment (manual, image-based)..."
+
+            echo "::add-mask::$VPS_SUDO_PASSWORD"
+            echo "::add-mask::$GITHUB_TOKEN"
+            echo "::add-mask::$ADMIN_PASSWORD"
+            echo "::add-mask::$ADMIN_PASSWORD_ENCODED"
+
+            if [ ! -d "$DEPLOY_PATH" ]; then
+              sudo -S mkdir -p "$DEPLOY_PATH" <<< "$VPS_SUDO_PASSWORD" 2>/dev/null
+              sudo -S chown $USER:$USER "$DEPLOY_PATH" <<< "$VPS_SUDO_PASSWORD" 2>/dev/null
+            fi
+
+            cd "$DEPLOY_PATH"
+            mkdir -p chat-microservices
+            cd chat-microservices
+
+            echo "🔐 Logging in to GHCR..."
+            docker login ghcr.io -u "$REPO_OWNER" --password-stdin <<< "$GITHUB_TOKEN" 2>/dev/null
+
+            JWT_SECRET_FILE="$DEPLOY_PATH/.jwt_secret"
+            if [ ! -f "$JWT_SECRET_FILE" ]; then
+              echo "🔑 Generating new JWT secret..."
+              openssl rand -base64 64 | tr -d '\n' > "$JWT_SECRET_FILE"
+              chmod 600 "$JWT_SECRET_FILE"
+            fi
+            JWT_SECRET=$(cat "$JWT_SECRET_FILE")
+
+            echo "📝 Creating docker-compose.yml..."
+            cat > docker-compose.yml << 'COMPOSE_END'
+            services:
+              postgres:
+                image: postgres:17-bookworm
+                restart: unless-stopped
+                volumes:
+                  - postgres-data:/var/lib/postgresql/data
+                environment:
+                  POSTGRES_USER: ${ADMIN_USERNAME}
+                  POSTGRES_PASSWORD: ${ADMIN_PASSWORD}
+                  POSTGRES_DB: chat_db
+                healthcheck:
+                  test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d chat_db"]
+                  interval: 10s
+                  timeout: 5s
+                  retries: 5
+                  start_period: 10s
+                deploy:
+                  resources:
+                    limits:
+                      memory: 512M
+                      cpus: '1.0'
+
+              pgadmin:
+                image: dpage/pgadmin4:latest
+                restart: unless-stopped
+                depends_on:
+                  postgres:
+                    condition: service_healthy
+                expose:
+                  - "80"
+                environment:
+                  PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@admin.com}
+                  PGADMIN_DEFAULT_PASSWORD: ${ADMIN_PASSWORD}
+                  PGADMIN_CONFIG_SERVER_MODE: "False"
+                  SCRIPT_NAME: /pgadmin
+                volumes:
+                  - pgadmin-data:/var/lib/pgadmin
+
+              user:
+                image: ghcr.io/${REPO_OWNER}/chat-user-service:${IMAGE_TAG}
+                restart: always
+                expose:
+                  - "8081"
+                environment:
+                  NODE_ENV: production
+                  PORT: "8081"
+                  JWT_SECRET: ${JWT_SECRET}
+                  DATABASE_URL: postgresql://${ADMIN_USERNAME}:${ADMIN_PASSWORD_ENCODED}@postgres:5432/chat_db
+                  MESSAGE_BROKER_URL: ${MESSAGE_BROKER_URL}
+                  CORS_ORIGINS: ${CORS_ORIGINS}
+                depends_on:
+                  postgres:
+                    condition: service_healthy
+                healthcheck:
+                  test: ["CMD", "/nodejs/bin/node", "-e", "require('http').get('http://localhost:8081/health',r=>{process.exit(r.statusCode===200?0:1)}).on('error',()=>process.exit(1))"]
+                  interval: 10s
+                  timeout: 5s
+                  retries: 3
+                  start_period: 10s
+                deploy:
+                  resources:
+                    limits:
+                      memory: 256M
+                      cpus: '0.50'
+
+              chat:
+                image: ghcr.io/${REPO_OWNER}/chat-chat-service:${IMAGE_TAG}
+                restart: always
+                expose:
+                  - "8082"
+                environment:
+                  NODE_ENV: production
+                  PORT: "8082"
+                  JWT_SECRET: ${JWT_SECRET}
+                  DATABASE_URL: postgresql://${ADMIN_USERNAME}:${ADMIN_PASSWORD_ENCODED}@postgres:5432/chat_db
+                  MESSAGE_BROKER_URL: ${MESSAGE_BROKER_URL}
+                  CORS_ORIGINS: ${CORS_ORIGINS}
+                depends_on:
+                  postgres:
+                    condition: service_healthy
+                healthcheck:
+                  test: ["CMD", "/nodejs/bin/node", "-e", "require('http').get('http://localhost:8082/health',r=>{process.exit(r.statusCode===200?0:1)}).on('error',()=>process.exit(1))"]
+                  interval: 10s
+                  timeout: 5s
+                  retries: 3
+                  start_period: 10s
+                deploy:
+                  resources:
+                    limits:
+                      memory: 384M
+                      cpus: '0.50'
+
+              notification:
+                image: ghcr.io/${REPO_OWNER}/chat-notification-service:${IMAGE_TAG}
+                restart: always
+                expose:
+                  - "8083"
+                environment:
+                  NODE_ENV: production
+                  PORT: "8083"
+                  JWT_SECRET: ${JWT_SECRET}
+                  DATABASE_URL: postgresql://${ADMIN_USERNAME}:${ADMIN_PASSWORD_ENCODED}@postgres:5432/chat_db
+                  MESSAGE_BROKER_URL: ${MESSAGE_BROKER_URL}
+                  SMTP_HOST: ${SMTP_HOST:-smtp-relay.brevo.com}
+                  SMTP_PORT: "587"
+                  SMTP_USER: ${SMTP_USER}
+                  SMTP_PASS: ${SMTP_PASS}
+                  SENDINBLUE_APIKEY: ${SENDINBLUE_APIKEY}
+                  EMAIL_FROM: ${EMAIL_FROM:-admin@yourdomain.com}
+                  NOTIFICATIONS_QUEUE: NOTIFICATIONS
+                  CORS_ORIGINS: ${CORS_ORIGINS}
+                depends_on:
+                  postgres:
+                    condition: service_healthy
+                healthcheck:
+                  test: ["CMD", "/nodejs/bin/node", "-e", "require('http').get('http://localhost:8083/health',r=>{process.exit(r.statusCode===200?0:1)}).on('error',()=>process.exit(1))"]
+                  interval: 10s
+                  timeout: 5s
+                  retries: 3
+                  start_period: 10s
+                deploy:
+                  resources:
+                    limits:
+                      memory: 256M
+                      cpus: '0.50'
+
+              nginx:
+                image: ghcr.io/${REPO_OWNER}/chat-nginx:${IMAGE_TAG}
+                restart: always
+                ports:
+                  - "0.0.0.0:80:8080"
+                  - "0.0.0.0:443:8443"
+                volumes:
+                  - ./certbot/conf:/etc/letsencrypt:ro
+                  - ./certbot/www:/var/www/certbot:ro
+                depends_on:
+                  user:
+                    condition: service_healthy
+                  chat:
+                    condition: service_healthy
+                  notification:
+                    condition: service_healthy
+                  frontend:
+                    condition: service_started
+                healthcheck:
+                  test: ["CMD-SHELL", "timeout 2 bash -c '</dev/tcp/localhost/8080' || exit 1"]
+                  interval: 10s
+                  timeout: 5s
+                  retries: 3
+                  start_period: 10s
+                networks:
+                  - default
+                  - n8n_nginx_bridge
+                deploy:
+                  resources:
+                    limits:
+                      memory: 128M
+                      cpus: '0.25'
+
+              frontend:
+                image: ghcr.io/${REPO_OWNER}/chat-frontend:latest
+                restart: always
+                expose:
+                  - "3000"
+                environment:
+                  NODE_ENV: production
+                  PORT: "3000"
+                  HOST: "0.0.0.0"
+                  ORIGIN: https://chat.ctaprojects.xyz
+                  PROTOCOL_HEADER: x-forwarded-proto
+                  HOST_HEADER: x-forwarded-host
+                  PUBLIC_API_URL: https://chat.ctaprojects.xyz
+                  PUBLIC_WS_URL: https://chat.ctaprojects.xyz
+                healthcheck:
+                  test: ["CMD", "/nodejs/bin/node", "-e", "require('http').get('http://localhost:3000',r=>{process.exit(r.statusCode<500?0:1)}).on('error',()=>process.exit(1))"]
+                  interval: 10s
+                  timeout: 5s
+                  retries: 3
+                  start_period: 15s
+                deploy:
+                  resources:
+                    limits:
+                      memory: 256M
+                      cpus: '0.50'
+
+            volumes:
+              postgres-data:
+              pgadmin-data:
+
+            networks:
+              n8n_nginx_bridge:
+                external: true
+            COMPOSE_END
+
+            export ADMIN_USERNAME ADMIN_PASSWORD ADMIN_PASSWORD_ENCODED
+            export CORS_ORIGINS MESSAGE_BROKER_URL SENDINBLUE_APIKEY
+            export SMTP_HOST SMTP_PASS SMTP_USER EMAIL_FROM PGADMIN_EMAIL
+            export JWT_SECRET IMAGE_TAG REPO_OWNER
+
+            mkdir -p certbot/conf certbot/www
+
+            echo "🔒 n8n safeguard: verifying bridge network..."
+            if ! docker network inspect n8n_nginx_bridge >/dev/null 2>&1; then
+              echo "⚠️  n8n_nginx_bridge not found — creating..."
+              docker network create n8n_nginx_bridge 2>/dev/null || true
+            else
+              echo "✅ n8n_nginx_bridge network exists"
+            fi
+
+            N8N_PRE_HEALTHY=false
+            if curl -fsS --max-time 5 "http://localhost:5678/" >/dev/null 2>&1; then
+              N8N_PRE_HEALTHY=true
+              echo "✅ n8n is reachable before deployment"
+            else
+              echo "ℹ️  n8n not reachable pre-deploy (skipping post-deploy n8n check)"
+            fi
+
+            echo "🐳 Pre-pulling images from GHCR..."
+            docker compose pull
+
+            echo "🔵 Starting Blue-Green deployment..."
+
+            if ! docker compose ps --quiet 2>/dev/null | grep -q .; then
+              echo "📦 Fresh deployment detected, starting all services..."
+              docker compose up -d
+            else
+              echo "🔄 Updating existing deployment with rolling updates..."
+
+              for SERVICE in user chat notification; do
+                echo "🔄 Updating $SERVICE service..."
+                PREV_IMAGE=$(docker inspect --format '{{.Config.Image}}' $(docker compose ps -q $SERVICE) 2>/dev/null || echo "")
+                echo "   📸 Current image: ${PREV_IMAGE:-none}"
+
+                docker compose up -d --no-deps $SERVICE
+
+                echo "   ⏳ Waiting for $SERVICE to be healthy..."
+                HEALTH_WAIT=0
+                MAX_WAIT=60
+                while [ $HEALTH_WAIT -lt $MAX_WAIT ]; do
+                  if docker compose ps $SERVICE 2>/dev/null | grep -q "(healthy)"; then
+                    echo "   ✅ $SERVICE is healthy!"
+                    break
+                  fi
+                  sleep 3
+                  HEALTH_WAIT=$((HEALTH_WAIT + 3))
+                done
+
+                if [ $HEALTH_WAIT -ge $MAX_WAIT ]; then
+                  echo "   ⚠️ $SERVICE health check timeout!"
+                  docker compose logs $SERVICE --tail=20
+
+                  if [ -n "$PREV_IMAGE" ]; then
+                    echo "   🔙 Rolling back $SERVICE to previous image: $PREV_IMAGE"
+                    PREV_TAG=$(echo "$PREV_IMAGE" | rev | cut -d: -f1 | rev)
+                    IMAGE_TAG="$PREV_TAG" docker compose up -d --no-deps $SERVICE
+                    echo "   ⏳ Waiting for rollback health check..."
+                    ROLLBACK_WAIT=0
+                    while [ $ROLLBACK_WAIT -lt 30 ]; do
+                      if docker compose ps $SERVICE 2>/dev/null | grep -q "(healthy)"; then
+                        echo "   ✅ $SERVICE rolled back successfully to $PREV_TAG"
+                        break
+                      fi
+                      sleep 3
+                      ROLLBACK_WAIT=$((ROLLBACK_WAIT + 3))
+                    done
+                    if [ $ROLLBACK_WAIT -ge 30 ]; then
+                      echo "   ❌ $SERVICE rollback also failed — manual intervention needed"
+                    fi
+                  else
+                    echo "   ⚠️ No previous image found — cannot rollback"
+                  fi
+                  echo "   ❌ Deployment failed for $SERVICE — aborting"
+                  exit 1
+                fi
+              done
+
+              echo "🔄 Updating nginx..."
+              docker compose up -d --no-deps nginx
+
+              echo "🔄 Updating frontend..."
+              docker compose up -d --no-deps frontend
+            fi
+
+            echo "⏳ Final health verification (30s)..."
+            sleep 30
+
+            ALL_HEALTHY=true
+            for EP in /health /api/user/health /chat/health /notifications/health; do
+              if curl -fsS "http://localhost:80${EP}" >/dev/null 2>&1; then
+                echo "✅ ${EP} is healthy"
+              else
+                echo "❌ ${EP} health check failed"
+                ALL_HEALTHY=false
+              fi
+            done
+
+            if [ "$ALL_HEALTHY" = true ]; then
+              echo "✅ Chat-app deployment successful!"
+            else
+              echo "⚠️ Health check failed, showing logs..."
+              docker compose logs --tail=100
+              exit 1
+            fi
+
+            if [ "$N8N_PRE_HEALTHY" = true ]; then
+              echo "🔍 Verifying n8n survived the deployment..."
+              N8N_OK=false
+              for attempt in $(seq 1 12); do
+                if curl -fsS --max-time 5 "http://localhost:5678/" >/dev/null 2>&1; then
+                  N8N_OK=true
+                  break
+                fi
+                echo "   ⏳ n8n health check attempt ${attempt}/12..."
+                sleep 5
+              done
+
+              if [ "$N8N_OK" = true ]; then
+                if curl -fsS --max-time 5 -k -H "Host: n8n.ctaprojects.xyz" "https://localhost/" >/dev/null 2>&1; then
+                  echo "✅ n8n is healthy and nginx→n8n proxy is working"
+                else
+                  echo "⚠️  n8n is running but nginx proxy failed — reconnecting bridge..."
+                  NGINX_ID=$(docker compose ps -q nginx 2>/dev/null || echo "")
+                  if [ -n "$NGINX_ID" ]; then
+                    docker network connect n8n_nginx_bridge "$NGINX_ID" 2>/dev/null || true
+                    sleep 3
+                    if curl -fsS --max-time 5 -k -H "Host: n8n.ctaprojects.xyz" "https://localhost/" >/dev/null 2>&1; then
+                      echo "✅ n8n proxy recovered after bridge reconnect"
+                    else
+                      echo "⚠️  n8n proxy still failing — manual check needed"
+                    fi
+                  fi
+                fi
+              else
+                echo "⚠️  n8n is not responding after deployment!"
+                echo "   Check: docker ps | grep n8n"
+                echo "   Fix:   cd /opt/n8n && docker compose up -d"
+              fi
+            fi
+
+            echo "🧹 Cleaning up old images (keeping last 2 per repo)..."
+            for repo in chat-user-service chat-chat-service chat-notification-service chat-nginx chat-frontend; do
+              docker images "ghcr.io/${REPO_OWNER}/$repo" --format "{{.ID}} {{.CreatedAt}}" \
+                | sort -k2 -r | tail -n +3 | awk '{print $1}' \
+                | xargs -r docker rmi -f 2>/dev/null || true
+            done
+            docker image prune -f || true
+
+            docker compose ps
+
+      - name: Security cleanup
+        if: always()
+        uses: appleboy/ssh-action@029f5b4aeeeb58fdfe1410a5d17f967dacf36262 # v1.0.3
+        env:
+          VPS_SUDO_PASSWORD: ${{ secrets.VPS_SUDO_PASSWORD }}
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_PRIVATE_KEY }}
+          port: ${{ secrets.VPS_PORT }}
+          envs: VPS_SUDO_PASSWORD
+          script: |
+            echo "🔒 Security cleanup..."
+            DEPLOY_PATH="/opt/chat-app"
+
+            echo "::add-mask::$VPS_SUDO_PASSWORD"
+
+            cd "$DEPLOY_PATH/chat-microservices" 2>/dev/null || exit 0
+
+            rm -rf .git .github 2>/dev/null || true
+            rm -rf user-service chat-service notification-service nginx 2>/dev/null || true
+            rm -rf scripts deploy docs docker-secrets 2>/dev/null || true
+
+            docker image prune -f || true
+            docker container prune -f || true
+
+            echo "✅ Security cleanup complete!"
+            echo "📊 Remaining files:"
+            ls -la
