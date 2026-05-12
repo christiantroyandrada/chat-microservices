@@ -14,7 +14,7 @@ log() {
 log "Starting security update check..."
 
 # Update package lists
-apt-get update -qq >> "$LOG_FILE" 2>&1
+sudo apt-get update -qq >> "$LOG_FILE" 2>&1
 
 # Check for security updates
 SECURITY_UPDATES=$(apt list --upgradable 2>/dev/null | grep -i security | wc -l)
@@ -34,7 +34,7 @@ if [ -f /etc/apt/apt.conf.d/50unattended-upgrades ]; then
     # Trigger unattended-upgrade if there are security updates
     if [ "$SECURITY_UPDATES" -gt 0 ]; then
         log "Triggering unattended-upgrade for security updates..."
-        unattended-upgrade -d >> "$LOG_FILE" 2>&1 || log "Unattended-upgrade completed with warnings"
+        sudo unattended-upgrade -d >> "$LOG_FILE" 2>&1 || log "Unattended-upgrade completed with warnings"
     fi
 else
     log "Note: Unattended upgrades not configured. Consider enabling for automatic security patches."
