@@ -162,7 +162,7 @@ function validateMessage(
   return trimmed
 }
 
-async function retrieveOrSaveMessage(params: {
+export async function retrieveOrSaveMessage(params: {
   _id?: string
   trimmed: string
   senderId: string
@@ -177,6 +177,15 @@ async function retrieveOrSaveMessage(params: {
   if (_id) {
     const existing = await messageRepo.findOne({ where: { id: _id } })
     if (!existing) {
+      ack?.({ ok: false, error: 'Message not found' })
+      return null
+    }
+    // Ownership guard (IDOR): the idempotent-resend path may only reuse a message
+    // that belongs to THIS sender→receiver pair. Without this an authenticated
+    // user could supply any message id and have an arbitrary stored message
+    // re-delivered/replayed. Return the same opaque error so existence isn't leaked.
+    if (existing.senderId !== senderId || existing.receiverId !== receiverId) {
+      logWarn('[chat-service] Rejected _id reuse for non-owned message', { _id, senderId })
       ack?.({ ok: false, error: 'Message not found' })
       return null
     }
