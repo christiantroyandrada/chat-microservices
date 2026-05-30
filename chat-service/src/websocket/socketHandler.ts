@@ -55,6 +55,16 @@ export function registerSocketHandlers(
     if (userId) handleTyping(io, userId, data)
   })
   socket.on('sendMessage', (data, ack?) => handleSendMessage(io, socket, userId, data, ack))
+  socket.on('messageDelivered', (data: { messageId: string }) =>
+    handleMessageDelivered(io, userId, data).catch(err =>
+      logError('[chat-service] messageDelivered error:', err),
+    ),
+  )
+  socket.on('markRead', (data: { senderId: string }) =>
+    handleMarkRead(io, userId, data).catch(err =>
+      logError('[chat-service] markRead error:', err),
+    ),
+  )
 }
 
 // ── Presence management ───────────────────────────────────────────────────────
@@ -234,6 +244,51 @@ export async function retrieveOrSaveMessage(params: {
   }
 
   return saved
+}
+
+/**
+ * Receiver confirms a message reached their device → mark Delivered (once) and
+ * notify the original sender in real time. Ownership-checked: only the message's
+ * receiver may mark it delivered.
+ */
+export async function handleMessageDelivered(
+  io: SocketIOServer,
+  userId: string | undefined,
+  data: { messageId: string },
+): Promise<void> {
+  if (!userId || !data?.messageId) return
+  const messageRepo = AppDataSource.getRepository(Message)
+  const existing = await messageRepo.findOne({ where: { id: data.messageId } })
+  if (!existing || existing.receiverId !== userId) return
+
+  if (existing.status === MessageStatus.NotDelivered) {
+    existing.status = MessageStatus.Delivered
+    await messageRepo.save(existing)
+  }
+  io.to(existing.senderId).emit('messageDelivered', { messageId: data.messageId, by: userId })
+}
+
+/**
+ * Receiver opened the conversation → mark all messages from `senderId` to them
+ * as Seen and notify the sender (read receipts). Scoped to the caller as the
+ * receiver, so a user can only mark messages addressed to themselves.
+ */
+export async function handleMarkRead(
+  io: SocketIOServer,
+  userId: string | undefined,
+  data: { senderId: string },
+): Promise<void> {
+  if (!userId || !data?.senderId) return
+  const messageRepo = AppDataSource.getRepository(Message)
+  await messageRepo
+    .createQueryBuilder()
+    .update(Message)
+    .set({ status: MessageStatus.Seen })
+    .where('senderId = :senderId', { senderId: data.senderId })
+    .andWhere('receiverId = :receiverId', { receiverId: userId })
+    .andWhere('status != :status', { status: MessageStatus.Seen })
+    .execute()
+  io.to(data.senderId).emit('messageRead', { by: userId })
 }
 
 function formatMessageForClient(msg: Message, username?: string) {
