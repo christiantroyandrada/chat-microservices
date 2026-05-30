@@ -1,7 +1,9 @@
 import { Request, Response, NextFunction } from 'express'
 import { AppDataSource, Prekey } from '../database'
 import { APIError } from '../utils'
-import { logError, logInfo } from '../utils/logger'
+import { logError, logInfo, logWarn } from '../utils/logger'
+import { prekeyPoolExhaustedTotal } from '../utils/metrics'
+import { consumeOneTimePreKey } from '../utils/prekeyConsumption'
 import type { PrekeyBundle, EncryptedKeyBundle, StoredBundle } from '../types'
 
 /**
@@ -228,18 +230,27 @@ const getPrekeyBundle = async (req: Request, res: Response, next: NextFunction) 
 
     // Prefer a bundle that has at least one one-time prekey
     // Cast to PrekeyBundle for preKeys access — encrypted-only bundles don't have preKeys
-    let chosen = bundles.find((b) => Array.isArray((b.bundle as PrekeyBundle)?.preKeys) && (b.bundle as PrekeyBundle).preKeys.length > 0) || bundles[0]
+    const chosen = bundles.find((b) => Array.isArray((b.bundle as PrekeyBundle)?.preKeys) && (b.bundle as PrekeyBundle).preKeys.length > 0) || bundles[0]
 
-    if (Array.isArray((chosen.bundle as PrekeyBundle)?.preKeys) && (chosen.bundle as PrekeyBundle).preKeys.length > 0) {
-      // persist updated bundle
+    // X3DH one-time prekey consumption: hand out exactly ONE prekey and remove it
+    // from the stored pool so it is never reused (forward secrecy).
+    const { consumed, clientBundle, storedBundle } = consumeOneTimePreKey(chosen.bundle)
+
+    if (consumed && storedBundle) {
+      // Reassign a fresh bundle object so TypeORM flags the JSON column dirty,
+      // then persist within the locked transaction before responding.
+      chosen.bundle = storedBundle
       await repo.save(chosen)
       await qr.commitTransaction()
-      return res.json({ status: 200, data: { userId: chosen.userId, deviceId: chosen.deviceId, bundle: chosen.bundle } })
+      return res.json({ status: 200, data: { userId: chosen.userId, deviceId: chosen.deviceId, bundle: clientBundle } })
     }
 
-    // No one-time prekeys available; return the bundle without consuming
+    // No one-time prekeys left — surface for replenishment. X3DH can still proceed
+    // with the signed prekey only, so we return identity material without consuming.
+    prekeyPoolExhaustedTotal.inc()
+    logWarn('[Prekey] one-time prekey pool exhausted', { userId, deviceId: chosen.deviceId })
     await qr.commitTransaction()
-    return res.json({ status: 200, data: { userId: chosen.userId, deviceId: chosen.deviceId, bundle: chosen.bundle } })
+    return res.json({ status: 200, data: { userId: chosen.userId, deviceId: chosen.deviceId, bundle: clientBundle } })
   } catch (error) {
     try {
       await qr.rollbackTransaction()

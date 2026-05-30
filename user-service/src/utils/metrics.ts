@@ -55,6 +55,12 @@ export const userLoginsTotal: promClient.Counter = getOrCreateCounter(
   ['status'],
 )
 
+export const prekeyPoolExhaustedTotal: promClient.Counter = getOrCreateCounter(
+  'prekey_pool_exhausted_total',
+  'Times a prekey bundle was served with no one-time prekey left to consume',
+  [],
+)
+
 // ── Metrics endpoint helpers ──────────────────────────────────────────────────
 export async function getMetrics(): Promise<string> {
   return promClient.register.metrics()
