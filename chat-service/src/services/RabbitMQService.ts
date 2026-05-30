@@ -39,8 +39,16 @@ class RabbitMQService {
 
     await this.channel.assertQueue(this.requestQueue)
     await this.channel.assertQueue(this.responseQueue)
-    // Assert notification queue once at connect — avoids redundant RPC per publish
-    await this.channel.assertQueue(config.queue.notifications)
+    // Assert the notifications queue with the SAME args the consumer uses
+    // (durable + dead-letter routing). Mismatched args throw PRECONDITION_FAILED
+    // depending on which service declares the queue first.
+    const notificationsDlq = `${config.queue.notifications}_DLQ`
+    await this.channel.assertQueue(notificationsDlq, { durable: true })
+    await this.channel.assertQueue(config.queue.notifications, {
+      durable: true,
+      deadLetterExchange: '',
+      deadLetterRoutingKey: notificationsDlq,
+    })
 
     this.channel.consume(
       this.responseQueue,
@@ -107,7 +115,9 @@ class RabbitMQService {
     this.channel.sendToQueue(
       this.requestQueue,
       Buffer.from(JSON.stringify({ userId })),
-      { correlationId },
+      // replyTo is REQUIRED: user-service replies to msg.properties.replyTo.
+      // Without it the response was sent nowhere and getUserDetails always timed out.
+      { correlationId, replyTo: this.responseQueue },
     )
   }
 
@@ -118,10 +128,13 @@ class RabbitMQService {
     senderName: string,
     isEncrypted = false,
     envelope?: string | object,
+    receiverEmail?: string,
+    receiverToken?: string,
   ) {
   try {
-      // Send notification payload to queue
-      // The notification-service will handle user details lookup if needed
+      // Send notification payload to queue. The recipient's email/token are
+      // resolved by the caller — without them the consumer can only persist a
+      // DB row (no email/push goes out).
       const notificationPayload: NotificationPayload = {
         type: 'MESSAGE_RECEIVED',
         userId: receiverId,
@@ -134,11 +147,19 @@ class RabbitMQService {
       if (envelope) {
         notificationPayload.envelope = envelope
       }
+      if (receiverEmail) {
+        notificationPayload.userEmail = receiverEmail
+      }
+      if (receiverToken) {
+        notificationPayload.userToken = receiverToken
+      }
 
-      // Queue was asserted once during connect() — no need to re-assert per publish
+      // Queue asserted at connect() with DLX. persistent:true so messages
+      // survive a broker restart (durable queue + persistent message).
       this.channel.sendToQueue(
         config.queue.notifications,
         Buffer.from(JSON.stringify(notificationPayload)),
+        { persistent: true },
       )
     // use centralized logger for server-side ops
     logInfo('[chat-service] Notification sent to queue for user:', receiverId)

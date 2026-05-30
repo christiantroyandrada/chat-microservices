@@ -41,6 +41,10 @@ export interface NotificationPayload {
   fromName: string
   isEncrypted: boolean
   envelope?: string | object
+  // Recipient contact info, resolved by chat-service so the notification-service
+  // can actually deliver. Without userEmail the consumer only writes a DB row.
+  userEmail?: string
+  userToken?: string
 }
 // Notification payload published to RabbitMQ in `chat-service/src/services/RabbitMQService.ts`
 

@@ -1,5 +1,23 @@
 import { getPresenceStore } from '../services/PresenceStore'
 import { rabbitMQService } from '../services/RabbitMQService'
+import { logWarn } from './logger'
+import type { UserDetails } from '../types'
+
+/**
+ * Resolve the recipient's contact details over the user-service RPC, degrading
+ * gracefully (returns null) on timeout or transport failure so a notification
+ * is still persisted even when lookup fails.
+ */
+async function resolveReceiver (receiverId: string): Promise<UserDetails | null> {
+  try {
+    return await new Promise<UserDetails | null>((resolve) => {
+      rabbitMQService.getUserDetails(receiverId, resolve)
+    })
+  } catch (err) {
+    logWarn('[chat-service] receiver lookup failed; notifying without email', err)
+    return null
+  }
+}
 
 export const handleMessageReceived = async (
   senderName: string,
@@ -19,6 +37,10 @@ export const handleMessageReceived = async (
   // and RedisPresenceStore (distributed) without any call-site changes.
   const recipientOnline = await getPresenceStore().isOnline(receiverId)
   if (!recipientOnline) {
+    // Resolve the recipient's email so the notification-service can actually
+    // deliver it (otherwise it only writes a DB row). FCM token stays undefined
+    // until web-push is wired up — the consumer falls back to email.
+    const receiver = await resolveReceiver(receiverId)
     await rabbitMQService.notifyReceiver(
       receiverId,
       notifyBody,
@@ -26,6 +48,7 @@ export const handleMessageReceived = async (
       senderName,
       isEncrypted,
       envelope,
+      receiver?.email,
     )
   }
 }
