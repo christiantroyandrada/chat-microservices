@@ -39,16 +39,12 @@ class RabbitMQService {
 
     await this.channel.assertQueue(this.requestQueue)
     await this.channel.assertQueue(this.responseQueue)
-    // Assert the notifications queue with the SAME args the consumer uses
-    // (durable + dead-letter routing). Mismatched args throw PRECONDITION_FAILED
-    // depending on which service declares the queue first.
-    const notificationsDlq = `${config.queue.notifications}_DLQ`
-    await this.channel.assertQueue(notificationsDlq, { durable: true })
-    await this.channel.assertQueue(config.queue.notifications, {
-      durable: true,
-      deadLetterExchange: '',
-      deadLetterRoutingKey: notificationsDlq,
-    })
+    // Declare the notifications queue to MATCH the existing broker topology:
+    // durable, NO dead-letter args. The live CloudAMQP queue was created without
+    // a DLX, so declaring x-dead-letter-exchange here (even '') throws
+    // 406 PRECONDITION_FAILED and crashes the channel. Producer and consumer
+    // must declare identical args; both use { durable: true } only.
+    await this.channel.assertQueue(config.queue.notifications, { durable: true })
 
     this.channel.consume(
       this.responseQueue,

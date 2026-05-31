@@ -72,16 +72,11 @@ class RabbitMQService {
   // Template and logo helpers moved to EmailTemplateService for modularity.
 
   async consumeNotification () {
-    // Assert dead-letter queue for failed messages
-    const dlqName = `${config.queue.notifications}_DLQ`
-    await this.channel.assertQueue(dlqName, { durable: true })
-
-    // Assert main queue with dead-letter routing
-    await this.channel.assertQueue(config.queue.notifications, {
-      durable: true,
-      deadLetterExchange: '',
-      deadLetterRoutingKey: dlqName,
-    })
+    // Declare the notifications queue to MATCH the existing broker topology:
+    // durable, NO dead-letter args. The live CloudAMQP queue was created without
+    // a DLX; declaring x-dead-letter-exchange here (even '') throws
+    // 406 PRECONDITION_FAILED. Producer and consumer must declare identical args.
+    await this.channel.assertQueue(config.queue.notifications, { durable: true })
 
     this.channel.consume(config.queue.notifications, async (msg) => {
       if (!msg) return
