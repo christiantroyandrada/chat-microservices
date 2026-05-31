@@ -17,6 +17,12 @@ jobs:
       ADMIN_USERNAME: ci_admin
       ADMIN_PASSWORD: CiTestPass1234
       PGADMIN_EMAIL: ci@test.com
+      # Per-service DB role passwords (URL-safe). Used by postgres init to set
+      # the role passwords AND by each service's svc-role DATABASE_URL, so both
+      # sides match in the integration stack.
+      DB_USER_SVC_PASS: ciUserSvcPass1234
+      DB_CHAT_SVC_PASS: ciChatSvcPass1234
+      DB_NOTIF_SVC_PASS: ciNotifSvcPass1234
 
     steps:
       - name: Checkout

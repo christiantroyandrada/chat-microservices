@@ -229,13 +229,18 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           IMAGE_TAG: ${{ github.sha }}
           REPO_OWNER: ${{ github.repository_owner }}
+          # Per-service DB role passwords (from Infisical). Used to sync the
+          # live role passwords and to build each service's svc-role DATABASE_URL.
+          DB_USER_SVC_PASS: ${{ env.DB_USER_SVC_PASS }}
+          DB_CHAT_SVC_PASS: ${{ env.DB_CHAT_SVC_PASS }}
+          DB_NOTIF_SVC_PASS: ${{ env.DB_NOTIF_SVC_PASS }}
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_PRIVATE_KEY }}
           port: ${{ secrets.VPS_PORT }}
           command_timeout: 30m
-          envs: ADMIN_USERNAME,ADMIN_PASSWORD,ADMIN_PASSWORD_ENCODED,CORS_ORIGINS,MESSAGE_BROKER_URL,SENDINBLUE_APIKEY,SMTP_HOST,SMTP_PASS,SMTP_USER,EMAIL_FROM,PGADMIN_EMAIL,VPS_SUDO_PASSWORD,GITHUB_TOKEN,IMAGE_TAG,REPO_OWNER
+          envs: ADMIN_USERNAME,ADMIN_PASSWORD,ADMIN_PASSWORD_ENCODED,CORS_ORIGINS,MESSAGE_BROKER_URL,SENDINBLUE_APIKEY,SMTP_HOST,SMTP_PASS,SMTP_USER,EMAIL_FROM,PGADMIN_EMAIL,VPS_SUDO_PASSWORD,GITHUB_TOKEN,IMAGE_TAG,REPO_OWNER,DB_USER_SVC_PASS,DB_CHAT_SVC_PASS,DB_NOTIF_SVC_PASS
           script: |
             set -euo pipefail
             DEPLOY_PATH="/opt/chat-app"
@@ -321,7 +326,8 @@ jobs:
                   NODE_ENV: production
                   PORT: "8081"
                   JWT_SECRET: ${JWT_SECRET}
-                  DATABASE_URL: postgresql://${ADMIN_USERNAME}:${ADMIN_PASSWORD_ENCODED}@postgres:5432/chat_db
+                  # Runtime connects as the non-superuser role user_svc (DML only).
+                  DATABASE_URL: postgresql://user_svc:${DB_USER_SVC_PASS}@postgres:5432/chat_db
                   MESSAGE_BROKER_URL: ${MESSAGE_BROKER_URL}
                   CORS_ORIGINS: ${CORS_ORIGINS}
                 depends_on:
@@ -348,7 +354,8 @@ jobs:
                   NODE_ENV: production
                   PORT: "8082"
                   JWT_SECRET: ${JWT_SECRET}
-                  DATABASE_URL: postgresql://${ADMIN_USERNAME}:${ADMIN_PASSWORD_ENCODED}@postgres:5432/chat_db
+                  # Runtime connects as the non-superuser role chat_svc (DML only).
+                  DATABASE_URL: postgresql://chat_svc:${DB_CHAT_SVC_PASS}@postgres:5432/chat_db
                   MESSAGE_BROKER_URL: ${MESSAGE_BROKER_URL}
                   CORS_ORIGINS: ${CORS_ORIGINS}
                 depends_on:
@@ -375,7 +382,8 @@ jobs:
                   NODE_ENV: production
                   PORT: "8083"
                   JWT_SECRET: ${JWT_SECRET}
-                  DATABASE_URL: postgresql://${ADMIN_USERNAME}:${ADMIN_PASSWORD_ENCODED}@postgres:5432/chat_db
+                  # Runtime connects as the non-superuser role notif_svc (DML only).
+                  DATABASE_URL: postgresql://notif_svc:${DB_NOTIF_SVC_PASS}@postgres:5432/chat_db
                   MESSAGE_BROKER_URL: ${MESSAGE_BROKER_URL}
                   SMTP_HOST: ${SMTP_HOST:-smtp-relay.brevo.com}
                   SMTP_PORT: "587"
@@ -473,6 +481,7 @@ jobs:
             export CORS_ORIGINS MESSAGE_BROKER_URL SENDINBLUE_APIKEY
             export SMTP_HOST SMTP_PASS SMTP_USER EMAIL_FROM PGADMIN_EMAIL
             export JWT_SECRET IMAGE_TAG REPO_OWNER
+            export DB_USER_SVC_PASS DB_CHAT_SVC_PASS DB_NOTIF_SVC_PASS
 
             # Create certbot directories
             mkdir -p certbot/conf certbot/www
@@ -499,6 +508,45 @@ jobs:
 
             echo "🐳 Pre-pulling new images from GHCR..."
             docker compose pull
+
+            # ── Least-privilege DB roles ────────────────────────────────────
+            # Provision (idempotently) the non-superuser per-service roles and
+            # sync their passwords to the Infisical-provided values, then apply
+            # migrations AS ADMIN. The long-running services connect as these
+            # roles (runtime DML only) so SQLi/RCE in a service can't escalate
+            # to the database superuser. Grants are broad (all tables) for now;
+            # per-table isolation is a follow-up.
+            echo "::add-mask::$DB_USER_SVC_PASS"
+            echo "::add-mask::$DB_CHAT_SVC_PASS"
+            echo "::add-mask::$DB_NOTIF_SVC_PASS"
+
+            echo "🐘 Ensuring postgres is up..."
+            docker compose up -d postgres
+            for i in $(seq 1 30); do
+              docker compose exec -T postgres pg_isready -U "$ADMIN_USERNAME" -d chat_db >/dev/null 2>&1 && break
+              sleep 2
+            done
+
+            echo "🔐 Provisioning per-service DB roles (idempotent)..."
+            for r in user_svc chat_svc notif_svc; do
+              docker compose exec -T postgres psql -U "$ADMIN_USERNAME" -d chat_db -c "CREATE ROLE $r LOGIN;" 2>/dev/null || true
+            done
+            docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U "$ADMIN_USERNAME" -d chat_db \
+              -c "ALTER ROLE user_svc  LOGIN PASSWORD '${DB_USER_SVC_PASS}';" \
+              -c "ALTER ROLE chat_svc  LOGIN PASSWORD '${DB_CHAT_SVC_PASS}';" \
+              -c "ALTER ROLE notif_svc LOGIN PASSWORD '${DB_NOTIF_SVC_PASS}';" \
+              -c "GRANT CONNECT ON DATABASE chat_db TO user_svc, chat_svc, notif_svc;" \
+              -c "GRANT USAGE ON SCHEMA public TO user_svc, chat_svc, notif_svc;" \
+              -c "GRANT SELECT,INSERT,UPDATE,DELETE ON ALL TABLES IN SCHEMA public TO user_svc, chat_svc, notif_svc;" \
+              -c "GRANT USAGE,SELECT ON ALL SEQUENCES IN SCHEMA public TO user_svc, chat_svc, notif_svc;" \
+              -c "ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT,INSERT,UPDATE,DELETE ON TABLES TO user_svc, chat_svc, notif_svc;" \
+              -c "ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE,SELECT ON SEQUENCES TO user_svc, chat_svc, notif_svc;"
+
+            echo "🧱 Applying migrations as admin (one-off, before services start)..."
+            ADMIN_URL="postgresql://${ADMIN_USERNAME}:${ADMIN_PASSWORD_ENCODED}@postgres:5432/chat_db"
+            docker compose run --rm -e DATABASE_URL="$ADMIN_URL" user build/src/migrate.js
+            docker compose run --rm -e DATABASE_URL="$ADMIN_URL" chat build/src/migrate.js
+            docker compose run --rm -e DATABASE_URL="$ADMIN_URL" notification build/src/migrate.js
 
             # Blue-Green Deployment: Update services one-by-one with health verification
             echo "🔵 Starting Blue-Green deployment..."
