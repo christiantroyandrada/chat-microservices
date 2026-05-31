@@ -76,6 +76,10 @@ jobs:
           docker compose run --build --rm chat-migrate
           docker compose run --build --rm notification-migrate
 
+      - name: Grant per-table privileges (least privilege)
+        # Each service role gets DML on ONLY its own tables, post-migration.
+        run: docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U "$ADMIN_USERNAME" -d chat_db < scripts/grant-service-privileges.sql
+
       - name: Start services and wait for healthy
         run: docker compose up -d --wait --wait-timeout 300 user chat notification nginx
 

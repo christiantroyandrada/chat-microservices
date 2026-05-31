@@ -62,19 +62,10 @@ psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-E
   GRANT USAGE ON SCHEMA public TO chat_svc;
   GRANT USAGE ON SCHEMA public TO notif_svc;
 
-  -- Default privileges for future tables created by admin
-  ALTER DEFAULT PRIVILEGES IN SCHEMA public
-    GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO user_svc;
-  ALTER DEFAULT PRIVILEGES IN SCHEMA public
-    GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO chat_svc;
-  ALTER DEFAULT PRIVILEGES IN SCHEMA public
-    GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO notif_svc;
-  ALTER DEFAULT PRIVILEGES IN SCHEMA public
-    GRANT USAGE, SELECT ON SEQUENCES TO user_svc;
-  ALTER DEFAULT PRIVILEGES IN SCHEMA public
-    GRANT USAGE, SELECT ON SEQUENCES TO chat_svc;
-  ALTER DEFAULT PRIVILEGES IN SCHEMA public
-    GRANT USAGE, SELECT ON SEQUENCES TO notif_svc;
+  -- NOTE: table-level privileges are intentionally NOT granted here. Each role
+  -- receives DML on ONLY its own tables, granted per-table AFTER migrations run
+  -- (the tables don't exist yet at init time). See grant-service-privileges.sql,
+  -- applied by the deploy and the integration test post-migration.
 EOSQL
 
 echo "[init-db-users] ✓ Per-service PostgreSQL roles created successfully"

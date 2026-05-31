@@ -551,22 +551,28 @@ jobs:
             for r in user_svc chat_svc notif_svc; do
               docker compose exec -T postgres psql -U "$ADMIN_USERNAME" -d chat_db -c "CREATE ROLE $r LOGIN;" 2>/dev/null || true
             done
+            # Roles + connect + schema USAGE only. Table-level DML is granted
+            # per-table AFTER migrations (tables don't exist yet here).
             docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U "$ADMIN_USERNAME" -d chat_db \
               -c "ALTER ROLE user_svc  LOGIN PASSWORD '${DB_USER_SVC_PASS}';" \
               -c "ALTER ROLE chat_svc  LOGIN PASSWORD '${DB_CHAT_SVC_PASS}';" \
               -c "ALTER ROLE notif_svc LOGIN PASSWORD '${DB_NOTIF_SVC_PASS}';" \
               -c "GRANT CONNECT ON DATABASE chat_db TO user_svc, chat_svc, notif_svc;" \
-              -c "GRANT USAGE ON SCHEMA public TO user_svc, chat_svc, notif_svc;" \
-              -c "GRANT SELECT,INSERT,UPDATE,DELETE ON ALL TABLES IN SCHEMA public TO user_svc, chat_svc, notif_svc;" \
-              -c "GRANT USAGE,SELECT ON ALL SEQUENCES IN SCHEMA public TO user_svc, chat_svc, notif_svc;" \
-              -c "ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT,INSERT,UPDATE,DELETE ON TABLES TO user_svc, chat_svc, notif_svc;" \
-              -c "ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE,SELECT ON SEQUENCES TO user_svc, chat_svc, notif_svc;"
+              -c "GRANT USAGE ON SCHEMA public TO user_svc, chat_svc, notif_svc;"
 
             echo "🧱 Applying migrations as admin (one-off, before services start)..."
             ADMIN_URL="postgresql://${ADMIN_USERNAME}:${ADMIN_PASSWORD_ENCODED}@postgres:5432/chat_db"
             docker compose run --rm -e DATABASE_URL="$ADMIN_URL" user build/src/migrate.js
             docker compose run --rm -e DATABASE_URL="$ADMIN_URL" chat build/src/migrate.js
             docker compose run --rm -e DATABASE_URL="$ADMIN_URL" notification build/src/migrate.js
+
+            echo "🔒 Granting per-table privileges (least privilege; mirrors scripts/grant-service-privileges.sql)..."
+            docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U "$ADMIN_USERNAME" -d chat_db \
+              -c "REVOKE ALL ON ALL TABLES IN SCHEMA public FROM user_svc, chat_svc, notif_svc;" \
+              -c "ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE ALL ON TABLES FROM user_svc, chat_svc, notif_svc;" \
+              -c "GRANT SELECT,INSERT,UPDATE,DELETE ON users, prekeys TO user_svc;" \
+              -c "GRANT SELECT,INSERT,UPDATE,DELETE ON messages TO chat_svc;" \
+              -c "GRANT SELECT,INSERT,UPDATE,DELETE ON notifications TO notif_svc;"
 
             # Blue-Green Deployment: Update services one-by-one with health verification
             echo "🔵 Starting Blue-Green deployment..."
