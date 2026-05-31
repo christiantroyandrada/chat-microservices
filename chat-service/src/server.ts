@@ -1,6 +1,6 @@
 import { Server } from 'node:http'
 import app, { setRedisHealthProvider } from './app'
-import { connectDB, runMigrations } from './database'
+import { connectDB } from './database'
 import config from './config/config'
 import { rabbitMQService } from './services/RabbitMQService'
 import { createSocketServer } from './websocket'
@@ -36,11 +36,11 @@ let redisContext: RedisContext | undefined
 let compactInterval: ReturnType<typeof setInterval> | undefined
 
 const start = async () => {
-  // Connect to database
+  // Connect to database (as the non-superuser runtime role chat_svc)
   await connectDB()
-  
-  // Run any pending migrations (idempotent - skips already run migrations)
-  await runMigrations()
+
+  // NOTE: migrations are applied by the dedicated `chat-migrate` step (as
+  // admin) before this service starts — the runtime role has no DDL rights.
 
   // ── Redis context (optional — enables horizontal scaling) ─────────────────
   if (config.redisUrl) {

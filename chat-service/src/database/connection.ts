@@ -9,7 +9,7 @@ import { AddPerformanceIndexes1740000000000 } from './migrations/1740000000000-A
 export const AppDataSource = new DataSource({
   type: 'postgres',
   url: config.DATABASE_URL,
-  synchronize: config.env === 'development', // Auto-sync in dev, use migrations in production
+  synchronize: false, // Schema is owned by migrations (applied as admin in the migrate step). The runtime role (chat_svc) has no DDL rights.
   logging: config.env === 'development',
   entities: [Message],
   migrations: [InitialSchema1733150000000, AddPerformanceIndexes1740000000000],

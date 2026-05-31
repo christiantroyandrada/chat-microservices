@@ -9,7 +9,7 @@ import { Server } from 'node:http'
 import userServiceRouter from './routes/userServiceRouter'
 import { errorMiddleware, errorHandler } from './middleware'
 import { requestLogger } from './middleware/requestLogger'
-import { connectDB, runMigrations } from './database'
+import { connectDB } from './database'
 import config from './config/config'
 import { rabbitMQService } from './services/RabbitMQService'
 import { logInfo, logWarn, logError } from './utils/logger'
@@ -125,12 +125,12 @@ app.use(errorHandler)
 // Initialize database and run migrations, then start server
 const startServer = async () => {
   try {
-    // Connect to database
+    // Connect to database (as the non-superuser runtime role user_svc)
     await connectDB()
-    
-    // Run any pending migrations (idempotent - skips already run migrations)
-    await runMigrations()
-    
+
+    // NOTE: migrations are applied by the dedicated `user-migrate` step (as
+    // admin) before this service starts — the runtime role has no DDL rights.
+
     // Start HTTP server
     server = app.listen(config.PORT, () => {
       logInfo(`User Service is running on port ${config.PORT}`)

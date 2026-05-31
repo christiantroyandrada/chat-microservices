@@ -105,6 +105,50 @@ services:
       driver: "json-file"
       options: { max-size: "10m", max-file: "3" }
 
+  # ── Ephemeral migration runners ─────────────────────────────────────────────
+  # Each applies its service's migrations ONCE, as the DB superuser (admin),
+  # before the corresponding long-running service starts. The services then
+  # connect as non-superuser per-service roles (DML only), so a SQLi/RCE in an
+  # app service cannot run DDL or escalate to the database superuser.
+  user-migrate:
+    build: ./user-service
+    command: ["build/src/migrate.js"]
+    environment:
+      DATABASE_URL: postgresql://${ADMIN_USERNAME}:${ADMIN_PASSWORD}@postgres:5432/chat_db
+      NODE_ENV: development
+    depends_on:
+      setup:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  chat-migrate:
+    build: ./chat-service
+    command: ["build/src/migrate.js"]
+    environment:
+      DATABASE_URL: postgresql://${ADMIN_USERNAME}:${ADMIN_PASSWORD}@postgres:5432/chat_db
+      NODE_ENV: development
+    depends_on:
+      setup:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  notification-migrate:
+    build: ./notification-service
+    command: ["build/src/migrate.js"]
+    environment:
+      DATABASE_URL: postgresql://${ADMIN_USERNAME}:${ADMIN_PASSWORD}@postgres:5432/chat_db
+      NODE_ENV: development
+    depends_on:
+      setup:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
   user:
     build: ./user-service
     restart: always
@@ -113,8 +157,9 @@ services:
     env_file:
       - ./user-service/.env
     environment:
-      # build the URI from .env variables (keeps credentials out of the compose file itself)
-      DATABASE_URL: postgresql://${ADMIN_USERNAME}:${ADMIN_PASSWORD}@postgres:5432/chat_db
+      # Runtime connects as the non-superuser per-service role (DML only).
+      # Migrations are applied separately by user-migrate (as admin).
+      DATABASE_URL: postgresql://user_svc:${DB_USER_SVC_PASS}@postgres:5432/chat_db
       # For local development use 'development', for production deployment use 'production'
       NODE_ENV: development
     depends_on:
@@ -122,6 +167,8 @@ services:
         condition: service_completed_successfully
       postgres:
         condition: service_healthy
+      user-migrate:
+        condition: service_completed_successfully
       rabbitmq:
         condition: service_healthy
     healthcheck:
@@ -143,7 +190,7 @@ services:
     env_file:
       - ./chat-service/.env
     environment:
-      DATABASE_URL: postgresql://${ADMIN_USERNAME}:${ADMIN_PASSWORD}@postgres:5432/chat_db
+      DATABASE_URL: postgresql://chat_svc:${DB_CHAT_SVC_PASS}@postgres:5432/chat_db
       NODE_ENV: development
       USER_SERVICE_URL: http://user:8081
       REDIS_URL: redis://redis:6379
@@ -152,6 +199,8 @@ services:
         condition: service_completed_successfully
       postgres:
         condition: service_healthy
+      chat-migrate:
+        condition: service_completed_successfully
       rabbitmq:
         condition: service_healthy
       redis:
@@ -175,12 +224,14 @@ services:
       - ./notification-service/.env
     environment:
       NODE_ENV: development
-      DATABASE_URL: postgresql://${ADMIN_USERNAME}:${ADMIN_PASSWORD}@postgres:5432/chat_db
+      DATABASE_URL: postgresql://notif_svc:${DB_NOTIF_SVC_PASS}@postgres:5432/chat_db
     depends_on:
       setup:
         condition: service_completed_successfully
       postgres:
         condition: service_healthy
+      notification-migrate:
+        condition: service_completed_successfully
       rabbitmq:
         condition: service_healthy
     healthcheck:

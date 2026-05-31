@@ -9,7 +9,7 @@ import { errorMiddleware, errorHandler } from './middleware'
 import config from './config/config'
 import { rabbitMQService } from './services/RabbitMQService'
 import { logInfo, logWarn, logError } from './utils/logger'
-import { connectDB, runMigrations } from './database'
+import { connectDB } from './database'
 import notificationRouter from './routes/notificationRoutes'
 import { requestLogger } from './middleware/requestLogger'
 import { getMetrics, getContentType } from './utils/metrics'
@@ -144,11 +144,11 @@ app.use(errorMiddleware)
 app.use(errorHandler)
 
 const start = async () => {
-  // Connect to database
+  // Connect to database (as the non-superuser runtime role notif_svc)
   await connectDB()
-  
-  // Run any pending migrations (idempotent - skips already run migrations)
-  await runMigrations()
+
+  // NOTE: migrations are applied by the dedicated `notification-migrate` step
+  // (as admin) before this service starts — the runtime role has no DDL rights.
 
   server = app.listen(config.PORT, () => {
     logInfo(`[notification-service] Server is running on port ${config.PORT}`)
