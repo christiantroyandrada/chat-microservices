@@ -151,10 +151,8 @@ jobs:
     if: ${{ inputs.coverage == 'true' }}
     name: SonarCloud Scan (reusable)
     needs: merge-and-upload
-    # Code-quality scan is advisory: a Sonar outage or token problem must never
-    # block the test workflow (and therefore docker-build → deploy downstream).
-    # Sonar still runs and reports; its failure just won't fail the pipeline.
-    continue-on-error: true
-    # Call the reusable sonar workflow in this repository
+    # Call the reusable sonar workflow in this repository.
+    # NOTE: continue-on-error is NOT valid on a reusable-workflow caller job;
+    # the scan is made non-blocking on its step inside sonar.yml instead.
     uses: ./.github/workflows/sonar.yml
     secrets: inherit

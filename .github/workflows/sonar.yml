@@ -96,6 +96,10 @@ jobs:
 
 
       - name: SonarCloud Scan
+        # Advisory only: a Sonar outage or token problem must never fail the
+        # pipeline (and block docker-build → deploy downstream). The scan still
+        # runs and reports; a failure here is surfaced but non-fatal.
+        continue-on-error: true
         uses: SonarSource/sonarqube-scan-action@fd88b7d7ccbaefd23d8f36f73b59db7a3d246602
         with:
           args: >
