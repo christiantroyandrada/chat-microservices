@@ -13,7 +13,9 @@ export const AppDataSource = new DataSource({
   entities: [Notification],
   migrations: [InitialSchema1733150000000],
   migrationsRun: false, // We run migrations explicitly before starting services
-  migrationsTableName: 'typeorm_migrations',
+  // Per-service migrations table — avoids cross-service migration-name collisions
+  // on the shared DB (all services define InitialSchema1733150000000).
+  migrationsTableName: 'typeorm_migrations_notif',
   subscribers: [],
   // Connection pooling for better performance and reliability
   extra: {

@@ -167,8 +167,6 @@ services:
         condition: service_completed_successfully
       postgres:
         condition: service_healthy
-      user-migrate:
-        condition: service_completed_successfully
       rabbitmq:
         condition: service_healthy
     healthcheck:
@@ -199,8 +197,6 @@ services:
         condition: service_completed_successfully
       postgres:
         condition: service_healthy
-      chat-migrate:
-        condition: service_completed_successfully
       rabbitmq:
         condition: service_healthy
       redis:
@@ -230,8 +226,6 @@ services:
         condition: service_completed_successfully
       postgres:
         condition: service_healthy
-      notification-migrate:
-        condition: service_completed_successfully
       rabbitmq:
         condition: service_healthy
     healthcheck:

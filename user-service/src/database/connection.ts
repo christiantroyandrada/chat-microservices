@@ -15,7 +15,11 @@ export const AppDataSource = new DataSource({
   entities: [User, Prekey],
   migrations: [InitialSchema1733150000000, AddTrigramSearchIndexes1740000000000],
   migrationsRun: false, // We run migrations explicitly before starting services
-  migrationsTableName: 'typeorm_migrations',
+  // Per-service migrations table: all three services define a migration class
+  // named InitialSchema1733150000000 and share one DB, so a single shared
+  // typeorm_migrations table would let one service's record mask another's,
+  // skipping its schema creation. Distinct tables keep each service's history isolated.
+  migrationsTableName: 'typeorm_migrations_user',
   subscribers: [],
   // Connection pooling for better performance and reliability
   extra: {

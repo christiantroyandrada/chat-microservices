@@ -67,6 +67,15 @@ jobs:
       - name: Build Docker images
         run: docker compose build user chat notification nginx
 
+      - name: Apply migrations as admin (one-off, before services start)
+        # Run migrations explicitly via the dedicated migrate services (admin role),
+        # NOT via depends_on — the short-lived migrate containers would otherwise be
+        # tracked by `up --wait` below and abort it the instant they exit.
+        run: |
+          docker compose run --build --rm user-migrate
+          docker compose run --build --rm chat-migrate
+          docker compose run --build --rm notification-migrate
+
       - name: Start services and wait for healthy
         run: docker compose up -d --wait --wait-timeout 300 user chat notification nginx
 
