@@ -527,6 +527,26 @@ jobs:
               sleep 2
             done
 
+            # ── One-time cutover to per-service migration tables ────────────
+            # The new design uses typeorm_migrations_{user,chat,notif}. If that
+            # table is absent, the DB is either fresh or on the OLD shared-table
+            # schema whose existing tables would make the new migrations fail
+            # ("already exists"). Reset the public schema so migrations apply
+            # cleanly. Fires exactly once (never again once the per-service
+            # tables exist). Safe: this is a disposable side-project DB with no
+            # production user data. Terminate other connections first so the
+            # old running services don't hold locks against DROP SCHEMA.
+            RESET_NEEDED=$(docker compose exec -T postgres psql -U "$ADMIN_USERNAME" -d chat_db -tAc "SELECT count(*) FROM information_schema.tables WHERE table_schema='public' AND table_name='typeorm_migrations_user'" 2>/dev/null | tr -d '[:space:]')
+            if [ "$RESET_NEEDED" = "0" ]; then
+              echo "♻️  Resetting public schema for clean per-service migrations (one-time cutover)..."
+              docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U "$ADMIN_USERNAME" -d chat_db \
+                -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname='chat_db' AND pid <> pg_backend_pid();" \
+                -c "DROP SCHEMA public CASCADE;" \
+                -c "CREATE SCHEMA public AUTHORIZATION $ADMIN_USERNAME;"
+            else
+              echo "✅ Per-service migration tables present — no schema reset needed."
+            fi
+
             echo "🔐 Provisioning per-service DB roles (idempotent)..."
             for r in user_svc chat_svc notif_svc; do
               docker compose exec -T postgres psql -U "$ADMIN_USERNAME" -d chat_db -c "CREATE ROLE $r LOGIN;" 2>/dev/null || true
