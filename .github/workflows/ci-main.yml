@@ -197,7 +197,7 @@ jobs:
           
           # Email/SMTP secrets (warn if missing but don't fail)
           [ -z "$SMTP_HOST" ] && echo "⚠️ SMTP_HOST missing (defaulting to smtp-relay.brevo.com)" || echo "✅ SMTP_HOST"
-          [ -z "$EMAIL_FROM" ] && echo "⚠️ EMAIL_FROM missing (defaulting to admin@yourdomain.com)" || echo "✅ EMAIL_FROM"
+          [ -z "$EMAIL_FROM" ] && echo "⚠️ EMAIL_FROM missing (defaulting to no-reply@ctaprojects.xyz)" || echo "✅ EMAIL_FROM"
           [ -z "$SMTP_USER" ] && echo "⚠️ SMTP_USER missing" || echo "✅ SMTP_USER"
           [ -z "$SMTP_PASS" ] && echo "⚠️ SMTP_PASS missing" || echo "✅ SMTP_PASS"
           
@@ -390,7 +390,7 @@ jobs:
                   SMTP_USER: ${SMTP_USER}
                   SMTP_PASS: ${SMTP_PASS}
                   SENDINBLUE_APIKEY: ${SENDINBLUE_APIKEY}
-                  EMAIL_FROM: ${EMAIL_FROM:-admin@yourdomain.com}
+                  EMAIL_FROM: ${EMAIL_FROM:-no-reply@ctaprojects.xyz}
                   NOTIFICATIONS_QUEUE: NOTIFICATIONS
                   CORS_ORIGINS: ${CORS_ORIGINS}
                 depends_on:
