@@ -162,6 +162,7 @@ services:
       DATABASE_URL: postgresql://user_svc:${DB_USER_SVC_PASS}@postgres:5432/chat_db
       # For local development use 'development', for production deployment use 'production'
       NODE_ENV: development
+      AUTH_RATE_LIMIT_MAX: ${AUTH_RATE_LIMIT_MAX:-10}
     depends_on:
       setup:
         condition: service_completed_successfully

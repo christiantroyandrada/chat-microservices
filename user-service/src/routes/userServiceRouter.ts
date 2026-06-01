@@ -11,7 +11,7 @@ const userServiceRouter = Router()
 
 const authLimiter = rateLimit({ 
   windowMs: 15 * 60 * 1000,
-  max: 10, // Brute-force protection: 10 auth attempts / 15 min / IP
+  max: Number(process.env.AUTH_RATE_LIMIT_MAX) || 10, // 10/15min/IP in prod; raise via AUTH_RATE_LIMIT_MAX for load/integration tests
   message: 'Too many authentication attempts, please try again later',
   standardHeaders: true,
   legacyHeaders: false,

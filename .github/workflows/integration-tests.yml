@@ -21,6 +21,9 @@ jobs:
       # the role passwords AND by each service's svc-role DATABASE_URL, so both
       # sides match in the integration stack.
       DB_USER_SVC_PASS: ciUserSvcPass1234
+      # Integration flows register/login many users; lift the auth rate limit
+      # (prod default stays 10/15min via the code fallback).
+      AUTH_RATE_LIMIT_MAX: "1000"
       DB_CHAT_SVC_PASS: ciChatSvcPass1234
       DB_NOTIF_SVC_PASS: ciNotifSvcPass1234
 
