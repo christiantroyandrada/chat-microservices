@@ -553,6 +553,16 @@ jobs:
             done
             # Roles + connect + schema USAGE only. Table-level DML is granted
             # per-table AFTER migrations (tables don't exist yet here).
+            # Defense-in-depth: these passwords are interpolated into a SQL string
+            # literal (below) AND each service's DATABASE_URL, both of which require
+            # them to be quote- and URL-safe. Fail loudly if a value is ever not
+            # strictly alphanumeric rather than silently relying on that assumption.
+            for val in "$DB_USER_SVC_PASS" "$DB_CHAT_SVC_PASS" "$DB_NOTIF_SVC_PASS"; do
+              case "$val" in
+                ''|*[!A-Za-z0-9]*)
+                  echo "❌ DB service passwords must be non-empty and alphanumeric"; exit 1 ;;
+              esac
+            done
             docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U "$ADMIN_USERNAME" -d chat_db \
               -c "ALTER ROLE user_svc  LOGIN PASSWORD '${DB_USER_SVC_PASS}';" \
               -c "ALTER ROLE chat_svc  LOGIN PASSWORD '${DB_CHAT_SVC_PASS}';" \
