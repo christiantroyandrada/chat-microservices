@@ -1,7 +1,8 @@
 // Mock the rabbitMQService module before importing the handler
 jest.mock('../../src/services/RabbitMQService', () => ({
   rabbitMQService: {
-    notifyReceiver: jest.fn()
+    notifyReceiver: jest.fn(),
+    getUserDetails: jest.fn((_id: string, cb: (u: null) => void) => cb(null))
   }
 }))
 
@@ -9,22 +10,41 @@ import { handleMessageReceived } from '../../src/utils/messageHandler'
 import { rabbitMQService } from '../../src/services/RabbitMQService'
 
 describe('handleMessageReceived', () => {
-  beforeEach(() => jest.resetAllMocks())
+  beforeEach(() => {
+    jest.resetAllMocks()
+    // resetAllMocks wipes factory impls; resolveReceiver awaits this callback.
+    ;(rabbitMQService.getUserDetails as jest.Mock).mockImplementation(
+      (_id: string, cb: (u: null) => void) => cb(null),
+    )
+  })
 
   test('calls notifyReceiver with encrypted envelope and does not include plaintext', async () => {
     const envelope = JSON.stringify({ __encrypted: true, body: 'abc' })
-    await handleMessageReceived('Alice', 'a@x.com', 'r1', 'secret', true, envelope)
+    await handleMessageReceived({
+      senderName: 'Alice',
+      senderEmail: 'a@x.com',
+      receiverId: 'r1',
+      messageContent: 'secret',
+      isEncrypted: true,
+      envelope,
+    })
 
     expect(rabbitMQService.notifyReceiver).toHaveBeenCalledTimes(1)
-    expect((rabbitMQService.notifyReceiver as jest.Mock).mock.calls[0][1]).toBe('[Encrypted message]')
-    expect((rabbitMQService.notifyReceiver as jest.Mock).mock.calls[0][5]).toBe(envelope)
+    expect((rabbitMQService.notifyReceiver as jest.Mock).mock.calls[0][0].messageContent).toBe('[Encrypted message]')
+    expect((rabbitMQService.notifyReceiver as jest.Mock).mock.calls[0][0].envelope).toBe(envelope)
   })
 
   test('calls notifyReceiver with plaintext when not encrypted', async () => {
-    await handleMessageReceived('Bob', 'b@x.com', 'r2', 'hello', false)
+    await handleMessageReceived({
+      senderName: 'Bob',
+      senderEmail: 'b@x.com',
+      receiverId: 'r2',
+      messageContent: 'hello',
+      isEncrypted: false,
+    })
 
     expect(rabbitMQService.notifyReceiver).toHaveBeenCalledTimes(1)
-    expect((rabbitMQService.notifyReceiver as jest.Mock).mock.calls[0][1]).toBe('hello')
-    expect((rabbitMQService.notifyReceiver as jest.Mock).mock.calls[0][4]).toBe(false)
+    expect((rabbitMQService.notifyReceiver as jest.Mock).mock.calls[0][0].messageContent).toBe('hello')
+    expect((rabbitMQService.notifyReceiver as jest.Mock).mock.calls[0][0].isEncrypted).toBe(false)
   })
 })

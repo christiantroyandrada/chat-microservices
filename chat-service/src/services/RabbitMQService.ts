@@ -7,6 +7,17 @@ import { logInfo, logWarn, logError } from '../utils/logger'
 const MAX_RECONNECT_ATTEMPTS = 10
 const INITIAL_RECONNECT_DELAY_MS = 1000
 
+export interface NotifyReceiverArgs {
+  receiverId: string
+  messageContent: string
+  senderEmail: string
+  senderName: string
+  isEncrypted?: boolean
+  envelope?: string | object
+  receiverEmail?: string
+  receiverToken?: string
+}
+
 class RabbitMQService {
   private readonly requestQueue = 'USER_DETAILS_REQUEST'
   private readonly responseQueue = 'USER_DETAILS_RESPONSE'
@@ -117,17 +128,18 @@ class RabbitMQService {
     )
   }
 
-  async notifyReceiver (
-    receiverId: string,
-    messageContent: string,
-    senderEmail: string,
-    senderName: string,
-    isEncrypted = false,
-    envelope?: string | object,
-    receiverEmail?: string,
-    receiverToken?: string,
-  ) {
-  try {
+  async notifyReceiver (args: NotifyReceiverArgs) {
+    const {
+      receiverId,
+      messageContent,
+      senderEmail,
+      senderName,
+      isEncrypted = false,
+      envelope,
+      receiverEmail,
+      receiverToken,
+    } = args
+    try {
       // Send notification payload to queue. The recipient's email/token are
       // resolved by the caller — without them the consumer can only persist a
       // DB row (no email/push goes out).
@@ -150,8 +162,8 @@ class RabbitMQService {
         notificationPayload.userToken = receiverToken
       }
 
-      // Queue asserted at connect() with DLX. persistent:true so messages
-      // survive a broker restart (durable queue + persistent message).
+      // Queue asserted at connect() as { durable: true } (no DLX — matches the
+      // live broker). persistent:true so messages survive a broker restart.
       this.channel.sendToQueue(
         config.queue.notifications,
         Buffer.from(JSON.stringify(notificationPayload)),

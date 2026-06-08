@@ -231,14 +231,14 @@ export async function retrieveOrSaveMessage(params: {
   })
 
   try {
-    await handleMessageReceived(
-      username || '',
-      socket.data.user?.email || '',
+    await handleMessageReceived({
+      senderName: username || '',
+      senderEmail: socket.data.user?.email || '',
       receiverId,
-      '[Encrypted message]',
-      true,
-      trimmed,
-    )
+      messageContent: '[Encrypted message]',
+      isEncrypted: true,
+      envelope: trimmed,
+    })
   } catch (err) {
     logWarn('[chat-service] notifyReceiver failed:', err)
   }

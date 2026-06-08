@@ -144,14 +144,14 @@ const sendMessage = async (
     // Notify receiver but avoid sending plaintext. Indicate an encrypted message
     // and include the envelope so the notification service can forward ciphertext
     // to the client if desired (still no server-side decryption).
-    await handleMessageReceived(
-      username,
-      email,
+    await handleMessageReceived({
+      senderName: username,
+      senderEmail: email,
       receiverId,
-      '[Encrypted message]',
-      true,
-      trimmedMessage,
-    )
+      messageContent: '[Encrypted message]',
+      isEncrypted: true,
+      envelope: trimmedMessage,
+    })
 
     chatMessagesSentTotal.inc({ channel: 'rest' })
 

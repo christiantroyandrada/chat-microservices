@@ -43,14 +43,14 @@ describe('MessageController.sendMessage', () => {
     await MessageController.sendMessage(mockReq, mockRes, jest.fn())
 
     expect(repo.save).toHaveBeenCalled()
-    expect(handleMessageReceived).toHaveBeenCalledWith(
-      'alice',
-      'a@example.com',
-      'receiver1',
-      '[Encrypted message]',
-      true,
-      mockReq.body.message
-    )
+    expect(handleMessageReceived).toHaveBeenCalledWith({
+      senderName: 'alice',
+      senderEmail: 'a@example.com',
+      receiverId: 'receiver1',
+      messageContent: '[Encrypted message]',
+      isEncrypted: true,
+      envelope: mockReq.body.message,
+    })
     expect(mockRes.json).toHaveBeenCalledWith(expect.objectContaining({ status: 200 }))
   })
 

@@ -24,17 +24,29 @@ describe('handleMessageReceived — offline notification with receiver email', (
       cb({ id: 'r1', username: 'bob', email: 'bob@example.com' }),
     )
 
-    await handleMessageReceived('Alice', 'alice@example.com', 'r1', 'hello', true, '{"__encrypted":true}')
+    await handleMessageReceived({
+      senderName: 'Alice',
+      senderEmail: 'alice@example.com',
+      receiverId: 'r1',
+      messageContent: 'hello',
+      isEncrypted: true,
+      envelope: '{"__encrypted":true}',
+    })
 
     expect(notifyReceiver).toHaveBeenCalledTimes(1)
-    // 7th positional arg is the resolved receiver email
-    expect(notifyReceiver.mock.calls[0][6]).toBe('bob@example.com')
+    expect(notifyReceiver.mock.calls[0][0].receiverEmail).toBe('bob@example.com')
   })
 
   it('does NOT notify when the recipient is online', async () => {
     isOnline.mockResolvedValue(true)
 
-    await handleMessageReceived('Alice', 'alice@example.com', 'r1', 'hello', true)
+    await handleMessageReceived({
+      senderName: 'Alice',
+      senderEmail: 'alice@example.com',
+      receiverId: 'r1',
+      messageContent: 'hello',
+      isEncrypted: true,
+    })
 
     expect(notifyReceiver).not.toHaveBeenCalled()
   })
@@ -43,9 +55,15 @@ describe('handleMessageReceived — offline notification with receiver email', (
     isOnline.mockResolvedValue(false)
     getUserDetails.mockImplementation((_id: string, cb: any) => cb(null))
 
-    await handleMessageReceived('Alice', 'alice@example.com', 'r1', 'hello', true)
+    await handleMessageReceived({
+      senderName: 'Alice',
+      senderEmail: 'alice@example.com',
+      receiverId: 'r1',
+      messageContent: 'hello',
+      isEncrypted: true,
+    })
 
     expect(notifyReceiver).toHaveBeenCalledTimes(1)
-    expect(notifyReceiver.mock.calls[0][6]).toBeUndefined()
+    expect(notifyReceiver.mock.calls[0][0].receiverEmail).toBeUndefined()
   })
 })

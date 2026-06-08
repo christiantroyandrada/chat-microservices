@@ -3,7 +3,7 @@ import { AppDataSource, Prekey } from '../database'
 import { APIError } from '../utils'
 import { logError, logInfo, logWarn } from '../utils/logger'
 import { prekeyPoolExhaustedTotal } from '../utils/metrics'
-import { consumeOneTimePreKey } from '../utils/prekeyConsumption'
+import { consumeOneTimePreKey, isPrekeyBundle } from '../utils/prekeyConsumption'
 import type { PrekeyBundle, EncryptedKeyBundle, StoredBundle } from '../types'
 
 /**
@@ -228,9 +228,17 @@ const getPrekeyBundle = async (req: Request, res: Response, next: NextFunction) 
       return next(new APIError(404, 'No prekey bundle found for user'))
     }
 
-    // Prefer a bundle that has at least one one-time prekey
-    // Cast to PrekeyBundle for preKeys access — encrypted-only bundles don't have preKeys
-    const chosen = bundles.find((b) => Array.isArray((b.bundle as PrekeyBundle)?.preKeys) && (b.bundle as PrekeyBundle).preKeys.length > 0) || bundles[0]
+    // Prefer a published bundle that still has a one-time prekey; fall back to any
+    // published bundle. Encrypted-only backup blobs are not X3DH-usable, so exclude
+    // them and 404 if the user has no publishable bundle at all.
+    const chosen =
+      bundles.find((b) => isPrekeyBundle(b.bundle) && b.bundle.preKeys.length > 0) ??
+      bundles.find((b) => isPrekeyBundle(b.bundle))
+
+    if (!chosen || !isPrekeyBundle(chosen.bundle)) {
+      await qr.commitTransaction()
+      return next(new APIError(404, 'No prekey bundle found for user'))
+    }
 
     // X3DH one-time prekey consumption: hand out exactly ONE prekey and remove it
     // from the stored pool so it is never reused (forward secrecy).

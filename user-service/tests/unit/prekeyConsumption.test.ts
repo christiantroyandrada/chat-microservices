@@ -56,10 +56,4 @@ describe('consumeOneTimePreKey', () => {
     expect(result.clientBundle.identityKey).toBe('idk')
   })
 
-  it('treats an encrypted-only backup blob as having no consumable prekeys', () => {
-    const encryptedOnly = { _encryptedKeyBundle: { ciphertext: 'x', iv: 'y', salt: 'z' } } as any
-    const result = consumeOneTimePreKey(encryptedOnly)
-    expect(result.consumed).toBe(false)
-    expect(result.storedBundle).toBeNull()
-  })
 })

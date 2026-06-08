@@ -19,14 +19,17 @@ async function resolveReceiver (receiverId: string): Promise<UserDetails | null>
   }
 }
 
-export const handleMessageReceived = async (
-  senderName: string,
-  senderEmail: string,
-  receiverId: string,
-  messageContent: string,
-  isEncrypted = false,
-  envelope?: string | object,
-) => {
+export interface IncomingMessageNotification {
+  senderName: string
+  senderEmail: string
+  receiverId: string
+  messageContent: string
+  isEncrypted?: boolean
+  envelope?: string | object
+}
+
+export const handleMessageReceived = async (args: IncomingMessageNotification) => {
+  const { senderName, senderEmail, receiverId, messageContent, isEncrypted = false, envelope } = args
   // When messages are encrypted we must NOT include plaintext in notifications.
   const notifyBody = isEncrypted ? '[Encrypted message]' : messageContent
 
@@ -41,14 +44,14 @@ export const handleMessageReceived = async (
     // deliver it (otherwise it only writes a DB row). FCM token stays undefined
     // until web-push is wired up — the consumer falls back to email.
     const receiver = await resolveReceiver(receiverId)
-    await rabbitMQService.notifyReceiver(
+    await rabbitMQService.notifyReceiver({
       receiverId,
-      notifyBody,
+      messageContent: notifyBody,
       senderEmail,
       senderName,
       isEncrypted,
       envelope,
-      receiver?.email,
-    )
+      receiverEmail: receiver?.email,
+    })
   }
 }

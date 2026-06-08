@@ -10,15 +10,15 @@ describe('RabbitMQService.notifyReceiver', () => {
     const channel = { sendToQueue: jest.fn() }
     ;(rabbitMQService as any).channel = channel
 
-    await rabbitMQService.notifyReceiver(
-      'receiver-1',
-      '[Encrypted message]',
-      'sender@example.com',
-      'Sender',
-      true,
-      '{"__encrypted":true,"body":"x"}',
-      'receiver@example.com',
-    )
+    await rabbitMQService.notifyReceiver({
+      receiverId: 'receiver-1',
+      messageContent: '[Encrypted message]',
+      senderEmail: 'sender@example.com',
+      senderName: 'Sender',
+      isEncrypted: true,
+      envelope: '{"__encrypted":true,"body":"x"}',
+      receiverEmail: 'receiver@example.com',
+    })
 
     expect(channel.sendToQueue).toHaveBeenCalledTimes(1)
     const [queue, buf, opts] = channel.sendToQueue.mock.calls[0]
@@ -34,7 +34,13 @@ describe('RabbitMQService.notifyReceiver', () => {
     const channel = { sendToQueue: jest.fn() }
     ;(rabbitMQService as any).channel = channel
 
-    await rabbitMQService.notifyReceiver('receiver-1', '[Encrypted message]', 's@x', 'S', true)
+    await rabbitMQService.notifyReceiver({
+      receiverId: 'receiver-1',
+      messageContent: '[Encrypted message]',
+      senderEmail: 's@x',
+      senderName: 'S',
+      isEncrypted: true,
+    })
 
     const payload = JSON.parse(channel.sendToQueue.mock.calls[0][1].toString())
     expect(payload.userEmail).toBeUndefined()
