@@ -55,7 +55,7 @@ jobs:
 
       - name: Fetch secrets from Infisical
         id: infisical
-        uses: Infisical/secrets-action@03d3fa38607956c493f53c6633f94006a13c47ae # v1.0.7
+        uses: Infisical/secrets-action@77ab1f4ccd183a543cb5b42435fbd181189f4995 # v1.0.16
         with:
           method: universal
           client-id: ${{ secrets.INFISCAL_CLIENT_ID }}
@@ -87,7 +87,7 @@ jobs:
           echo "✅ All required secrets validated"
 
       - name: Deploy to VPS
-        uses: appleboy/ssh-action@029f5b4aeeeb58fdfe1410a5d17f967dacf36262 # v1.0.3
+        uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1.2.5
         env:
           ADMIN_USERNAME: ${{ env.ADMIN_USERNAME }}
           ADMIN_PASSWORD: ${{ env.ADMIN_PASSWORD }}
@@ -495,7 +495,7 @@ jobs:
 
       - name: Security cleanup
         if: always()
-        uses: appleboy/ssh-action@029f5b4aeeeb58fdfe1410a5d17f967dacf36262 # v1.0.3
+        uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1.2.5
         env:
           VPS_SUDO_PASSWORD: ${{ secrets.VPS_SUDO_PASSWORD }}
         with:

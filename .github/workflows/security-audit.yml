@@ -26,11 +26,11 @@ jobs:
     steps:
       - name: Checkout code
         # Pinned to a specific commit SHA for supply-chain security (githubactions:S7637)
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
       - name: Setup Node.js
         # Pinned to specific commit SHA for supply-chain security
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
           node-version: '22'
           cache: 'npm'
@@ -55,7 +55,7 @@ jobs:
       - name: Upload audit report
         if: always()
         # Pinned to a specific commit SHA for supply-chain security
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: audit-report-${{ matrix.service }}
           path: ${{ matrix.service }}/audit-report-${{ matrix.service }}.json
@@ -73,7 +73,7 @@ jobs:
     steps:
       - name: Checkout code
         # Pinned to a specific commit SHA for supply-chain security
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
       - name: Build Docker image
         run: |
@@ -86,7 +86,7 @@ jobs:
       # Replaced setup-trivy (broken internal ref 75c4dc0f) with trivy-action v0.34.1
       # trivy-action handles Trivy installation + scanning in a single step
       - name: Run Trivy vulnerability scanner (SARIF)
-        uses: aquasecurity/trivy-action@e368e328979b113139d6f9068e03accaed98a518 # v0.34.1
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: '${{ matrix.service }}:test'
           format: 'sarif'
@@ -101,7 +101,7 @@ jobs:
         # CodeQL API with the GITHUB_TOKEN and will fail with "Resource not accessible by integration".
         if: always() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
         # Pinned to codeql-action v4.32.2 for supply-chain security
-        uses: github/codeql-action/upload-sarif@45cbd0c69e560cd9e7cd7f8c32362050c9b7ded2
+        uses: github/codeql-action/upload-sarif@54f647b7e1bb85c95cddabcd46b0c578ec92bc1a # v4.36.3
         with:
           sarif_file: 'trivy-results-${{ matrix.service }}.sarif'
           category: 'trivy-${{ matrix.service }}'
@@ -109,7 +109,7 @@ jobs:
 
       - name: Generate Trivy report (JSON)
         if: always()
-        uses: aquasecurity/trivy-action@e368e328979b113139d6f9068e03accaed98a518 # v0.34.1
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: '${{ matrix.service }}:test'
           format: 'json'
@@ -121,7 +121,7 @@ jobs:
       - name: Upload Trivy report
         if: always()
         # Pinned to a specific commit SHA for supply-chain security
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: trivy-report-${{ matrix.service }}
           path: 'trivy-report-${{ matrix.service }}.json'
