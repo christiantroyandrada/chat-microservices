@@ -24,6 +24,7 @@ export function setRedisHealthProvider(fn: () => boolean | null): void {
 }
 const app: Express = express()
 
+app.disable('x-powered-by')
 app.set('trust proxy', 1)
 // CORS for chat REST endpoints. Socket.IO has its own CORS settings in server.ts.
 const allowedOrigins = process.env.CORS_ORIGINS
@@ -94,23 +95,16 @@ app.get('/metrics', async (_req, res) => {
   }
 })
 
-app.get('/health', async (req, res) => {
-	const checks: Record<string, boolean | null> = {
-		database: false,
-		rabbitmq: false
-	}
+app.get('/health', async (_req, res) => {
 	try {
-		checks.database = AppDataSource.isInitialized
-		checks.rabbitmq = rabbitMQService.isHealthy()
-		// redis: null = not configured (not a failure); false = configured but unhealthy
-		if (_getRedisHealth !== null) {
-			checks.redis = _getRedisHealth()
-		}
-		const healthy = (checks.database ?? false) && (checks.rabbitmq ?? false) && (checks.redis ?? true)
-		return res.status(healthy ? 200 : 503).json({ status: healthy ? 'ok' : 'degraded', service: 'chat-service', checks })
+		const dbOk = AppDataSource.isInitialized
+		const mqOk = rabbitMQService.isHealthy()
+		const redisOk = _getRedisHealth !== null ? (_getRedisHealth() ?? true) : true
+		const healthy = dbOk && mqOk && redisOk
+		return res.status(healthy ? 200 : 503).json({ status: healthy ? 'ok' : 'degraded' })
 	} catch (err) {
 		logError('[chat-service] Health check error:', err)
-		return res.status(503).json({ status: 'error', service: 'chat-service', checks, error: String(err) })
+		return res.status(503).json({ status: 'error' })
 	}
 })
 

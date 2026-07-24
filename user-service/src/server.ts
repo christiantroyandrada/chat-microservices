@@ -47,6 +47,7 @@ validateEnv()
 const app: Express = express()
 let server: Server
 
+app.disable('x-powered-by')
 app.set('trust proxy', 1)
 // Configure CORS for the user service. Can be overridden with CORS_ORIGINS env var (comma-separated).
 const allowedOrigins = process.env.CORS_ORIGINS
@@ -73,22 +74,18 @@ app.use(cors({
 }))
 
 app.get('/health', async (_req, res) => {
-  const checks: Record<string, boolean> = {
-    database: false,
-    rabbitmq: false
-  }
   try {
     const { AppDataSource } = await import('./database/connection')
-    checks.database = AppDataSource.isInitialized
-    checks.rabbitmq = rabbitMQService.isHealthy()
-    const healthy = checks.database && checks.rabbitmq
-    return res.status(healthy ? 200 : 503).json({ status: healthy ? 'ok' : 'degraded', service: 'user-service', checks })
-  } catch (err) {
-    return res.status(503).json({ status: 'error', service: 'user-service', checks, error: String(err) })
+    const healthy = AppDataSource.isInitialized && rabbitMQService.isHealthy()
+    return res.status(healthy ? 200 : 503).json({ status: healthy ? 'ok' : 'degraded' })
+  } catch {
+    return res.status(503).json({ status: 'error' })
   }
 })
 
-app.use(helmet())
+app.use(helmet({
+  strictTransportSecurity: false,
+}))
 
 // ── Observability ────────────────────────────────────────────────────────────
 app.use(requestLogger)

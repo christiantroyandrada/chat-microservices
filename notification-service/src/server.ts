@@ -36,6 +36,7 @@ validateEnv()
 const app: Express = express()
 let server: Server
 
+app.disable('x-powered-by')
 // Trust the first proxy hop — required for express-rate-limit to read the
 // real client IP via X-Forwarded-For (set by nginx in production).
 app.set('trust proxy', 1)
@@ -109,21 +110,14 @@ app.use(express.json({ limit: '100kb' }))
 app.use(express.urlencoded({ extended: true, parameterLimit: 1000 }))
 app.use(cookieParser()) // Parse cookies to read JWT from httpOnly cookies
 
-// Health check endpoint for Docker and monitoring
 app.get('/health', async (_req, res) => {
-  const checks: Record<string, boolean> = {
-    database: false,
-    rabbitmq: false
-  }
   try {
     const { AppDataSource } = await import('./database/connection')
-    checks.database = AppDataSource.isInitialized
-    checks.rabbitmq = rabbitMQService.isHealthy()
-    const healthy = checks.database && checks.rabbitmq
-    return res.status(healthy ? 200 : 503).json({ status: healthy ? 'ok' : 'degraded', service: 'notification-service', checks })
+    const healthy = AppDataSource.isInitialized && rabbitMQService.isHealthy()
+    return res.status(healthy ? 200 : 503).json({ status: healthy ? 'ok' : 'degraded' })
   } catch (err) {
     logError('[notification-service] Health check error:', err)
-    return res.status(503).json({ status: 'error', service: 'notification-service', checks, error: String(err) })
+    return res.status(503).json({ status: 'error' })
   }
 })
 
