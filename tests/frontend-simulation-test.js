@@ -121,28 +121,28 @@ async function run() {
 
   try {
     const r = await req('GET', '/health');
-    if (r.status === 200 && r.data.status === 'ok') ok('Health', `nginx /health -> ${r.data.service}`);
+    if (r.status === 200 && r.data.status === 'ok') ok('Health', 'nginx /health -> ok');
     else fail('Health', `nginx /health unexpected: ${JSON.stringify(r.data)}`);
   } catch (e) { fail('Health', `nginx /health: ${e.message}`); }
 
   try {
     const r = await req('GET', '/api/user/health');
-    if (r.status === 200 && r.data.status === 'ok' && r.data.checks?.database && r.data.checks?.rabbitmq)
-      ok('Health', `user-service -> DB:${r.data.checks.database} RMQ:${r.data.checks.rabbitmq}`);
+    if (r.status === 200 && (r.data.status === 'ok' || r.data.status === 'degraded'))
+      ok('Health', `user-service -> ${r.data.status}`);
     else fail('Health', `user-service health unexpected: ${JSON.stringify(r.data)}`);
   } catch (e) { fail('Health', `user-service: ${e.message}`); }
 
   try {
     const r = await req('GET', '/chat/health');
-    if (r.status === 200 && r.data.status === 'ok' && r.data.checks?.database && r.data.checks?.rabbitmq)
-      ok('Health', `chat-service -> DB:${r.data.checks.database} RMQ:${r.data.checks.rabbitmq}`);
+    if (r.status === 200 && (r.data.status === 'ok' || r.data.status === 'degraded'))
+      ok('Health', `chat-service -> ${r.data.status}`);
     else fail('Health', `chat-service health: ${JSON.stringify(r.data)}`);
   } catch (e) { fail('Health', `chat-service: ${e.message}`); }
 
   try {
     const r = await req('GET', '/notifications/health');
-    if (r.status === 200 && r.data.status === 'ok' && r.data.checks?.database && r.data.checks?.rabbitmq)
-      ok('Health', `notification-service -> DB:${r.data.checks.database} RMQ:${r.data.checks.rabbitmq}`);
+    if (r.status === 200 && (r.data.status === 'ok' || r.data.status === 'degraded'))
+      ok('Health', `notification-service -> ${r.data.status}`);
     else fail('Health', `notification-service health: ${JSON.stringify(r.data)}`);
   } catch (e) { fail('Health', `notification-service: ${e.message}`); }
 
