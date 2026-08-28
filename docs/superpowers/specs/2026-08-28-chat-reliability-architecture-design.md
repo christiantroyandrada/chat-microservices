@@ -40,6 +40,34 @@ This design covers:
 - Debouncing message submission as a substitute for backend idempotency.
 - Changing the visual design.
 
+## Observed production topology
+
+Read-only inspection of the VPS on 2026-08-28 established these deployment constraints:
+
+- Ubuntu/Linux host with 4 vCPUs, 7.6 GiB RAM, 1 GiB swap, and 72 GiB disk at 21% usage.
+- Docker Engine 29.7.2 and Docker Compose 5.4.0.
+- One running replica each of frontend, user-service, chat-service, notification-service, Nginx, PostgreSQL, Prometheus, and Grafana.
+- Backend and Nginx images are pinned to backend commit `0ef2181`; frontend currently uses the mutable `latest` tag and is older than the backend deployment.
+- Application containers are stateless and restart with policy `always`. Their limits are 128 MiB for Nginx, 256 MiB for frontend/user/notification, and 384 MiB for chat, with 0.25-0.5 CPU each.
+- PostgreSQL 17 is local, limited to 512 MiB and 1 CPU, and persists through `chat-microservices_postgres-data`.
+- The production database is approximately 8.3 MiB. Application table statistics report zero live rows, so the first additive migrations are small; production-safe index strategies remain required for future growth.
+- RabbitMQ is external; there is no broker container in the Compose project.
+- Redis is not deployed. Current production therefore cannot rely on the distributed presence adapter.
+- Prometheus and Grafana persist data, but currently have no Docker memory or CPU limits.
+- The Nginx container is a shared ingress gateway attached to the chat, n8n, and WorkSmart networks. Its effective configuration is bind-mounted from `/opt/worksmart/runtime/gateway-nginx.conf`, so ingress changes affect more than the chat project.
+- Only Nginx publishes public ports 80/443. Prometheus and Grafana bind to loopback; application and PostgreSQL ports remain internal.
+
+### Topology implications
+
+- Additive PostgreSQL migrations can use ordinary transactional DDL at the current data size. Each migration still documents the concurrent-index alternative for future large tables.
+- Outbox and delivery workers start with small batches and bounded concurrency to remain within current container limits.
+- Distributed presence work includes deployment of an internal Redis service or an explicit managed-Redis decision; it cannot assume Redis already exists.
+- RabbitMQ dead-letter and retry topology uses versioned exchanges and queues. Existing queue arguments are not mutated in place because the external broker rejects incompatible redeclarations.
+- RabbitMQ rollout uses dual-publish/dual-consume compatibility before retiring the current `NOTIFICATIONS` queue.
+- Frontend deployments use immutable SHA tags before coordinated API-contract rollout.
+- Shared-gateway configuration changes require validation of chat, n8n, and WorkSmart routes before deployment.
+- Prometheus and Grafana receive explicit resource limits before additional reliability metrics materially increase cardinality or retention pressure.
+
 ## Current risks
 
 The adversarial review verified these failure modes:
@@ -241,6 +269,8 @@ Use a durable topic exchange with service-owned durable queues. Each consumer qu
 
 Invalid schemas are dead-lettered immediately. Transient database or provider failures enter the retry path.
 
+Because production RabbitMQ is external and the current queue was declared without dead-letter arguments, the new topology uses versioned names such as `chat.events.v2`, `notifications.v2`, `notifications.retry.v2`, and `notifications.dlq.v2`. Deployment temporarily dual-publishes and validates the new consumer before the original queue is retired.
+
 ### Replica-safe RPC
 
 User-detail lookup no longer uses one shared reply queue. The migration uses RabbitMQ direct reply-to or an exclusive, auto-delete reply queue per process. Correlation callbacks are process-local, timed out, and cleared during shutdown/reconnect.
@@ -299,6 +329,8 @@ The mutex prevents duplicate prekey consumption; it does not debounce message su
 Redis presence is derived from expiring socket leases, not a non-expiring membership set. Each socket lease has a bounded TTL refreshed by heartbeat. Online queries atomically prune expired leases before returning status. A process crash therefore degrades to offline after the lease window instead of leaving the user online indefinitely.
 
 Notification policy treats presence lookup failure as offline and continues durable notification processing.
+
+Production rollout adds an internal-only Redis service with a 128 MiB memory limit and no public port, unless a managed Redis endpoint is selected before implementation. Presence is ephemeral, so Redis persistence is not required for correctness; expiry is the recovery mechanism.
 
 ## Subproject 5: Incremental Clean Architecture
 
