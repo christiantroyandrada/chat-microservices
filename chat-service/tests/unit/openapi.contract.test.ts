@@ -48,4 +48,11 @@ describe('chat-service OpenAPI contract', () => {
       }
     })
   })
+
+  it('requires the exact published conversation fields and a numeric unread count', () => {
+    const conversation = (spec.components.schemas as Record<string, any>).Conversation
+
+    expect(conversation.required).toEqual(['id', 'name', 'avatar', 'lastMessage', 'unreadCount', 'lastMessageTime'])
+    expect(conversation.properties.unreadCount).toEqual({ type: 'integer' })
+  })
 })

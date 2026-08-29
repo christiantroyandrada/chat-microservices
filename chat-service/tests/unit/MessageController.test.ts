@@ -1,5 +1,7 @@
 import MessageController from '../../src/controllers/MessageController'
 import { AppDataSource } from '../../src/database'
+import { validationResult } from 'express-validator'
+import { fetchConversationValidation } from '../../src/middleware/validation/messageValidation'
 
 describe('MessageController.fetchConversation', () => {
   it('returns messages for conversation', async () => {
@@ -23,6 +25,44 @@ describe('MessageController.fetchConversation', () => {
     await MessageController.fetchConversation(req, res, jest.fn())
 
     expect(res.json).toHaveBeenCalled()
+  })
+
+  it.each([
+    ['limit', '0'],
+    ['limit', '201'],
+    ['limit', '1.5'],
+    ['limit', '-1'],
+    ['offset', '-1'],
+    ['offset', '1.5'],
+    ['offset', '9007199254740992'],
+    ['offset', '999999999999999999999999999999999999999999999999999999999999']
+  ])('rejects invalid %s query value %s before pagination reaches the controller', async (key, value) => {
+    const req: any = {
+      params: { receiverId: '00000000-0000-4000-8000-000000000002' },
+      query: { [key]: value }
+    }
+
+    await Promise.all(fetchConversationValidation.map((chain) => chain.run(req)))
+
+    expect(validationResult(req).array()).not.toHaveLength(0)
+  })
+
+  it('rejects an unsafe offset in the controller even when middleware is bypassed', async () => {
+    const req: any = {
+      params: { receiverId: 'user2' },
+      user: { _id: 'user1' },
+      query: { limit: '1', offset: '999999999999999999999999999999999999999999999999999999999999' }
+    }
+    const res: any = { json: jest.fn(), status: jest.fn().mockReturnThis() }
+    const next = jest.fn()
+    const messageRepo = { createQueryBuilder: jest.fn() }
+
+    jest.spyOn(AppDataSource, 'getRepository').mockReturnValue(messageRepo as any)
+
+    await MessageController.fetchConversation(req, res, next)
+
+    expect(messageRepo.createQueryBuilder).not.toHaveBeenCalled()
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 400 }))
   })
 })
 /**

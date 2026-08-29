@@ -69,14 +69,14 @@ const spec = {
       },
       Conversation: {
         type: 'object' as const,
-        required: ['userId', 'username', 'lastMessage', 'lastMessageSenderId', 'lastMessageTime', 'unreadCount'],
+        required: ['id', 'name', 'avatar', 'lastMessage', 'unreadCount', 'lastMessageTime'],
         properties: {
-          userId:              { type: 'string' as const, format: 'uuid' },
-          username:            { type: 'string' as const },
-          lastMessage:         { type: 'string' as const },
-          lastMessageSenderId: { type: 'string' as const, format: 'uuid' },
-          lastMessageTime:     { type: 'string' as const, format: 'date-time' },
-          unreadCount:         { type: 'integer' as const },
+          id:              { type: 'string' as const, format: 'uuid' },
+          name:            { type: 'string' as const },
+          avatar:          { type: 'string' as const, nullable: true },
+          lastMessage:     { type: 'string' as const },
+          unreadCount:     { type: 'integer' as const },
+          lastMessageTime: { type: 'string' as const, format: 'date-time' },
         },
       },
       Pagination: {
@@ -178,7 +178,7 @@ const spec = {
         parameters: [
           { name: 'receiverId', in: 'path' as const, required: true, schema: { type: 'string' as const, format: 'uuid' } },
           { name: 'limit',  in: 'query' as const, schema: { type: 'integer' as const, default: 50, minimum: 1, maximum: 200 } },
-          { name: 'offset', in: 'query' as const, schema: { type: 'integer' as const, default: 0, minimum: 0 } },
+          { name: 'offset', in: 'query' as const, schema: { type: 'integer' as const, default: 0, minimum: 0, maximum: Number.MAX_SAFE_INTEGER } },
         ],
         responses: {
           '200': { description: 'Conversation messages (chronological order)', content: { 'application/json': { schema: { $ref: '#/components/schemas/MessagesPageResponse' } } } },

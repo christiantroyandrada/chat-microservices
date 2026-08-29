@@ -2,6 +2,7 @@ import { Response, Request, NextFunction } from 'express'
 import { LRUCache } from 'lru-cache'
 import type { ConversationRow } from '../types'
 import { AuthenticatedRequest } from '../middleware'
+import { parseConversationPagination } from '../middleware/validation/messageValidation'
 import { Message, AppDataSource } from '../database'
 import { APIError, handleMessageReceived } from '../utils'
 import { logWarn, logError } from '../utils/logger'
@@ -186,9 +187,15 @@ const fetchConversation = async (
     const { receiverId } = req.params
     const { _id: senderId } = req.user  
 
-    // Pagination: defaults to last 50 messages, supports limit/offset via query params
-    const limit = req.query.limit === undefined ? 50 : Number(req.query.limit)
-    const offset = req.query.offset === undefined ? 0 : Number(req.query.offset)
+    // Keep controller parsing aligned with route validation so bypassed middleware
+    // cannot pass Infinity or unsafe values into TypeORM's skip/take methods.
+    let limit: number
+    let offset: number
+    try {
+      ({ limit, offset } = parseConversationPagination(req.query))
+    } catch (error) {
+      throw new APIError(400, error instanceof Error ? error.message : 'Invalid pagination parameters')
+    }
     
     const messageRepo = AppDataSource.getRepository(Message)
     const [messages, total] = await messageRepo
@@ -286,18 +293,26 @@ const getConversations = async (
     const userDetailsMap = await fetchUserDetailsBatch(userIds, jwtToken, requestId)
 
     // Use the shared ConversationRow type from src/types.ts
-    const conversationsWithUsernames = (conversationsArray as ConversationRow[]).map((conv) => {
+    const conversations = (conversationsArray as ConversationRow[]).map((conv) => {
       const userDetails = userDetailsMap.get(conv.userId)
       return {
+        // Keep legacy fields during the client rollout; the published contract
+        // below supplies the canonical conversation shape.
         ...conv,
-        username: userDetails?.username || 'Unknown User'
+        username: userDetails?.username || 'Unknown User',
+        id: conv.userId,
+        name: userDetails?.username || 'Unknown User',
+        avatar: null,
+        lastMessage: conv.lastMessage,
+        unreadCount: conv.unreadCount,
+        lastMessageTime: conv.lastMessageTime,
       }
     })
 
     return res.json({
       status: 200,
       message: 'Conversations fetched successfully',
-      data: conversationsWithUsernames,
+      data: conversations,
     })
   } catch (error: unknown) {
     next(error)
