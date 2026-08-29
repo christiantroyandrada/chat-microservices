@@ -140,7 +140,7 @@ const getSignalKeys = async (req: Request, res: Response, next: NextFunction) =>
     // CVE-011 FIX: Generic error message - don't reveal whether keys exist
     if (!record || !(record.bundle as PrekeyBundle)?._encryptedKeyBundle) {
       auditLog('FETCH_KEYS', userId, deviceId, clientIp, false, 'No keys found')
-      return res.json({ status: 404, message: 'Operation failed' })
+      return res.status(404).json({ status: 404, message: 'Operation failed' })
     }
 
     auditLog('FETCH_KEYS', userId, deviceId, clientIp, true, 'Keys retrieved')
@@ -198,10 +198,6 @@ const publishPrekey = async (req: Request, res: Response, next: NextFunction) =>
 
 /**
  * Get prekey bundle: this should be public so initiators can bootstrap sessions.
- * We implement atomic one-time-prekey consumption using a QueryRunner transaction
- * and SELECT FOR UPDATE semantics to avoid racing consumers returning the same
- * one-time prekey.
- * 
  * Returns the LATEST bundle (most recently created) to ensure key consistency.
  */
 const getPrekeyBundle = async (req: Request, res: Response, next: NextFunction) => {
