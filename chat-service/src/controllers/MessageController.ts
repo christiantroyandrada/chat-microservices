@@ -187,8 +187,8 @@ const fetchConversation = async (
     const { _id: senderId } = req.user  
 
     // Pagination: defaults to last 50 messages, supports limit/offset via query params
-    const limit = Math.min(Number(req.query.limit) || 50, 200) // max 200 per request
-    const offset = Math.max(Number(req.query.offset) || 0, 0)
+    const limit = req.query.limit === undefined ? 50 : Number(req.query.limit)
+    const offset = req.query.offset === undefined ? 0 : Number(req.query.offset)
     
     const messageRepo = AppDataSource.getRepository(Message)
     const [messages, total] = await messageRepo
@@ -258,7 +258,7 @@ const getConversations = async (
       unread_counts AS (
         SELECT 
           "senderId" as "userId",
-          COUNT(*) as "unreadCount"
+          COUNT(*)::integer as "unreadCount"
         FROM messages
         WHERE "receiverId" = $1 AND status != 'Seen'
         GROUP BY "senderId"
@@ -268,7 +268,7 @@ const getConversations = async (
         rm."lastMessageSenderId",
         rm."lastMessage",
         rm."lastMessageTime",
-        COALESCE(uc."unreadCount", 0) as "unreadCount"
+        COALESCE(uc."unreadCount", 0)::integer as "unreadCount"
       FROM ranked_messages rm
       LEFT JOIN unread_counts uc ON rm."userId" = uc."userId"
       WHERE rm.rn = 1

@@ -1,4 +1,4 @@
-import { body, param, ValidationChain } from 'express-validator'
+import { body, param, query, ValidationChain } from 'express-validator'
 
 export const sendMessageValidation: ValidationChain[] = [
   body('receiverId')
@@ -23,7 +23,9 @@ export const fetchConversationValidation: ValidationChain[] = [
     .notEmpty()
     .withMessage('Receiver ID is required')
     .isUUID()
-    .withMessage('Receiver ID must be a valid UUID')
+    .withMessage('Receiver ID must be a valid UUID'),
+  query('limit').optional().isInt({ min: 1, max: 200 }).withMessage('limit must be an integer between 1 and 200'),
+  query('offset').optional().isInt({ min: 0 }).withMessage('offset must be a non-negative integer')
 ]
 
 export const markAsReadValidation: ValidationChain[] = [
