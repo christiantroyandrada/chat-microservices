@@ -48,4 +48,16 @@ describe('user-service OpenAPI contract', () => {
       '#/components/schemas/SearchUser'
     );
   });
+
+  it('requires the device id used by the Signal backup lookup', () => {
+    const paths = spec.paths as Record<string, Record<string, any>>;
+    expect(paths['/signal-keys'].get.parameters).toEqual([
+      {
+        name: 'deviceId',
+        in: 'query',
+        required: true,
+        schema: { type: 'string' },
+      },
+    ]);
+  });
 });

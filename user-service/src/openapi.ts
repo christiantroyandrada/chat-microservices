@@ -324,6 +324,9 @@ const spec = {
         tags: ['E2EE'],
         summary: 'Retrieve stored Signal key set',
         security: [{ cookieAuth: [] }],
+        parameters: [
+          { name: 'deviceId', in: 'query' as const, required: true, schema: { type: 'string' as const } },
+        ],
         responses: {
           '200': { description: 'Stored keys', content: { 'application/json': { schema: { $ref: '#/components/schemas/SignalKeyBackupResponse' } } } },
           '401': { description: 'Authentication required' },
