@@ -38,22 +38,143 @@ const spec = {
           message: { type: 'string' as const },
         },
       },
+      RegisterRequest: {
+        type: 'object' as const,
+        required: ['username', 'email', 'password'],
+        properties: {
+          username: { type: 'string' as const, minLength: 3, maxLength: 30, pattern: '^[a-z0-9_-]+$' },
+          email: { type: 'string' as const, format: 'email' },
+          password: { type: 'string' as const, minLength: 8 },
+        },
+      },
+      LoginRequest: {
+        type: 'object' as const,
+        required: ['email', 'password'],
+        properties: {
+          email: { type: 'string' as const, format: 'email' },
+          password: { type: 'string' as const },
+        },
+      },
+      StatusResponse: {
+        type: 'object' as const,
+        required: ['status', 'message'],
+        properties: {
+          status: { type: 'integer' as const },
+          message: { type: 'string' as const },
+        },
+      },
       User: {
         type: 'object' as const,
+        required: ['id', 'username', 'email'],
         properties: {
           id:       { type: 'string' as const, format: 'uuid' },
           username: { type: 'string' as const },
           email:    { type: 'string' as const, format: 'email' },
         },
       },
+      UserResponse: {
+        type: 'object' as const,
+        required: ['status', 'message', 'data'],
+        properties: {
+          status: { type: 'integer' as const },
+          message: { type: 'string' as const },
+          data: { $ref: '#/components/schemas/User' },
+        },
+      },
+      SearchUser: {
+        type: 'object' as const,
+        required: ['_id', 'username', 'email'],
+        properties: {
+          _id: { type: 'string' as const, format: 'uuid' },
+          username: { type: 'string' as const },
+          email: { type: 'string' as const, format: 'email' },
+        },
+      },
+      UserListResponse: {
+        type: 'object' as const,
+        required: ['status', 'data'],
+        properties: {
+          status: { type: 'integer' as const },
+          data: { type: 'array' as const, items: { $ref: '#/components/schemas/SearchUser' } },
+        },
+      },
+      SignedPreKey: {
+        type: 'object' as const,
+        required: ['id', 'publicKey', 'signature'],
+        properties: {
+          id: { type: 'integer' as const },
+          publicKey: { type: 'string' as const },
+          signature: { type: 'string' as const },
+        },
+      },
+      OneTimePreKey: {
+        type: 'object' as const,
+        required: ['id', 'publicKey'],
+        properties: {
+          id: { type: 'integer' as const },
+          publicKey: { type: 'string' as const },
+        },
+      },
       PrekeyBundle: {
         type: 'object' as const,
         description: 'Signal Protocol X3DH prekey bundle',
+        required: ['registrationId', 'identityKey', 'signedPreKey', 'preKeys'],
         properties: {
           identityKey:   { type: 'string' as const, description: 'Base64-encoded identity public key' },
-          signedPreKey:  { type: 'object' as const, properties: { keyId: { type: 'integer' as const }, publicKey: { type: 'string' as const }, signature: { type: 'string' as const } } },
-          preKey:        { type: 'object' as const, nullable: true, properties: { keyId: { type: 'integer' as const }, publicKey: { type: 'string' as const } } },
+          signedPreKey: { $ref: '#/components/schemas/SignedPreKey' },
+          preKeys: { type: 'array' as const, items: { $ref: '#/components/schemas/OneTimePreKey' } },
           registrationId: { type: 'integer' as const },
+        },
+      },
+      PublishPrekeyRequest: {
+        type: 'object' as const,
+        required: ['deviceId', 'bundle'],
+        properties: {
+          deviceId: { type: 'string' as const },
+          bundle: { $ref: '#/components/schemas/PrekeyBundle' },
+        },
+      },
+      ConsumedPrekey: {
+        type: 'object' as const,
+        required: ['userId', 'deviceId', 'bundle'],
+        properties: {
+          userId: { type: 'string' as const, format: 'uuid' },
+          deviceId: { type: 'string' as const },
+          bundle: { $ref: '#/components/schemas/PrekeyBundle' },
+        },
+      },
+      ConsumedPrekeyResponse: {
+        type: 'object' as const,
+        required: ['status', 'data'],
+        properties: {
+          status: { type: 'integer' as const },
+          data: { $ref: '#/components/schemas/ConsumedPrekey' },
+        },
+      },
+      SignalKeyBackupRequest: {
+        type: 'object' as const,
+        required: ['deviceId', 'encryptedBundle'],
+        properties: {
+          deviceId: { type: 'string' as const },
+          encryptedBundle: {
+            type: 'object' as const,
+            required: ['encrypted', 'iv', 'salt', 'version', 'deviceId'],
+            properties: {
+              encrypted: { type: 'string' as const },
+              iv: { type: 'string' as const },
+              salt: { type: 'string' as const },
+              version: { type: 'integer' as const },
+              deviceId: { type: 'string' as const },
+            },
+          },
+        },
+      },
+      SignalKeyBackupResponse: {
+        type: 'object' as const,
+        required: ['status', 'data'],
+        properties: {
+          status: { type: 'integer' as const },
+          data: { $ref: '#/components/schemas/SignalKeyBackupRequest' },
         },
       },
       HealthCheck: {
@@ -81,18 +202,10 @@ const spec = {
         description: 'Creates a user account and sets a JWT httpOnly cookie.  Publishes a USER_REGISTERED event to RabbitMQ.',
         requestBody: {
           required: true,
-          content: { 'application/json': { schema: {
-            type: 'object' as const,
-            required: ['username', 'email', 'password'],
-            properties: {
-              username: { type: 'string' as const, minLength: 3, maxLength: 30, pattern: '^[a-z0-9_-]+$' },
-              email:    { type: 'string' as const, format: 'email' },
-              password: { type: 'string' as const, minLength: 8 },
-            },
-          } } },
+          content: { 'application/json': { schema: { $ref: '#/components/schemas/RegisterRequest' } } },
         },
         responses: {
-          '200': { description: 'User registered (JWT set in cookie)', content: { 'application/json': { schema: { $ref: '#/components/schemas/User' } } } },
+          '200': { description: 'User registered (JWT set in cookie)', content: { 'application/json': { schema: { $ref: '#/components/schemas/UserResponse' } } } },
           '400': { description: 'Validation error / duplicate email or username' },
         },
       },
@@ -104,17 +217,10 @@ const spec = {
         description: 'Verifies credentials and sets a JWT httpOnly cookie.',
         requestBody: {
           required: true,
-          content: { 'application/json': { schema: {
-            type: 'object' as const,
-            required: ['email', 'password'],
-            properties: {
-              email:    { type: 'string' as const, format: 'email' },
-              password: { type: 'string' as const },
-            },
-          } } },
+          content: { 'application/json': { schema: { $ref: '#/components/schemas/LoginRequest' } } },
         },
         responses: {
-          '200': { description: 'Login successful (JWT set in cookie)' },
+          '200': { description: 'Login successful (JWT set in cookie)', content: { 'application/json': { schema: { $ref: '#/components/schemas/StatusResponse' } } } },
           '401': { description: 'Invalid email or password' },
         },
       },
@@ -125,7 +231,7 @@ const spec = {
         summary: 'Get current authenticated user',
         security: [{ cookieAuth: [] }],
         responses: {
-          '200': { description: 'Current user', content: { 'application/json': { schema: { $ref: '#/components/schemas/User' } } } },
+          '200': { description: 'Current user', content: { 'application/json': { schema: { $ref: '#/components/schemas/UserResponse' } } } },
           '401': { description: 'Authentication required' },
         },
       },
@@ -136,7 +242,7 @@ const spec = {
         summary: 'Log out',
         description: 'Clears the JWT cookie.',
         responses: {
-          '200': { description: 'Logged out successfully' },
+          '200': { description: 'Logged out successfully', content: { 'application/json': { schema: { $ref: '#/components/schemas/StatusResponse' } } } },
         },
       },
     },
@@ -151,10 +257,7 @@ const spec = {
         responses: {
           '200': {
             description: 'Matching users (max 20)',
-            content: { 'application/json': { schema: {
-              type: 'object' as const,
-              properties: { data: { type: 'array' as const, items: { $ref: '#/components/schemas/User' } } },
-            } } },
+            content: { 'application/json': { schema: { $ref: '#/components/schemas/UserListResponse' } } },
           },
           '401': { description: 'Authentication required' },
         },
@@ -170,7 +273,7 @@ const spec = {
           { name: 'userId', in: 'path' as const, required: true, schema: { type: 'string' as const, format: 'uuid' } },
         ],
         responses: {
-          '200': { description: 'User found', content: { 'application/json': { schema: { $ref: '#/components/schemas/User' } } } },
+          '200': { description: 'User found', content: { 'application/json': { schema: { $ref: '#/components/schemas/UserResponse' } } } },
           '401': { description: 'Authentication required' },
           '404': { description: 'User not found' },
         },
@@ -184,10 +287,10 @@ const spec = {
         security: [{ cookieAuth: [] }],
         requestBody: {
           required: true,
-          content: { 'application/json': { schema: { $ref: '#/components/schemas/PrekeyBundle' } } },
+          content: { 'application/json': { schema: { $ref: '#/components/schemas/PublishPrekeyRequest' } } },
         },
         responses: {
-          '200': { description: 'Prekey bundle stored' },
+          '200': { description: 'Prekey bundle stored', content: { 'application/json': { schema: { $ref: '#/components/schemas/StatusResponse' } } } },
           '401': { description: 'Authentication required' },
         },
       },
@@ -201,7 +304,7 @@ const spec = {
           { name: 'userId', in: 'path' as const, required: true, schema: { type: 'string' as const, format: 'uuid' } },
         ],
         responses: {
-          '200': { description: 'Prekey bundle', content: { 'application/json': { schema: { $ref: '#/components/schemas/PrekeyBundle' } } } },
+          '200': { description: 'Prekey bundle', content: { 'application/json': { schema: { $ref: '#/components/schemas/ConsumedPrekeyResponse' } } } },
           '404': { description: 'No prekey bundle found' },
         },
       },
@@ -211,9 +314,9 @@ const spec = {
         tags: ['E2EE'],
         summary: 'Store complete Signal key set',
         security: [{ cookieAuth: [] }],
-        requestBody: { required: true, content: { 'application/json': { schema: { type: 'object' as const } } } },
+        requestBody: { required: true, content: { 'application/json': { schema: { $ref: '#/components/schemas/SignalKeyBackupRequest' } } } },
         responses: {
-          '200': { description: 'Keys stored' },
+          '200': { description: 'Keys stored', content: { 'application/json': { schema: { $ref: '#/components/schemas/StatusResponse' } } } },
           '401': { description: 'Authentication required' },
         },
       },
@@ -222,7 +325,7 @@ const spec = {
         summary: 'Retrieve stored Signal key set',
         security: [{ cookieAuth: [] }],
         responses: {
-          '200': { description: 'Stored keys' },
+          '200': { description: 'Stored keys', content: { 'application/json': { schema: { $ref: '#/components/schemas/SignalKeyBackupResponse' } } } },
           '401': { description: 'Authentication required' },
           '404': { description: 'No keys found' },
         },

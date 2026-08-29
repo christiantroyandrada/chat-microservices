@@ -1,0 +1,748 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "User Service",
+    "version": "1.0.0",
+    "description": "Authentication, user management, and Signal Protocol prekey distribution.  Auth uses JWT in httpOnly cookies — no token is ever returned in response bodies.  E2EE prekey bundles follow the Signal X3DH key agreement protocol.",
+    "contact": {
+      "name": "Chat App Team"
+    },
+    "license": {
+      "name": "MIT"
+    }
+  },
+  "servers": [
+    {
+      "url": "/",
+      "description": "Behind nginx reverse-proxy"
+    }
+  ],
+  "components": {
+    "securitySchemes": {
+      "cookieAuth": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "jwt",
+        "description": "JWT token set as httpOnly cookie by /login or /register"
+      }
+    },
+    "schemas": {
+      "Error": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "integer"
+          },
+          "message": {
+            "type": "string"
+          }
+        }
+      },
+      "RegisterRequest": {
+        "type": "object",
+        "required": [
+          "username",
+          "email",
+          "password"
+        ],
+        "properties": {
+          "username": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 30,
+            "pattern": "^[a-z0-9_-]+$"
+          },
+          "email": {
+            "type": "string",
+            "format": "email"
+          },
+          "password": {
+            "type": "string",
+            "minLength": 8
+          }
+        }
+      },
+      "LoginRequest": {
+        "type": "object",
+        "required": [
+          "email",
+          "password"
+        ],
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email"
+          },
+          "password": {
+            "type": "string"
+          }
+        }
+      },
+      "StatusResponse": {
+        "type": "object",
+        "required": [
+          "status",
+          "message"
+        ],
+        "properties": {
+          "status": {
+            "type": "integer"
+          },
+          "message": {
+            "type": "string"
+          }
+        }
+      },
+      "User": {
+        "type": "object",
+        "required": [
+          "id",
+          "username",
+          "email"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "username": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string",
+            "format": "email"
+          }
+        }
+      },
+      "UserResponse": {
+        "type": "object",
+        "required": [
+          "status",
+          "message",
+          "data"
+        ],
+        "properties": {
+          "status": {
+            "type": "integer"
+          },
+          "message": {
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/User"
+          }
+        }
+      },
+      "SearchUser": {
+        "type": "object",
+        "required": [
+          "_id",
+          "username",
+          "email"
+        ],
+        "properties": {
+          "_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "username": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string",
+            "format": "email"
+          }
+        }
+      },
+      "UserListResponse": {
+        "type": "object",
+        "required": [
+          "status",
+          "data"
+        ],
+        "properties": {
+          "status": {
+            "type": "integer"
+          },
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SearchUser"
+            }
+          }
+        }
+      },
+      "SignedPreKey": {
+        "type": "object",
+        "required": [
+          "id",
+          "publicKey",
+          "signature"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "publicKey": {
+            "type": "string"
+          },
+          "signature": {
+            "type": "string"
+          }
+        }
+      },
+      "OneTimePreKey": {
+        "type": "object",
+        "required": [
+          "id",
+          "publicKey"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "publicKey": {
+            "type": "string"
+          }
+        }
+      },
+      "PrekeyBundle": {
+        "type": "object",
+        "description": "Signal Protocol X3DH prekey bundle",
+        "required": [
+          "registrationId",
+          "identityKey",
+          "signedPreKey",
+          "preKeys"
+        ],
+        "properties": {
+          "identityKey": {
+            "type": "string",
+            "description": "Base64-encoded identity public key"
+          },
+          "signedPreKey": {
+            "$ref": "#/components/schemas/SignedPreKey"
+          },
+          "preKeys": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OneTimePreKey"
+            }
+          },
+          "registrationId": {
+            "type": "integer"
+          }
+        }
+      },
+      "PublishPrekeyRequest": {
+        "type": "object",
+        "required": [
+          "deviceId",
+          "bundle"
+        ],
+        "properties": {
+          "deviceId": {
+            "type": "string"
+          },
+          "bundle": {
+            "$ref": "#/components/schemas/PrekeyBundle"
+          }
+        }
+      },
+      "ConsumedPrekey": {
+        "type": "object",
+        "required": [
+          "userId",
+          "deviceId",
+          "bundle"
+        ],
+        "properties": {
+          "userId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "deviceId": {
+            "type": "string"
+          },
+          "bundle": {
+            "$ref": "#/components/schemas/PrekeyBundle"
+          }
+        }
+      },
+      "ConsumedPrekeyResponse": {
+        "type": "object",
+        "required": [
+          "status",
+          "data"
+        ],
+        "properties": {
+          "status": {
+            "type": "integer"
+          },
+          "data": {
+            "$ref": "#/components/schemas/ConsumedPrekey"
+          }
+        }
+      },
+      "SignalKeyBackupRequest": {
+        "type": "object",
+        "required": [
+          "deviceId",
+          "encryptedBundle"
+        ],
+        "properties": {
+          "deviceId": {
+            "type": "string"
+          },
+          "encryptedBundle": {
+            "type": "object",
+            "required": [
+              "encrypted",
+              "iv",
+              "salt",
+              "version",
+              "deviceId"
+            ],
+            "properties": {
+              "encrypted": {
+                "type": "string"
+              },
+              "iv": {
+                "type": "string"
+              },
+              "salt": {
+                "type": "string"
+              },
+              "version": {
+                "type": "integer"
+              },
+              "deviceId": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      },
+      "SignalKeyBackupResponse": {
+        "type": "object",
+        "required": [
+          "status",
+          "data"
+        ],
+        "properties": {
+          "status": {
+            "type": "integer"
+          },
+          "data": {
+            "$ref": "#/components/schemas/SignalKeyBackupRequest"
+          }
+        }
+      },
+      "HealthCheck": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "ok",
+              "degraded",
+              "error"
+            ]
+          },
+          "service": {
+            "type": "string"
+          },
+          "checks": {
+            "type": "object",
+            "properties": {
+              "database": {
+                "type": "boolean"
+              },
+              "rabbitmq": {
+                "type": "boolean"
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "paths": {
+    "/register": {
+      "post": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Register a new user",
+        "description": "Creates a user account and sets a JWT httpOnly cookie.  Publishes a USER_REGISTERED event to RabbitMQ.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegisterRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "User registered (JWT set in cookie)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error / duplicate email or username"
+          }
+        }
+      }
+    },
+    "/login": {
+      "post": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Log in",
+        "description": "Verifies credentials and sets a JWT httpOnly cookie.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Login successful (JWT set in cookie)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StatusResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid email or password"
+          }
+        }
+      }
+    },
+    "/me": {
+      "get": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Get current authenticated user",
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Current user",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required"
+          }
+        }
+      }
+    },
+    "/logout": {
+      "post": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Log out",
+        "description": "Clears the JWT cookie.",
+        "responses": {
+          "200": {
+            "description": "Logged out successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StatusResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/search": {
+      "get": {
+        "tags": [
+          "Users"
+        ],
+        "summary": "Search users by username or email",
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Search term (ILIKE match)"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Matching users (max 20)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserListResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required"
+          }
+        }
+      }
+    },
+    "/users/{userId}": {
+      "get": {
+        "tags": [
+          "Users"
+        ],
+        "summary": "Get user by ID",
+        "description": "Requires authentication to prevent user enumeration.",
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "userId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "User found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "404": {
+            "description": "User not found"
+          }
+        }
+      }
+    },
+    "/prekeys": {
+      "post": {
+        "tags": [
+          "E2EE"
+        ],
+        "summary": "Publish prekey bundle",
+        "description": "Upload a Signal Protocol prekey bundle for the authenticated user.",
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PublishPrekeyRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Prekey bundle stored",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StatusResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required"
+          }
+        }
+      }
+    },
+    "/prekeys/{userId}": {
+      "get": {
+        "tags": [
+          "E2EE"
+        ],
+        "summary": "Get prekey bundle for a user",
+        "description": "Consumes a one-time prekey atomically when available.",
+        "parameters": [
+          {
+            "name": "userId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Prekey bundle",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConsumedPrekeyResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No prekey bundle found"
+          }
+        }
+      }
+    },
+    "/signal-keys": {
+      "post": {
+        "tags": [
+          "E2EE"
+        ],
+        "summary": "Store complete Signal key set",
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SignalKeyBackupRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Keys stored",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StatusResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required"
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "E2EE"
+        ],
+        "summary": "Retrieve stored Signal key set",
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Stored keys",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SignalKeyBackupResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "404": {
+            "description": "No keys found"
+          }
+        }
+      }
+    },
+    "/health": {
+      "get": {
+        "tags": [
+          "Operations"
+        ],
+        "summary": "Health check",
+        "responses": {
+          "200": {
+            "description": "Healthy",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthCheck"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Degraded / unhealthy"
+          }
+        }
+      }
+    },
+    "/metrics": {
+      "get": {
+        "tags": [
+          "Operations"
+        ],
+        "summary": "Prometheus metrics (internal)",
+        "responses": {
+          "200": {
+            "description": "Prometheus text exposition format"
+          }
+        }
+      }
+    }
+  }
+}
