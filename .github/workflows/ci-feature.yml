@@ -50,9 +50,40 @@ jobs:
     # Reuse the repository's typecheck workflow
     uses: ./.github/workflows/typescript-check.yml
 
+  verify-openapi-contracts:
+    name: Verify committed OpenAPI contracts
+    needs: typescript-check
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        # Pinned to specific commit SHA for supply-chain security
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Use Node.js 22
+        # Pinned to specific commit SHA for supply-chain security
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: |
+            user-service/package-lock.json
+            chat-service/package-lock.json
+
+      - name: Install contract generator dependencies
+        run: |
+          npm --prefix user-service ci
+          npm --prefix chat-service ci
+
+      - name: Verify committed OpenAPI contracts
+        run: |
+          npm --prefix user-service run gen:spec
+          npm --prefix chat-service run gen:spec
+          git diff --exit-code -- user-service/openapi.json chat-service/openapi.json
+
   unit-tests:
     name: Unit Tests (reusable)
-    needs: typescript-check
+    needs: verify-openapi-contracts
     uses: ./.github/workflows/unit-tests.yml
     with:
       coverage: 'true'
