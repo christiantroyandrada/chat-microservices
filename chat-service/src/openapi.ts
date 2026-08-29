@@ -44,13 +44,14 @@ const spec = {
       },
       Message: {
         type: 'object' as const,
+        required: ['id', 'senderId', 'receiverId', 'message', 'isEncrypted', 'status', 'createdAt', 'updatedAt'],
         properties: {
           id:          { type: 'string' as const, format: 'uuid' },
           senderId:    { type: 'string' as const, format: 'uuid' },
           receiverId:  { type: 'string' as const, format: 'uuid' },
           message:     { type: 'string' as const, description: 'Encrypted envelope JSON string' },
           isEncrypted: { type: 'boolean' as const },
-          status:      { type: 'string' as const, enum: ['Not Delivered', 'Delivered', 'Seen'] },
+          status:      { type: 'string' as const, enum: ['NotDelivered', 'Delivered', 'Seen'] },
           createdAt:   { type: 'string' as const, format: 'date-time' },
           updatedAt:   { type: 'string' as const, format: 'date-time' },
         },
@@ -64,6 +65,57 @@ const spec = {
           lastMessageSenderId: { type: 'string' as const, format: 'uuid' },
           lastMessageTime:     { type: 'string' as const, format: 'date-time' },
           unreadCount:         { type: 'integer' as const },
+        },
+      },
+      Pagination: {
+        type: 'object' as const,
+        required: ['total', 'limit', 'offset', 'hasMore'],
+        properties: {
+          total: { type: 'integer' as const },
+          limit: { type: 'integer' as const },
+          offset: { type: 'integer' as const },
+          hasMore: { type: 'boolean' as const },
+        },
+      },
+      MessageResponse: {
+        type: 'object' as const,
+        required: ['status', 'message', 'data'],
+        properties: {
+          status: { type: 'integer' as const },
+          message: { type: 'string' as const },
+          data: { $ref: '#/components/schemas/Message' },
+        },
+      },
+      MessagesPageResponse: {
+        type: 'object' as const,
+        required: ['status', 'message', 'data', 'pagination'],
+        properties: {
+          status: { type: 'integer' as const },
+          message: { type: 'string' as const },
+          data: { type: 'array' as const, items: { $ref: '#/components/schemas/Message' } },
+          pagination: { $ref: '#/components/schemas/Pagination' },
+        },
+      },
+      ConversationListResponse: {
+        type: 'object' as const,
+        required: ['status', 'message', 'data'],
+        properties: {
+          status: { type: 'integer' as const },
+          message: { type: 'string' as const },
+          data: { type: 'array' as const, items: { $ref: '#/components/schemas/Conversation' } },
+        },
+      },
+      MarkReadResponse: {
+        type: 'object' as const,
+        required: ['status', 'message', 'data'],
+        properties: {
+          status: { type: 'integer' as const },
+          message: { type: 'string' as const },
+          data: {
+            type: 'object' as const,
+            required: ['modifiedCount'],
+            properties: { modifiedCount: { type: 'integer' as const } },
+          },
         },
       },
       HealthCheck: {
@@ -107,7 +159,7 @@ const spec = {
           },
         },
         responses: {
-          '200': { description: 'Message sent', content: { 'application/json': { schema: { $ref: '#/components/schemas/Message' } } } },
+          '200': { description: 'Message sent', content: { 'application/json': { schema: { $ref: '#/components/schemas/MessageResponse' } } } },
           '400': { description: 'Validation error', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
           '401': { description: 'Authentication required' },
         },
@@ -124,24 +176,7 @@ const spec = {
           { name: 'offset', in: 'query' as const, schema: { type: 'integer' as const, default: 0 } },
         ],
         responses: {
-          '200': {
-            description: 'Conversation messages (chronological order)',
-            content: { 'application/json': { schema: {
-              type: 'object' as const,
-              properties: {
-                data:       { type: 'array' as const, items: { $ref: '#/components/schemas/Message' } },
-                pagination: {
-                  type: 'object' as const,
-                  properties: {
-                    total:   { type: 'integer' as const },
-                    limit:   { type: 'integer' as const },
-                    offset:  { type: 'integer' as const },
-                    hasMore: { type: 'boolean' as const },
-                  },
-                },
-              },
-            } } },
-          },
+          '200': { description: 'Conversation messages (chronological order)', content: { 'application/json': { schema: { $ref: '#/components/schemas/MessagesPageResponse' } } } },
           '401': { description: 'Authentication required' },
         },
       },
@@ -152,15 +187,7 @@ const spec = {
         summary: 'List all conversations for the authenticated user',
         security: [{ cookieAuth: [] }],
         responses: {
-          '200': {
-            description: 'Conversation list (most recent first)',
-            content: { 'application/json': { schema: {
-              type: 'object' as const,
-              properties: {
-                data: { type: 'array' as const, items: { $ref: '#/components/schemas/Conversation' } },
-              },
-            } } },
-          },
+          '200': { description: 'Conversation list (most recent first)', content: { 'application/json': { schema: { $ref: '#/components/schemas/ConversationListResponse' } } } },
           '401': { description: 'Authentication required' },
         },
       },
@@ -174,13 +201,7 @@ const spec = {
           { name: 'senderId', in: 'path' as const, required: true, schema: { type: 'string' as const, format: 'uuid' } },
         ],
         responses: {
-          '200': {
-            description: 'Messages marked as read',
-            content: { 'application/json': { schema: {
-              type: 'object' as const,
-              properties: { data: { type: 'object' as const, properties: { modifiedCount: { type: 'integer' as const } } } },
-            } } },
-          },
+          '200': { description: 'Messages marked as read', content: { 'application/json': { schema: { $ref: '#/components/schemas/MarkReadResponse' } } } },
           '401': { description: 'Authentication required' },
         },
       },
