@@ -42,6 +42,17 @@ const spec = {
           message: { type: 'string' as const },
         },
       },
+      SendMessageRequest: {
+        type: 'object' as const,
+        required: ['receiverId', 'message'],
+        properties: {
+          receiverId: { type: 'string' as const, format: 'uuid' },
+          message: {
+            type: 'string' as const,
+            description: 'Signal-protocol encrypted envelope (JSON string, max 5000 chars)',
+          },
+        },
+      },
       Message: {
         type: 'object' as const,
         required: ['id', 'senderId', 'receiverId', 'message', 'isEncrypted', 'status', 'createdAt', 'updatedAt'],
@@ -147,14 +158,7 @@ const spec = {
           required: true,
           content: {
             'application/json': {
-              schema: {
-                type: 'object' as const,
-                required: ['receiverId', 'message'],
-                properties: {
-                  receiverId: { type: 'string' as const, format: 'uuid' },
-                  message:    { type: 'string' as const, description: 'Signal-protocol encrypted envelope (JSON string, max 5000 chars)' },
-                },
-              },
+              schema: { $ref: '#/components/schemas/SendMessageRequest' },
             },
           },
         },
