@@ -63,8 +63,11 @@ describe('MessageController - query builder and repository branches', () => {
       await MC.getConversations(req, res)
 
     expect(repo.query).toHaveBeenCalled()
+    expect(repo.query.mock.calls[0][0]).toContain('COUNT(*)::integer as "unreadCount"')
     const called = res.json.mock.calls[0][0]
     expect(called.data[0].username).toBe('bob')
+    expect(called.data[0].unreadCount).toBe(0)
+    expect(typeof called.data[0].unreadCount).toBe('number')
   })
 
   it('markAsRead uses query builder update chain and returns affected count', async () => {
