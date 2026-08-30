@@ -17,6 +17,8 @@
       "description": "Behind nginx reverse-proxy"
     }
   ],
+  "x-service-id": "user",
+  "x-gateway-prefix": "/user",
   "components": {
     "securitySchemes": {
       "cookieAuth": {
@@ -370,6 +372,8 @@
   "paths": {
     "/register": {
       "post": {
+        "operationId": "user.register",
+        "x-response-mode": "envelope",
         "tags": [
           "Auth"
         ],
@@ -404,6 +408,8 @@
     },
     "/login": {
       "post": {
+        "operationId": "user.login",
+        "x-response-mode": "envelope",
         "tags": [
           "Auth"
         ],
@@ -438,6 +444,8 @@
     },
     "/me": {
       "get": {
+        "operationId": "user.getCurrentUser",
+        "x-response-mode": "envelope",
         "tags": [
           "Auth"
         ],
@@ -466,6 +474,8 @@
     },
     "/logout": {
       "post": {
+        "operationId": "user.logout",
+        "x-response-mode": "envelope",
         "tags": [
           "Auth"
         ],
@@ -487,6 +497,8 @@
     },
     "/search": {
       "get": {
+        "operationId": "user.searchUsers",
+        "x-response-mode": "envelope",
         "tags": [
           "Users"
         ],
@@ -526,6 +538,8 @@
     },
     "/users/{userId}": {
       "get": {
+        "operationId": "user.getById",
+        "x-response-mode": "envelope",
         "tags": [
           "Users"
         ],
@@ -569,6 +583,8 @@
     },
     "/prekeys": {
       "post": {
+        "operationId": "user.publishPrekey",
+        "x-response-mode": "envelope",
         "tags": [
           "E2EE"
         ],
@@ -608,11 +624,13 @@
     },
     "/prekeys/{userId}": {
       "get": {
+        "operationId": "user.consumePrekey",
+        "x-response-mode": "envelope",
         "tags": [
           "E2EE"
         ],
         "summary": "Get prekey bundle for a user",
-        "description": "Consumes a one-time prekey atomically when available.",
+        "description": "Fetches a prekey bundle, consuming a one-time prekey if available.",
         "parameters": [
           {
             "name": "userId",
@@ -643,6 +661,8 @@
     },
     "/signal-keys": {
       "post": {
+        "operationId": "user.storeSignalKeys",
+        "x-response-mode": "envelope",
         "tags": [
           "E2EE"
         ],
@@ -679,6 +699,8 @@
         }
       },
       "get": {
+        "operationId": "user.fetchSignalKeys",
+        "x-response-mode": "envelope",
         "tags": [
           "E2EE"
         ],
@@ -720,6 +742,8 @@
     },
     "/health": {
       "get": {
+        "operationId": "user.health",
+        "x-response-mode": "raw",
         "tags": [
           "Operations"
         ],
@@ -743,6 +767,8 @@
     },
     "/metrics": {
       "get": {
+        "operationId": "user.metrics",
+        "x-response-mode": "raw",
         "tags": [
           "Operations"
         ],

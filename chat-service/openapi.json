@@ -17,6 +17,8 @@
       "description": "Behind nginx reverse-proxy"
     }
   ],
+  "x-service-id": "chat",
+  "x-gateway-prefix": "/chat",
   "components": {
     "securitySchemes": {
       "cookieAuth": {
@@ -292,6 +294,8 @@
   "paths": {
     "/send": {
       "post": {
+        "operationId": "chat.sendMessage",
+        "x-response-mode": "envelope",
         "tags": [
           "Messages"
         ],
@@ -340,6 +344,8 @@
     },
     "/get/{receiverId}": {
       "get": {
+        "operationId": "chat.listMessages",
+        "x-response-mode": "envelope",
         "tags": [
           "Messages"
         ],
@@ -399,6 +405,8 @@
     },
     "/conversations": {
       "get": {
+        "operationId": "chat.listConversations",
+        "x-response-mode": "envelope",
         "tags": [
           "Messages"
         ],
@@ -427,6 +435,8 @@
     },
     "/messages/read/{senderId}": {
       "put": {
+        "operationId": "chat.markAsRead",
+        "x-response-mode": "envelope",
         "tags": [
           "Messages"
         ],
@@ -466,6 +476,8 @@
     },
     "/health": {
       "get": {
+        "operationId": "chat.health",
+        "x-response-mode": "raw",
         "tags": [
           "Operations"
         ],
@@ -489,6 +501,8 @@
     },
     "/metrics": {
       "get": {
+        "operationId": "chat.metrics",
+        "x-response-mode": "raw",
         "tags": [
           "Operations"
         ],

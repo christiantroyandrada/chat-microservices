@@ -49,6 +49,20 @@ describe('chat-service OpenAPI contract', () => {
     })
   })
 
+
+  it('exposes stable operation identifiers and gateway metadata', () => {
+    expect((spec as any)['x-service-id']).toBe('chat');
+    expect((spec as any)['x-gateway-prefix']).toBe('/chat');
+    const paths = spec.paths as Record<string, Record<string, any>>;
+    expect(paths['/send'].post.operationId).toBe('chat.sendMessage');
+    expect(paths['/send'].post['x-response-mode']).toBe('envelope');
+    expect(paths['/get/{receiverId}'].get.operationId).toBe('chat.listMessages');
+    expect(paths['/conversations'].get.operationId).toBe('chat.listConversations');
+    expect(paths['/messages/read/{senderId}'].put.operationId).toBe('chat.markAsRead');
+    expect(paths['/health'].get['x-response-mode']).toBe('raw');
+    expect(paths['/metrics'].get['x-response-mode']).toBe('raw');
+  });
+
   it('requires the exact published conversation fields and a numeric unread count', () => {
     const conversation = (spec.components.schemas as Record<string, any>).Conversation
 

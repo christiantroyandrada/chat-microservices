@@ -24,6 +24,9 @@ const spec = {
     { url: '/', description: 'Behind nginx reverse-proxy' },
   ],
 
+  'x-service-id': 'chat' as const,
+  'x-gateway-prefix': '/chat' as const,
+
   // ── Security ──────────────────────────────────────────────────────────────
   components: {
     securitySchemes: {
@@ -152,6 +155,8 @@ const spec = {
   paths: {
     '/send': {
       post: {
+        operationId: 'chat.sendMessage' as const,
+        'x-response-mode': 'envelope' as const,
         tags: ['Messages'],
         summary: 'Send an encrypted message (REST)',
         security: [{ cookieAuth: [] }],
@@ -172,6 +177,8 @@ const spec = {
     },
     '/get/{receiverId}': {
       get: {
+        operationId: 'chat.listMessages' as const,
+        'x-response-mode': 'envelope' as const,
         tags: ['Messages'],
         summary: 'Fetch conversation with a user',
         security: [{ cookieAuth: [] }],
@@ -188,6 +195,8 @@ const spec = {
     },
     '/conversations': {
       get: {
+        operationId: 'chat.listConversations' as const,
+        'x-response-mode': 'envelope' as const,
         tags: ['Messages'],
         summary: 'List all conversations for the authenticated user',
         security: [{ cookieAuth: [] }],
@@ -199,6 +208,8 @@ const spec = {
     },
     '/messages/read/{senderId}': {
       put: {
+        operationId: 'chat.markAsRead' as const,
+        'x-response-mode': 'envelope' as const,
         tags: ['Messages'],
         summary: 'Mark all messages from a sender as read',
         security: [{ cookieAuth: [] }],
@@ -213,6 +224,8 @@ const spec = {
     },
     '/health': {
       get: {
+        operationId: 'chat.health' as const,
+        'x-response-mode': 'raw' as const,
         tags: ['Operations'],
         summary: 'Health check',
         responses: {
@@ -223,6 +236,8 @@ const spec = {
     },
     '/metrics': {
       get: {
+        operationId: 'chat.metrics' as const,
+        'x-response-mode': 'raw' as const,
         tags: ['Operations'],
         summary: 'Prometheus metrics (internal — blocked by nginx in production)',
         responses: { '200': { description: 'Prometheus text exposition format' } },

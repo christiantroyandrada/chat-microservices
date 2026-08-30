@@ -21,6 +21,9 @@ const spec = {
     { url: '/', description: 'Behind nginx reverse-proxy' },
   ],
 
+  'x-service-id': 'user' as const,
+  'x-gateway-prefix': '/user' as const,
+
   components: {
     securitySchemes: {
       cookieAuth: {
@@ -197,6 +200,8 @@ const spec = {
   paths: {
     '/register': {
       post: {
+        operationId: 'user.register' as const,
+        'x-response-mode': 'envelope' as const,
         tags: ['Auth'],
         summary: 'Register a new user',
         description: 'Creates a user account and sets a JWT httpOnly cookie.  Publishes a USER_REGISTERED event to RabbitMQ.',
@@ -212,6 +217,8 @@ const spec = {
     },
     '/login': {
       post: {
+        operationId: 'user.login' as const,
+        'x-response-mode': 'envelope' as const,
         tags: ['Auth'],
         summary: 'Log in',
         description: 'Verifies credentials and sets a JWT httpOnly cookie.',
@@ -227,6 +234,8 @@ const spec = {
     },
     '/me': {
       get: {
+        operationId: 'user.getCurrentUser' as const,
+        'x-response-mode': 'envelope' as const,
         tags: ['Auth'],
         summary: 'Get current authenticated user',
         security: [{ cookieAuth: [] }],
@@ -238,6 +247,8 @@ const spec = {
     },
     '/logout': {
       post: {
+        operationId: 'user.logout' as const,
+        'x-response-mode': 'envelope' as const,
         tags: ['Auth'],
         summary: 'Log out',
         description: 'Clears the JWT cookie.',
@@ -248,6 +259,8 @@ const spec = {
     },
     '/search': {
       get: {
+        operationId: 'user.searchUsers' as const,
+        'x-response-mode': 'envelope' as const,
         tags: ['Users'],
         summary: 'Search users by username or email',
         security: [{ cookieAuth: [] }],
@@ -265,6 +278,8 @@ const spec = {
     },
     '/users/{userId}': {
       get: {
+        operationId: 'user.getById' as const,
+        'x-response-mode': 'envelope' as const,
         tags: ['Users'],
         summary: 'Get user by ID',
         description: 'Requires authentication to prevent user enumeration.',
@@ -281,6 +296,8 @@ const spec = {
     },
     '/prekeys': {
       post: {
+        operationId: 'user.publishPrekey' as const,
+        'x-response-mode': 'envelope' as const,
         tags: ['E2EE'],
         summary: 'Publish prekey bundle',
         description: 'Upload a Signal Protocol prekey bundle for the authenticated user.',
@@ -297,9 +314,11 @@ const spec = {
     },
     '/prekeys/{userId}': {
       get: {
+        operationId: 'user.consumePrekey' as const,
+        'x-response-mode': 'envelope' as const,
         tags: ['E2EE'],
         summary: 'Get prekey bundle for a user',
-        description: 'Consumes a one-time prekey atomically when available.',
+        description: 'Fetches a prekey bundle, consuming a one-time prekey if available.',
         parameters: [
           { name: 'userId', in: 'path' as const, required: true, schema: { type: 'string' as const, format: 'uuid' } },
         ],
@@ -311,6 +330,8 @@ const spec = {
     },
     '/signal-keys': {
       post: {
+        operationId: 'user.storeSignalKeys' as const,
+        'x-response-mode': 'envelope' as const,
         tags: ['E2EE'],
         summary: 'Store complete Signal key set',
         security: [{ cookieAuth: [] }],
@@ -321,6 +342,8 @@ const spec = {
         },
       },
       get: {
+        operationId: 'user.fetchSignalKeys' as const,
+        'x-response-mode': 'envelope' as const,
         tags: ['E2EE'],
         summary: 'Retrieve stored Signal key set',
         security: [{ cookieAuth: [] }],
@@ -336,6 +359,8 @@ const spec = {
     },
     '/health': {
       get: {
+        operationId: 'user.health' as const,
+        'x-response-mode': 'raw' as const,
         tags: ['Operations'],
         summary: 'Health check',
         responses: {
@@ -346,6 +371,8 @@ const spec = {
     },
     '/metrics': {
       get: {
+        operationId: 'user.metrics' as const,
+        'x-response-mode': 'raw' as const,
         tags: ['Operations'],
         summary: 'Prometheus metrics (internal)',
         responses: { '200': { description: 'Prometheus text exposition format' } },

@@ -49,6 +49,27 @@ describe('user-service OpenAPI contract', () => {
     );
   });
 
+
+  it('exposes stable operation identifiers and gateway metadata', () => {
+    expect((spec as any)['x-service-id']).toBe('user');
+    expect((spec as any)['x-gateway-prefix']).toBe('/user');
+    const paths = spec.paths as Record<string, Record<string, any>>;
+    expect(paths['/register'].post.operationId).toBe('user.register');
+    expect(paths['/register'].post['x-response-mode']).toBe('envelope');
+    expect(paths['/login'].post.operationId).toBe('user.login');
+    expect(paths['/login'].post['x-response-mode']).toBe('envelope');
+    expect(paths['/me'].get.operationId).toBe('user.getCurrentUser');
+    expect(paths['/search'].get.operationId).toBe('user.searchUsers');
+    expect(paths['/users/{userId}'].get.operationId).toBe('user.getById');
+    expect(paths['/prekeys'].post.operationId).toBe('user.publishPrekey');
+    expect(paths['/prekeys/{userId}'].get.operationId).toBe('user.consumePrekey');
+    expect(paths['/prekeys/{userId}'].get.description).not.toMatch(/atomically/);
+    expect(paths['/signal-keys'].post.operationId).toBe('user.storeSignalKeys');
+    expect(paths['/signal-keys'].get.operationId).toBe('user.fetchSignalKeys');
+    expect(paths['/health'].get['x-response-mode']).toBe('raw');
+    expect(paths['/metrics'].get['x-response-mode']).toBe('raw');
+  });
+
   it('requires the device id used by the Signal backup lookup', () => {
     const paths = spec.paths as Record<string, Record<string, any>>;
     expect(paths['/signal-keys'].get.parameters).toEqual([
