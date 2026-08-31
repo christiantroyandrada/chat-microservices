@@ -88,9 +88,8 @@ jobs:
 
       - name: Verify committed OpenAPI contracts
         run: |
-          npm --prefix user-service run gen:spec
-          npm --prefix chat-service run gen:spec
-          git diff --exit-code -- user-service/openapi.json chat-service/openapi.json
+          node --test tests/contract-artifacts.test.mjs tests/contract-verifier.test.mjs
+          node scripts/verify-contract-artifacts.mjs
 
   security-audit:
     name: Security Audit
