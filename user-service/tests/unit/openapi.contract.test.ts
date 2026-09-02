@@ -81,4 +81,26 @@ describe('user-service OpenAPI contract', () => {
       },
     ]);
   });
+
+  it('declares the runtime status and body contracts for prekey operations', () => {
+    const paths = spec.paths as Record<string, Record<string, any>>;
+    expect(paths['/prekeys'].post.responses['200']).toEqual(
+      expect.objectContaining({
+        content: {
+          'application/json': {
+            schema: { $ref: '#/components/schemas/StatusResponse' },
+          },
+        },
+      }),
+    );
+    expect(paths['/signal-keys'].get.responses['404']).toEqual(
+      expect.objectContaining({
+        content: {
+          'application/json': {
+            schema: { $ref: '#/components/schemas/Error' },
+          },
+        },
+      }),
+    );
+  });
 });

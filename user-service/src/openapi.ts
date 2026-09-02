@@ -353,7 +353,10 @@ const spec = {
         responses: {
           '200': { description: 'Stored keys', content: { 'application/json': { schema: { $ref: '#/components/schemas/SignalKeyBackupResponse' } } } },
           '401': { description: 'Authentication required' },
-          '404': { description: 'No keys found' },
+          '404': {
+            description: 'No keys found',
+            content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } },
+          },
         },
       },
     },

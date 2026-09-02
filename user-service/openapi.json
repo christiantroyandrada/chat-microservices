@@ -735,7 +735,14 @@
             "description": "Authentication required"
           },
           "404": {
-            "description": "No keys found"
+            "description": "No keys found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         }
       }

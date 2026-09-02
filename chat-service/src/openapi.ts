@@ -189,6 +189,7 @@ const spec = {
         ],
         responses: {
           '200': { description: 'Conversation messages (chronological order)', content: { 'application/json': { schema: { $ref: '#/components/schemas/MessagesPageResponse' } } } },
+          '400': { description: 'Invalid pagination parameters', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
           '401': { description: 'Authentication required' },
         },
       },

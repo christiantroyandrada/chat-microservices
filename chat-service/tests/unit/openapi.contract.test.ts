@@ -69,4 +69,15 @@ describe('chat-service OpenAPI contract', () => {
     expect(conversation.required).toEqual(['id', 'name', 'avatar', 'lastMessage', 'unreadCount', 'lastMessageTime'])
     expect(conversation.properties.unreadCount).toEqual({ type: 'integer' })
   })
+
+  it('declares the pagination rejection body alongside the successful page contract', () => {
+    const operation = (spec.paths as Record<string, Record<string, any>>)['/get/{receiverId}'].get
+    expect(operation['x-response-mode']).toBe('envelope')
+    expect(operation.responses['200'].content['application/json'].schema).toEqual({
+      $ref: '#/components/schemas/MessagesPageResponse',
+    })
+    expect(operation.responses['400'].content['application/json'].schema).toEqual({
+      $ref: '#/components/schemas/Error',
+    })
+  })
 })
