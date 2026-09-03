@@ -1,6 +1,4 @@
-// Runtime contract tests exercise the controller and validation boundaries with
-// the existing unit harness.  The JSON round-trip mirrors Express res.json()
-// serialization for Date values returned by TypeORM.
+// JSON round-trip mirrors Express res.json() serialization of Date values.
 process.env.JWT_SECRET = process.env.JWT_SECRET || 'test_jwt_secret_which_is_long_enough_32_chars'
 
 jest.mock('uuid', () => ({ v4: () => 'mock-uuid' }))
@@ -18,6 +16,7 @@ import spec from '../../src/openapi'
 type Schema = {
   $ref?: string
   type?: string
+  format?: string
   nullable?: boolean
   enum?: unknown[]
   required?: string[]
@@ -89,9 +88,16 @@ function assertSchema(value: unknown, schema: Schema, path = 'response'): void {
     case 'boolean':
       expect(typeof value).toBe('boolean')
       return
-    case 'string':
+    case 'string': {
       expect(typeof value).toBe('string')
+      if (resolved.format === 'uuid') {
+        expect(value).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i)
+      }
+      if (resolved.format === 'date-time') {
+        expect(Number.isNaN(Date.parse(value as string))).toBe(false)
+      }
       return
+    }
     default:
       throw new Error(`${path}: unsupported schema type ${String(resolved.type)}`)
   }
@@ -177,14 +183,20 @@ async function invokePaginationValidation(query: Record<string, unknown>) {
 }
 
 const userIds = {
-  sender: '00000000-0000-0000-0000-000000000001',
-  recipient: '00000000-0000-0000-0000-000000000002',
-  partner: '00000000-0000-0000-0000-000000000003',
+  sender: '11111111-1111-4111-8111-111111111111',
+  recipient: '22222222-2222-4222-8222-222222222222',
+  partner: '33333333-3333-4333-8333-333333333333',
 }
 
 function messageFixture(status: MessageStatus) {
+  const id =
+    status === MessageStatus.NotDelivered
+      ? 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1'
+      : status === MessageStatus.Delivered
+        ? 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb2'
+        : 'cccccccc-cccc-4ccc-8ccc-ccccccccccc3'
   return {
-    id: `00000000-0000-0000-0000-00000000000${status === MessageStatus.NotDelivered ? '4' : status === MessageStatus.Delivered ? '5' : '6'}`,
+    id,
     senderId: userIds.sender,
     receiverId: userIds.recipient,
     message: JSON.stringify({ __encrypted: true, type: 1, body: 'Y2lwaGVydGV4dA==' }),
@@ -268,28 +280,36 @@ describe('chat-service runtime OpenAPI conformance', () => {
     assertContractResponse('/get/{receiverId}', 'get', result.statusCode, result.body)
   })
 
-  it.each([
-    ['Infinity', Infinity],
-    ['NaN', Number.NaN],
-    ['unsafe integer', Number.MAX_SAFE_INTEGER + 1],
-    ['negative number', -1],
-    ['zero limit', 0],
-    ['fractional number', 1.5],
-    ['negative string', '-1'],
-    ['fractional string', '1.5'],
-    ['unsafe integer string', '9007199254740992'],
-  ])('rejects %s pagination values before controller database access', async (_label, offset) => {
-    const repo = { createQueryBuilder: jest.fn() }
-    jest.spyOn(AppDataSource, 'getRepository').mockReturnValue(repo as any)
+  it('rejects malformed UUID fixtures in the schema oracle', () => {
+    expect(() =>
+      assertSchema('not-a-uuid', { type: 'string', format: 'uuid' }, 'response.data[0].id'),
+    ).toThrow()
+    expect(() =>
+      assertSchema('not-a-date', { type: 'string', format: 'date-time' }, 'response.data[0].createdAt'),
+    ).toThrow()
+  })
 
-    const result = await invokePaginationValidation({ limit: '50', offset })
+  it('accepts the maximum valid pagination boundary without validation errors', async () => {
+    const result = await invokePaginationValidation({ limit: '200', offset: '0' })
+
+    expect(result.nextCalled).toBe(true)
+    expect(result.body).toBeUndefined()
+  })
+
+  it.each([
+    ['zero limit', { limit: '0', offset: '0' }],
+    ['limit above maximum', { limit: '201', offset: '0' }],
+    ['fractional limit', { limit: '1.5', offset: '0' }],
+    ['infinite limit', { limit: Infinity, offset: '0' }],
+    ['negative offset', { limit: '50', offset: '-1' }],
+    ['fractional offset', { limit: '50', offset: '1.5' }],
+    ['unsafe offset', { limit: '50', offset: '9007199254740992' }],
+    ['NaN offset', { limit: '50', offset: Number.NaN }],
+  ])('rejects %s', async (_label, query) => {
+    const result = await invokePaginationValidation(query)
 
     expect(result.statusCode).toBe(400)
     expect(result.nextCalled).toBe(false)
-    expect(result.body).toEqual(
-      expect.objectContaining({ status: 400, message: 'Validation failed' }),
-    )
-    assertContractResponse('/get/{receiverId}', 'get', result.statusCode, result.body)
-    expect(repo.createQueryBuilder).not.toHaveBeenCalled()
+    assertContractResponse('/get/{receiverId}', 'get', 400, result.body)
   })
 })

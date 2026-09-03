@@ -1,6 +1,4 @@
-// Runtime contract tests exercise controller boundaries with the existing unit
-// harness.  The JSON round-trip in captureResponse mirrors Express res.json()
-// serialization (notably Date values from TypeORM entities).
+// JSON round-trip in captureResponse mirrors Express res.json() serialization.
 process.env.JWT_SECRET = process.env.JWT_SECRET || 'test_jwt_secret_which_is_long_enough_32_chars'
 
 import { AppDataSource } from '../../src/database'
@@ -10,6 +8,7 @@ import spec from '../../src/openapi'
 type Schema = {
   $ref?: string
   type?: string
+  format?: string
   nullable?: boolean
   enum?: unknown[]
   required?: string[]
@@ -81,9 +80,16 @@ function assertSchema(value: unknown, schema: Schema, path = 'response'): void {
     case 'boolean':
       expect(typeof value).toBe('boolean')
       return
-    case 'string':
+    case 'string': {
       expect(typeof value).toBe('string')
+      if (resolved.format === 'uuid') {
+        expect(value).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i)
+      }
+      if (resolved.format === 'date-time') {
+        expect(Number.isNaN(Date.parse(value as string))).toBe(false)
+      }
       return
+    }
     default:
       throw new Error(`${path}: unsupported schema type ${String(resolved.type)}`)
   }
@@ -146,7 +152,7 @@ async function invoke(handler: (req: any, res: any, next: any) => Promise<unknow
   }
 }
 
-const userId = '00000000-0000-0000-0000-000000000001'
+const userId = '11111111-1111-4111-8111-111111111111'
 
 const prekeyBundle = {
   registrationId: 42,
@@ -157,6 +163,12 @@ const prekeyBundle = {
 
 describe('user-service runtime OpenAPI conformance', () => {
   afterEach(() => jest.restoreAllMocks())
+
+  it('rejects malformed UUID fixtures in the schema oracle', () => {
+    expect(() =>
+      assertSchema('not-a-uuid', { type: 'string', format: 'uuid' }, 'response.data.id'),
+    ).toThrow()
+  })
 
   it('returns a contract-declared 404 for a missing Signal backup', async () => {
     const repo = { findOne: jest.fn().mockResolvedValue(undefined) }
