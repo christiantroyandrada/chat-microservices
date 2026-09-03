@@ -223,6 +223,14 @@
 
 ### Task 6: Prove runtime contract conformance and verify the foundation
 
+> **Recovery checkpoint (2026-09-03):** Backend `c4219c3` and frontend `d4edada`
+> contain the first runtime-contract test slice. They are not yet accepted: the
+> pagination harness has an unrelated receiver-ID false-positive, the frontend
+> snapshot still identifies backend `cc47bef`, the required report is absent,
+> and Node 22/pnpm 9.11.0, audit, and Colima gates remain. Execute
+> `docs/superpowers/plans/2026-09-03-task-6-runtime-contract-finalization.md`
+> before continuing with the steps below.
+
 **Files:**
 - Modify: `backend/user-service/tests/unit/openapi.contract.test.ts`
 - Modify: `backend/chat-service/tests/unit/openapi.contract.test.ts`
@@ -259,4 +267,3 @@
 - [ ] **Step 6: Record the release verdict**
 
   Update the SDD ledger/report with commands, outputs, immutable image IDs, audit counts, limitations, and whether the foundation is eligible to proceed to the dependency/idempotency phases. Do not merge or push in this task.
-
