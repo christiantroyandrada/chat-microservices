@@ -72,39 +72,97 @@ describe('FCMService.sendPushNotification', () => {
     expect(send).not.toHaveBeenCalled()
   })
 
-  test('initializes an empty app registry once and sends the exact message with non-empty data', async () => {
+  test('initializes an empty registry once and delivers two messages through the initialized app', async () => {
     process.env.GOOGLE_APPLICATION_CREDENTIALS = '/tmp/firebase-service-account.json'
     const credential = { kind: 'application-default' }
+    const defaultApp = { name: '[DEFAULT]' }
     const send = jest.fn().mockResolvedValue('message-1')
+    firebaseApp().getApps
+      .mockReturnValueOnce([])
+      .mockReturnValue([defaultApp])
     firebaseApp().applicationDefault.mockReturnValue(credential)
+    firebaseApp().initializeApp.mockReturnValue(defaultApp)
     firebaseMessaging().getMessaging.mockReturnValue({ send })
+    const { FCMService } = loadService()
 
-    await expect(loadService().FCMService.sendPushNotification('device-token', 'Encrypted preview', { conversationId: 'c-1' })).resolves.toBeUndefined()
+    await expect(FCMService.sendPushNotification('device-token', 'Encrypted preview', { conversationId: 'c-1' })).resolves.toBeUndefined()
+    await expect(FCMService.sendPushNotification('device-token', 'Follow up')).resolves.toBeUndefined()
 
-    expect(firebaseApp().getApps).toHaveBeenCalledTimes(1)
+    expect(firebaseApp().getApps).toHaveBeenCalledTimes(2)
     expect(firebaseApp().applicationDefault).toHaveBeenCalledTimes(1)
     expect(firebaseApp().initializeApp).toHaveBeenCalledTimes(1)
     expect(firebaseApp().initializeApp).toHaveBeenCalledWith({ credential })
-    expect(send).toHaveBeenCalledWith({
+    expect(firebaseMessaging().getMessaging).toHaveBeenNthCalledWith(1, defaultApp)
+    expect(firebaseMessaging().getMessaging).toHaveBeenNthCalledWith(2, defaultApp)
+    expect(send).toHaveBeenNthCalledWith(1, {
       notification: { title: 'New Message', body: 'Encrypted preview' },
       token: 'device-token',
       data: { conversationId: 'c-1' },
     } satisfies FCMMessagePayload)
+    expect(send).toHaveBeenNthCalledWith(2, {
+      notification: { title: 'New Message', body: 'Follow up' },
+      token: 'device-token',
+    } satisfies FCMMessagePayload)
   })
 
-  test('uses an existing app without initializing another app and omits empty data', async () => {
+  test('uses an existing default app without credential discovery and omits empty data', async () => {
     process.env.GOOGLE_APPLICATION_CREDENTIALS = '/tmp/firebase-service-account.json'
-    firebaseApp().getApps.mockReturnValue([{ name: '[DEFAULT]' }])
+    const defaultApp = { name: '[DEFAULT]' }
+    firebaseApp().getApps.mockReturnValue([defaultApp])
     const send = jest.fn().mockResolvedValue('message-2')
     firebaseMessaging().getMessaging.mockReturnValue({ send })
 
     await expect(loadService().FCMService.sendPushNotification('device-token', 'Hello', {})).resolves.toBeUndefined()
 
     expect(firebaseApp().initializeApp).not.toHaveBeenCalled()
+    expect(firebaseApp().applicationDefault).not.toHaveBeenCalled()
+    expect(firebaseMessaging().getMessaging).toHaveBeenCalledWith(defaultApp)
     expect(send).toHaveBeenCalledWith({
       notification: { title: 'New Message', body: 'Hello' },
       token: 'device-token',
     } satisfies FCMMessagePayload)
+  })
+
+  test('uses a named app when no default app exists without credential discovery', async () => {
+    process.env.GOOGLE_APPLICATION_CREDENTIALS = '/tmp/firebase-service-account.json'
+    const namedApp = { name: 'notifications' }
+    const send = jest.fn().mockResolvedValue('message-3')
+    firebaseApp().getApps.mockReturnValue([namedApp])
+    firebaseMessaging().getMessaging.mockReturnValue({ send })
+
+    await expect(loadService().FCMService.sendPushNotification('device-token', 'Hello')).resolves.toBeUndefined()
+
+    expect(firebaseApp().initializeApp).not.toHaveBeenCalled()
+    expect(firebaseApp().applicationDefault).not.toHaveBeenCalled()
+    expect(firebaseMessaging().getMessaging).toHaveBeenCalledWith(namedApp)
+    expect(send).toHaveBeenCalledWith({
+      notification: { title: 'New Message', body: 'Hello' },
+      token: 'device-token',
+    } satisfies FCMMessagePayload)
+  })
+
+  test('reinitializes after an app disappears from the registry', async () => {
+    process.env.GOOGLE_APPLICATION_CREDENTIALS = '/tmp/firebase-service-account.json'
+    const removedApp = { name: 'notifications' }
+    const recoveredApp = { name: '[DEFAULT]' }
+    const credential = { kind: 'application-default' }
+    const send = jest.fn().mockResolvedValue('message-4')
+    firebaseApp().getApps
+      .mockReturnValueOnce([removedApp])
+      .mockReturnValueOnce([])
+    firebaseApp().applicationDefault.mockReturnValue(credential)
+    firebaseApp().initializeApp.mockReturnValue(recoveredApp)
+    firebaseMessaging().getMessaging.mockReturnValue({ send })
+    const { FCMService } = loadService()
+
+    await expect(FCMService.sendPushNotification('device-token', 'Before deletion')).resolves.toBeUndefined()
+    await expect(FCMService.sendPushNotification('device-token', 'After deletion')).resolves.toBeUndefined()
+
+    expect(firebaseApp().applicationDefault).toHaveBeenCalledTimes(1)
+    expect(firebaseApp().initializeApp).toHaveBeenCalledWith({ credential })
+    expect(firebaseMessaging().getMessaging).toHaveBeenNthCalledWith(1, removedApp)
+    expect(firebaseMessaging().getMessaging).toHaveBeenNthCalledWith(2, recoveredApp)
+    expect(send).toHaveBeenCalledTimes(2)
   })
 
   test('logs an initialization failure, does not send, and retries initialization later', async () => {
@@ -141,5 +199,19 @@ describe('FCMService.sendPushNotification', () => {
     await expect(loadService().FCMService.sendPushNotification('device-token', 'Hello')).resolves.toBeUndefined()
 
     expect(logError).toHaveBeenCalledWith('Error sending notification', expect.any(Error))
+  })
+})
+
+describe('Firebase Admin modular smoke', () => {
+  test('initializes a named local app and constructs messaging without network access', async () => {
+    const { deleteApp, initializeApp } = jest.requireActual('firebase-admin/app') as typeof import('firebase-admin/app')
+    const { getMessaging } = jest.requireActual('firebase-admin/messaging') as typeof import('firebase-admin/messaging')
+    const app = initializeApp({ projectId: 'notification-service-fcm-smoke' }, `notification-service-fcm-smoke-${Date.now()}`)
+
+    try {
+      expect(getMessaging(app)).toBeDefined()
+    } finally {
+      await deleteApp(app)
+    }
   })
 })
