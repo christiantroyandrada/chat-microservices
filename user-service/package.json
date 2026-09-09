@@ -52,6 +52,9 @@
   },
   "overrides": {
     "test-exclude": "7.0.1",
-    "diff": "^8.0.3"
+    "diff": "^8.0.3",
+    "brace-expansion@2": "2.1.4",
+    "body-parser": "2.3.0",
+    "qs": "6.16.0"
   }
 }

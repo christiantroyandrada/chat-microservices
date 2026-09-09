@@ -53,6 +53,10 @@
   "overrides": {
     "test-exclude": "7.0.1",
     "diff": "^8.0.3",
-    "fast-xml-parser": "^5.3.4"
+    "fast-xml-parser": "5.11.1",
+    "brace-expansion@2": "2.1.4",
+    "body-parser": "2.3.0",
+    "qs": "6.16.0",
+    "websocket-driver": "0.7.5"
   }
 }
