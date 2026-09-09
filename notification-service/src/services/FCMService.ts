@@ -1,13 +1,10 @@
-import admin from 'firebase-admin'
+import { applicationDefault, getApps, initializeApp } from 'firebase-admin/app'
+import { getMessaging } from 'firebase-admin/messaging'
 import type { FCMMessagePayload } from '../types'
 import { logInfo, logWarn, logError } from '../utils/logger'
 
 let firebaseInitialized = false
 
-/**
- * Lazily initialize Firebase Admin SDK on first use.
- * Returns true if Firebase is ready, false otherwise.
- */
 function ensureFirebaseInitialized(): boolean {
   if (firebaseInitialized) return true
   if (!process.env.GOOGLE_APPLICATION_CREDENTIALS) {
@@ -15,9 +12,7 @@ function ensureFirebaseInitialized(): boolean {
     return false
   }
   try {
-    admin.initializeApp({
-      credential: admin.credential.applicationDefault(),
-    })
+    if (getApps().length === 0) initializeApp({ credential: applicationDefault() })
     firebaseInitialized = true
     logInfo('[FCMService] Firebase Admin SDK initialized')
     return true
@@ -28,11 +23,6 @@ function ensureFirebaseInitialized(): boolean {
 }
 
 export const FCMService = {
-  /**
-   * Send a push notification. When `data` is provided it will be attached
-   * to the message as the data payload (suitable for forwarding ciphertext to the client).
-   * The visible `body` should never contain decrypted plaintext for E2EE messages.
-   */
   sendPushNotification: async (token: string, message: string, data?: Record<string, string>) => {
     if (!ensureFirebaseInitialized()) return
 
@@ -49,7 +39,7 @@ export const FCMService = {
     }
 
     try {
-      await admin.messaging().send(payload)
+      await getMessaging().send(payload)
       logInfo('Push notification sent successfully')
     } catch (err) {
       logError('Error sending notification', err)

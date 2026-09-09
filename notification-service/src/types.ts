@@ -16,7 +16,6 @@ export interface AuthenticatedRequest extends Express.Request {
 }
 // Extended request type used by any authenticated endpoints in notification-service
 
-// Brevo (SendinBlue) email payload
 export interface BrevoEmailPayload {
   sender: {
     email: string
@@ -26,8 +25,8 @@ export interface BrevoEmailPayload {
   subject: string
   htmlContent: string
   textContent?: string
+  attachment?: Array<{ name: string; content: string }>
 }
-// Used by `notification-service/src/services/SecureEmailService.ts` when sending emails
 
 // Brevo account info response
 export interface BrevoAccountInfo {

@@ -1,20 +1,14 @@
 import axios, { AxiosInstance } from 'axios'
-import nodemailer from 'nodemailer'
+import nodemailer, { type SendMailOptions, type Transporter } from 'nodemailer'
 import config from '../config/config'
 import { logInfo, logWarn, logError } from '../utils/logger'
 import type { BrevoEmailPayload, BrevoAccountInfo, AxiosErrorResponse } from '../types'
 
 type Attachment = { filename: string; contentBase64: string; cid?: string }
 
-/**
- * SecureEmailService — a thin, secure wrapper around the Brevo (SendinBlue)
- * HTTP API using axios. This replaces the previous vulnerable
- * sib-api-v3-typescript dependency and provides a compatible
- * sendEmail(...) method so existing callers don't need immediate changes.
- */
 export class SecureEmailService {
   private readonly client: AxiosInstance
-  private smtpTransport: ReturnType<typeof nodemailer.createTransport> | null = null
+  private smtpTransport: Transporter | null = null
 
   constructor() {
     if (!config.SENDINBLUE_APIKEY) {
@@ -32,9 +26,6 @@ export class SecureEmailService {
     })
   }
 
-  /**
-   * Send a transactional email via SendinBlue/Brevo
-   */
   async sendTransactionalEmail(
     to: string,
     subject: string,
@@ -51,25 +42,28 @@ export class SecureEmailService {
     }
 
     try {
-      // Prefer SMTP relay when configured so we can attach inline images (CID)
       if (config.smtp && config.smtp.host && config.smtp.user && config.smtp.pass) {
         if (!this.smtpTransport) {
           this.smtpTransport = nodemailer.createTransport({
             host: config.smtp.host,
             port: Number(config.smtp.port) || 587,
-            secure: Number(config.smtp.port) === 465, // true for 465, false for 587
+            secure: Number(config.smtp.port) === 465,
             auth: {
               user: config.smtp.user,
               pass: config.smtp.pass
-            }
+            },
+            disableFileAccess: true,
+            disableUrlAccess: true,
           })
         }
 
-        const mailOptions: nodemailer.SendMailOptions = {
+        const mailOptions: SendMailOptions = {
           from: `${'Chat Service'} <${config.EMAIL_FROM}>`,
           to,
           subject,
           html: htmlContent,
+          disableFileAccess: true,
+          disableUrlAccess: true,
         }
 
         if (attachments && attachments.length) {
@@ -93,9 +87,6 @@ export class SecureEmailService {
       }
 
       if (attachments && attachments.length) {
-        // Brevo expects an `attachment` array with { name, content } base64
-        // Note: inline CID behavior may vary with provider; this is a best-effort fallback.
-        // @ts-ignore
         payload.attachment = attachments.map(a => ({ name: a.filename, content: a.contentBase64 }))
       }
 
@@ -104,10 +95,8 @@ export class SecureEmailService {
       logInfo('[SecureEmailService] Email sent successfully:', response.data.messageId)
       return { messageId: response.data.messageId }
     } catch (err: unknown) {
-      // Use axios helper type guard when available
       if (axios.isAxiosError(err)) {
         if (err.response) {
-          // API returned an error response
           const errorResponse = err.response as AxiosErrorResponse
           logError('[SecureEmailService] API error:', {
             status: errorResponse.status,
@@ -115,20 +104,15 @@ export class SecureEmailService {
           })
           throw new Error(`SendinBlue API error: ${errorResponse.status} - ${JSON.stringify(errorResponse.data)}`)
         } else if (err.request) {
-          // Request made but no response received
           logError('[SecureEmailService] Network error:', err.message)
           throw new Error(`SendinBlue network error: ${err.message}`)
         }
       }
-      // Fallback for non-axios errors
-  logError('[SecureEmailService] Unexpected error:', err)
+      logError('[SecureEmailService] Unexpected error:', err)
       throw err
     }
   }
 
-  /**
-   * Check account info to verify API key is valid
-   */
   async getAccount(): Promise<BrevoAccountInfo> {
     try {
       const response = await this.client.get('/account')
@@ -143,9 +127,6 @@ export class SecureEmailService {
     }
   }
 
-  /**
-   * Compatibility wrapper for the legacy EmailService.sendEmail signature
-   */
   async sendEmail(to: string, subject: string, content: string, attachments?: { filename: string; contentBase64: string; cid?: string }[]) {
     await this.sendTransactionalEmail(to, subject, content, undefined, attachments).catch((err) => {
       logError('[SecureEmailService] sendEmail failed:', err)
