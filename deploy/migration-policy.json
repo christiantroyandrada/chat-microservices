@@ -1,0 +1,29 @@
+{
+  "migrations": [
+    {
+      "path": "chat-service/src/database/migrations/1733150000000-InitialSchema.ts",
+      "sha256": "35ea37058e4d1e4edc566153385df79e0e9f1050244d57f6b95b8207f607755c",
+      "classification": "backward-compatible"
+    },
+    {
+      "path": "chat-service/src/database/migrations/1740000000000-AddPerformanceIndexes.ts",
+      "sha256": "d298a42307b7ef51af337d06d43f752410b6b43b028127ed76b8a016bcdc187f",
+      "classification": "backward-compatible"
+    },
+    {
+      "path": "notification-service/src/database/migrations/1733150000000-InitialSchema.ts",
+      "sha256": "945a2e8ee0ba7d2089cdce647f31f77e89c8f2845f103ab7c478b42a67774490",
+      "classification": "backward-compatible"
+    },
+    {
+      "path": "user-service/src/database/migrations/1733150000000-InitialSchema.ts",
+      "sha256": "3ac8e9601ac0d27083971ede8f605e73cae17d194f927bb770b333de288ed0ea",
+      "classification": "backward-compatible"
+    },
+    {
+      "path": "user-service/src/database/migrations/1740000000000-AddTrigramSearchIndexes.ts",
+      "sha256": "4dce05ffa9ee033ed701eab3d12068b32204bc9abed191f00927f1c1f168a271",
+      "classification": "backward-compatible"
+    }
+  ]
+}

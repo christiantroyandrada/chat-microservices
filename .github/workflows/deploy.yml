@@ -76,6 +76,9 @@ jobs:
             exit 1
           fi
 
+      - name: Verify migration policy
+        run: node scripts/verify-migration-policy.mjs
+
       - name: Deploy owned backend release
         uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1.2.5
         env:
@@ -96,11 +99,12 @@ jobs:
           DB_USER_SVC_PASS: ${{ env.DB_USER_SVC_PASS }}
           DB_CHAT_SVC_PASS: ${{ env.DB_CHAT_SVC_PASS }}
           DB_NOTIF_SVC_PASS: ${{ env.DB_NOTIF_SVC_PASS }}
+          MIGRATIONS_ROLLBACK_SAFE: 'true'
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_PRIVATE_KEY }}
           port: ${{ secrets.VPS_PORT }}
           command_timeout: 30m
-          envs: ADMIN_USERNAME,ADMIN_PASSWORD,ADMIN_PASSWORD_ENCODED,CORS_ORIGINS,MESSAGE_BROKER_URL,SENDINBLUE_APIKEY,SMTP_HOST,SMTP_PASS,SMTP_USER,EMAIL_FROM,PGADMIN_EMAIL,GITHUB_TOKEN,IMAGE_TAG,REPO_OWNER,DB_USER_SVC_PASS,DB_CHAT_SVC_PASS,DB_NOTIF_SVC_PASS
+          envs: ADMIN_USERNAME,ADMIN_PASSWORD,ADMIN_PASSWORD_ENCODED,CORS_ORIGINS,MESSAGE_BROKER_URL,SENDINBLUE_APIKEY,SMTP_HOST,SMTP_PASS,SMTP_USER,EMAIL_FROM,PGADMIN_EMAIL,GITHUB_TOKEN,IMAGE_TAG,REPO_OWNER,DB_USER_SVC_PASS,DB_CHAT_SVC_PASS,DB_NOTIF_SVC_PASS,MIGRATIONS_ROLLBACK_SAFE
           script_path: deploy/release-backend.sh

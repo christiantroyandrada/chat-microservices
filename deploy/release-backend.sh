@@ -5,6 +5,7 @@ DEPLOY_PATH="${DEPLOY_PATH:-/opt/chat-app}"
 SERVICE_DIR="$DEPLOY_PATH/chat-microservices"
 COMPOSE_FILE="${BACKEND_COMPOSE_FILE:-$SERVICE_DIR/backend.compose.yml}"
 STATE_FILE="${RELEASE_STATE_FILE:-$DEPLOY_PATH/release-state.env}"
+PENDING_STATE_FILE="${RELEASE_PENDING_STATE_FILE:-${STATE_FILE}.pending}"
 LOCK_PATH="${RELEASE_LOCK_PATH:-/opt/chat-app/.release.lock}"
 PROJECT_NAME="chat-microservices"
 REPO_OWNER="${REPO_OWNER:-}"
@@ -48,7 +49,7 @@ command -v flock >/dev/null 2>&1 || die "flock is required"
 exec 9>"$LOCK_PATH"
 flock -x 9
 cleanup() {
-  rm -f "${STATE_FILE}.tmp.$$" "${COMPOSE_FILE}.tmp.$$"
+  rm -f "${STATE_FILE}.tmp.$$" "${PENDING_STATE_FILE}.tmp.$$" "$PENDING_STATE_FILE" "${COMPOSE_FILE}.tmp.$$"
   exec 9>&- || true
 }
 trap cleanup EXIT
@@ -106,7 +107,7 @@ write_state() {
   [[ -f "$STATE_FILE" ]] && source="$STATE_FILE"
 
   if [[ "${RELEASE_FAIL_STATE_WRITE:-}" == "1" ]]; then
-    die "injected state-write failure"
+    return 1
   fi
 
   umask 077
@@ -144,6 +145,19 @@ write_state() {
     return 1
   fi
   mv -f "$tmp" "$STATE_FILE"
+}
+
+write_pending_state() {
+  local tmp="${PENDING_STATE_FILE}.tmp.$$"
+  umask 077
+  cat > "$tmp" <<EOF
+user.pending=$USER_IMAGE_REF
+chat.pending=$CHAT_IMAGE_REF
+notification.pending=$NOTIFICATION_IMAGE_REF
+nginx.pending=$NGINX_IMAGE_REF
+EOF
+  chmod 600 "$tmp"
+  mv -f "$tmp" "$PENDING_STATE_FILE"
 }
 
 write_compose() {
@@ -379,12 +393,33 @@ verify_running_images() {
   done
 }
 
-deploy_images() {
+pull_images() {
   if [[ -n "${GITHUB_TOKEN:-}" ]]; then
     printf '%s' "$GITHUB_TOKEN" | docker login ghcr.io --username "$REPO_OWNER" --password-stdin || return 1
   fi
+  docker pull "$USER_IMAGE_REF" || return 1
+  docker pull "$CHAT_IMAGE_REF" || return 1
+  docker pull "$NOTIFICATION_IMAGE_REF" || return 1
+  docker pull "$NGINX_IMAGE_REF" || return 1
+}
+
+run_broker_preflight() {
+  [[ -n "${MESSAGE_BROKER_URL:-}" ]] || {
+    echo "release-backend: MESSAGE_BROKER_URL is required for broker preflight" >&2
+    return 1
+  }
+  docker run --rm --env MESSAGE_BROKER_URL "$CHAT_IMAGE_REF" build/src/preflight/brokerPreflight.js
+}
+
+deploy_candidate() {
+  [[ "${MIGRATIONS_ROLLBACK_SAFE:-}" == "true" ]] || {
+    echo "release-backend: MIGRATIONS_ROLLBACK_SAFE=true is required" >&2
+    return 1
+  }
+  write_pending_state || return 1
+  [[ "${RELEASE_FAIL_AFTER_PENDING:-}" != "1" ]] || return 1
+  write_compose || return 1
   ensure_dependencies || return 1
-  compose pull user chat notification nginx || return 1
   compose up -d postgres || return 1
   wait_for_postgres || return 1
   provision_database || return 1
@@ -393,21 +428,18 @@ deploy_images() {
   compose up -d --no-deps user chat notification nginx || return 1
   verify_running_images || return 1
   health_check || return 1
+  if (( TARGET_ALREADY_CURRENT == 0 )); then
+    write_state "$USER_IMAGE_REF" "$CHAT_IMAGE_REF" "$NOTIFICATION_IMAGE_REF" "$NGINX_IMAGE_REF" \
+      "${CURRENT_USER:-}" "${CURRENT_CHAT:-}" "${CURRENT_NOTIFICATION:-}" "${CURRENT_NGINX:-}"
+  fi
 }
 
 rollback() {
   local rollback_user rollback_chat rollback_notification rollback_nginx
-  if (( TARGET_ALREADY_CURRENT == 1 )); then
-    rollback_user="${PREVIOUS_USER:-}"
-    rollback_chat="${PREVIOUS_CHAT:-}"
-    rollback_notification="${PREVIOUS_NOTIFICATION:-}"
-    rollback_nginx="${PREVIOUS_NGINX:-}"
-  else
-    rollback_user="${CURRENT_USER:-}"
-    rollback_chat="${CURRENT_CHAT:-}"
-    rollback_notification="${CURRENT_NOTIFICATION:-}"
-    rollback_nginx="${CURRENT_NGINX:-}"
-  fi
+  rollback_user="${CURRENT_USER:-}"
+  rollback_chat="${CURRENT_CHAT:-}"
+  rollback_notification="${CURRENT_NOTIFICATION:-}"
+  rollback_nginx="${CURRENT_NGINX:-}"
   [[ -n "$rollback_user" && -n "$rollback_chat" &&
      -n "$rollback_notification" && -n "$rollback_nginx" ]] || {
     echo "release-backend: no complete rollback generation; refusing invented rollback" >&2
@@ -426,22 +458,18 @@ rollback() {
   else
     health_check || return 1
   fi
-  write_state "$rollback_user" "$rollback_chat" "$rollback_notification" "$rollback_nginx" \
-    "${IMAGE_USER_FAILED}" "${IMAGE_CHAT_FAILED}" "${IMAGE_NOTIFICATION_FAILED}" "${IMAGE_NGINX_FAILED}"
 }
 
-IMAGE_USER_FAILED="$USER_IMAGE_REF"
-IMAGE_CHAT_FAILED="$CHAT_IMAGE_REF"
-IMAGE_NOTIFICATION_FAILED="$NOTIFICATION_IMAGE_REF"
-IMAGE_NGINX_FAILED="$NGINX_IMAGE_REF"
-
-write_compose
-if (( TARGET_ALREADY_CURRENT == 0 )); then
-  write_state "$USER_IMAGE_REF" "$CHAT_IMAGE_REF" "$NOTIFICATION_IMAGE_REF" "$NGINX_IMAGE_REF" \
-    "${CURRENT_USER:-}" "${CURRENT_CHAT:-}" "${CURRENT_NOTIFICATION:-}" "${CURRENT_NGINX:-}"
+if ! pull_images; then
+  echo "release-backend: immutable image pull failed" >&2
+  exit 1
+fi
+if ! run_broker_preflight; then
+  echo "release-backend: broker preflight failed" >&2
+  exit 1
 fi
 
-if deploy_images; then
+if deploy_candidate; then
   echo "release-backend: deployed immutable backend release"
 else
   echo "release-backend: health or deployment failed; attempting exact rollback" >&2

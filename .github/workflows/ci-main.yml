@@ -90,6 +90,8 @@ jobs:
         run: |
           node --test tests/contract-artifacts.test.mjs tests/contract-verifier.test.mjs
           node scripts/verify-contract-artifacts.mjs
+          node --test tests/migration-policy.test.mjs
+          node scripts/verify-migration-policy.mjs
           node --test tests/deployment-workflow.test.mjs
           node scripts/verify-deployment-workflow.mjs
 

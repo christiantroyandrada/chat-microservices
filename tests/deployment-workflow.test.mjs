@@ -70,6 +70,8 @@ exit 0
     DATABASE_URL_USER: 'postgresql://user_svc:test@postgres:5432/chat_db',
     DATABASE_URL_CHAT: 'postgresql://chat_svc:test@postgres:5432/chat_db',
     DATABASE_URL_NOTIFICATION: 'postgresql://notif_svc:test@postgres:5432/chat_db',
+    MESSAGE_BROKER_URL: 'amqps://broker.example/vhost',
+    MIGRATIONS_ROLLBACK_SAFE: 'true',
     RELEASE_HEALTHCHECK_COMMAND: 'true',
     RELEASE_POLL_INTERVAL: '0',
     FAKE_DOCKER_LOG: log,
@@ -126,15 +128,44 @@ test('successful release preserves unowned state and never operates an unowned s
   assert.equal(names.filter(name => name.includes('.tmp.')).length, 0);
 });
 
-test('health failure rolls back to exact previous refs and restores state', async () => {
-  const h = await harness({ state: stateFor(), extraEnv: { RELEASE_HEALTHCHECK_COMMAND: 'false', RELEASE_ROLLBACK_HEALTHCHECK_COMMAND: 'true' } });
+test('candidate broker preflight follows immutable pulls and fails before state, migrations, or runtime mutation', async () => {
+  const initial = stateFor();
+  const h = await harness({
+    state: initial,
+    dockerBody: 'if [ "$1" = run ]; then exit 91; fi',
+  });
+  const result = run(h.env);
+  assert.notEqual(result.status, 0);
+  assert.equal(await readFile(path.join(h.root, 'release-state.env'), 'utf8'), initial);
+  const log = await readFile(h.log, 'utf8');
+  const preflight = log.indexOf('run --rm --env MESSAGE_BROKER_URL');
+  assert.ok(preflight > log.indexOf(`pull ghcr.io/acme/chat-chat-service:${sha}`), log);
+  assert.doesNotMatch(log, /compose .* (run|up -d)/);
+});
+
+test('pending candidate failures preserve verified state and are not treated as current on the next release', async () => {
+  const initial = stateFor();
+  const h = await harness({ state: initial, extraEnv: { RELEASE_FAIL_AFTER_PENDING: '1' } });
+  assert.notEqual(run(h.env).status, 0);
+  assert.equal(await readFile(path.join(h.root, 'release-state.env'), 'utf8'), initial);
+
+  assert.equal(run({ ...h.env, RELEASE_FAIL_AFTER_PENDING: '' }).status, 0);
+  const promoted = await readFile(path.join(h.root, 'release-state.env'), 'utf8');
+  assert.match(promoted, new RegExp(`^user\\.current=ghcr\\.io/acme/chat-user-service:${sha}$`, 'm'));
+  assert.match(promoted, new RegExp(`^user\\.previous=ghcr\\.io/acme/chat-user-service:${oldSha}$`, 'm'));
+});
+
+test('health failure keeps last-known-good state authoritative and rolls runtime back once', async () => {
+  const initial = stateFor();
+  const h = await harness({ state: initial, extraEnv: { RELEASE_HEALTHCHECK_COMMAND: 'false', RELEASE_ROLLBACK_HEALTHCHECK_COMMAND: 'true' } });
   const result = run(h.env);
   assert.notEqual(result.status, 0);
   const compose = await readFile(path.join(h.root, 'chat-microservices/backend.compose.yml'), 'utf8');
   assert.match(compose, new RegExp(`ghcr\\.io/acme/chat-user-service:${oldSha}`));
   const next = await readFile(path.join(h.root, 'release-state.env'), 'utf8');
   assert.match(next, new RegExp(`^user\.current=ghcr\\.io/acme/chat-user-service:${oldSha}$`, 'm'));
-  assert.match(next, new RegExp(`^user\.previous=ghcr\\.io/acme/chat-user-service:${sha}$`, 'm'));
+  assert.equal(next, initial);
+  assert.equal(((await readFile(h.log, 'utf8')).match(/ up -d --no-deps user chat notification nginx/g) || []).length, 2);
 });
 
 test('health failure with current-only state rolls back to the running release', async () => {
@@ -145,14 +176,15 @@ test('health failure with current-only state rolls back to the running release',
     `nginx.current=ghcr.io/acme/chat-nginx:${oldSha}`,
     '',
   ].join('\n');
-  const h = await harness({ state, extraEnv: { RELEASE_HEALTHCHECK_COMMAND: 'false', RELEASE_ROLLBACK_HEALTHCHECK_COMMAND: 'true' } });
+  const initial = state;
+  const h = await harness({ state: initial, extraEnv: { RELEASE_HEALTHCHECK_COMMAND: 'false', RELEASE_ROLLBACK_HEALTHCHECK_COMMAND: 'true' } });
   const result = run(h.env);
   assert.notEqual(result.status, 0);
   const compose = await readFile(path.join(h.root, 'chat-microservices/backend.compose.yml'), 'utf8');
   assert.match(compose, new RegExp(`ghcr\\.io/acme/chat-user-service:${oldSha}`));
   const next = await readFile(path.join(h.root, 'release-state.env'), 'utf8');
   assert.match(next, new RegExp(`^user\.current=ghcr\\.io/acme/chat-user-service:${oldSha}$`, 'm'));
-  assert.match(next, new RegExp(`^user\.previous=ghcr\\.io/acme/chat-user-service:${sha}$`, 'm'));
+  assert.equal(next, initial);
 });
 
 test('health failure with empty state fails closed without inventing rollback', async () => {
@@ -162,13 +194,14 @@ test('health failure with empty state fails closed without inventing rollback', 
   assert.match(`${result.stdout}\n${result.stderr}`, /current|rollback/i);
 });
 
-test('injected atomic state-write failure leaves the original state untouched', async () => {
+test('atomic promotion failure leaves state bytes untouched and rolls runtime back once', async () => {
   const initial = stateFor();
   const h = await harness({ state: initial, extraEnv: { RELEASE_FAIL_AFTER_STATE_TEMP: '1' } });
   const result = run(h.env);
   assert.notEqual(result.status, 0);
   assert.equal(await readFile(path.join(h.root, 'release-state.env'), 'utf8'), initial);
-  assert.equal(await readFile(h.log, 'utf8').catch(() => ''), '');
+  const log = await readFile(h.log, 'utf8');
+  assert.equal((log.match(/ up -d --no-deps user chat notification nginx/g) || []).length, 2);
   const names = await readdir(h.root);
   assert.equal(names.filter(name => name.includes('.tmp.')).length, 0);
 });
@@ -187,7 +220,7 @@ test('same immutable generation converges runtime and preserves previous refs', 
   assert.match(next, new RegExp(`^user\\.previous=ghcr\\.io/acme/chat-user-service:${olderSha}$`, 'm'));
 });
 
-test('interrupted retry rolls back to the complete previous generation', async () => {
+test('a verified current generation remains the rollback target during runtime reconciliation', async () => {
   const h = await harness({
     state: stateFor(sha),
     extraEnv: {
@@ -202,15 +235,15 @@ test('interrupted retry rolls back to the complete previous generation', async (
   const result = run(h.env);
   assert.notEqual(result.status, 0);
   const compose = await readFile(path.join(h.root, 'chat-microservices/backend.compose.yml'), 'utf8');
-  assert.match(compose, new RegExp(`ghcr\\.io/acme/chat-user-service:${olderSha}`));
-  assert.match(compose, new RegExp(`ghcr\\.io/acme/chat-chat-service:${olderSha}`));
-  assert.match(compose, new RegExp(`ghcr\\.io/acme/chat-notification-service:${olderSha}`));
-  assert.match(compose, new RegExp(`ghcr\\.io/acme/chat-nginx:${olderSha}`));
+  assert.match(compose, new RegExp(`ghcr\\.io/acme/chat-user-service:${sha}`));
+  assert.match(compose, new RegExp(`ghcr\\.io/acme/chat-chat-service:${sha}`));
+  assert.match(compose, new RegExp(`ghcr\\.io/acme/chat-notification-service:${sha}`));
+  assert.match(compose, new RegExp(`ghcr\\.io/acme/chat-nginx:${sha}`));
   const next = await readFile(path.join(h.root, 'release-state.env'), 'utf8');
-  assert.match(next, new RegExp(`^user\\.current=ghcr\\.io/acme/chat-user-service:${olderSha}$`, 'm'));
-  assert.match(next, new RegExp(`^user\\.previous=ghcr\\.io/acme/chat-user-service:${sha}$`, 'm'));
-  assert.match(next, new RegExp(`^nginx\\.current=ghcr\\.io/acme/chat-nginx:${olderSha}$`, 'm'));
-  assert.match(next, new RegExp(`^nginx\\.previous=ghcr\\.io/acme/chat-nginx:${sha}$`, 'm'));
+  assert.match(next, new RegExp(`^user\\.current=ghcr\\.io/acme/chat-user-service:${sha}$`, 'm'));
+  assert.match(next, new RegExp(`^user\\.previous=ghcr\\.io/acme/chat-user-service:${olderSha}$`, 'm'));
+  assert.match(next, new RegExp(`^nginx\\.current=ghcr\\.io/acme/chat-nginx:${sha}$`, 'm'));
+  assert.match(next, new RegExp(`^nginx\\.previous=ghcr\\.io/acme/chat-nginx:${olderSha}$`, 'm'));
 });
 
 test('production health parser rejects unhealthy instead of substring-matching healthy', async () => {

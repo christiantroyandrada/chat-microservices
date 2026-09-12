@@ -15,6 +15,8 @@ requireText(ci, /uses:\s+\.\/\.github\/workflows\/deploy\.yml/, 'main CI must ca
 requireText(ci, /with:\s*\n\s*image_tag:\s*\$\{\{\s*github\.sha\s*\}\}/, 'main CI must pass its commit SHA');
 requireText(ci, /node --test tests\/deployment-workflow\.test\.mjs/, 'main CI must run deployment workflow tests');
 requireText(ci, /node scripts\/verify-deployment-workflow\.mjs/, 'main CI must run the deployment verifier');
+requireText(ci, /node --test tests\/migration-policy\.test\.mjs/, 'main CI must run migration policy tests');
+requireText(ci, /node scripts\/verify-migration-policy\.mjs/, 'main CI must verify migration policy before deployment');
 assert.doesNotMatch(ci.slice(ci.indexOf('\n  deploy:')), /appleboy\/ssh-action|script:\s*\|/, 'main CI must not embed remote deploy code');
 
 requireText(deploy, /workflow_call:/, 'release workflow must support workflow_call');
@@ -23,6 +25,9 @@ requireText(deploy, /image_tag:[\s\S]*required:\s*true/, 'manual release must re
 requireText(deploy, /actions\/checkout@[0-9a-f]{40}/, 'release workflow must checkout an exact revision');
 requireText(deploy, /appleboy\/ssh-action@[0-9a-f]{40}/, 'SSH action must remain pinned');
 requireText(deploy, /script_path:\s*deploy\/release-backend\.sh/, 'SSH action must invoke the checked-out script');
+requireText(deploy, /name:\s*Verify migration policy[\s\S]*node scripts\/verify-migration-policy\.mjs/, 'manual release must verify migration policy before SSH');
+requireText(deploy, /MIGRATIONS_ROLLBACK_SAFE:\s*['"]true['"]/, 'manual release must pass the verified migration flag');
+requireText(deploy, /envs:.*MIGRATIONS_ROLLBACK_SAFE/, 'SSH must receive the verified migration flag');
 assert.doesNotMatch(deploy, /chat-frontend|frontend:|:latest\b/, 'release workflow must not consume mutable or unowned images');
 
 requireText(release, /LOCK_PATH="\$\{RELEASE_LOCK_PATH:-\/opt\/chat-app\/\.release\.lock\}"/, 'release must use the shared host lock');
@@ -48,6 +53,26 @@ requireText(release, /GRANT SELECT,\s*INSERT,\s*UPDATE,\s*DELETE ON users, preke
 requireText(release, /GRANT SELECT,\s*INSERT,\s*UPDATE,\s*DELETE ON messages TO chat_svc/, 'release must restore chat table grants');
 requireText(release, /GRANT SELECT,\s*INSERT,\s*UPDATE,\s*DELETE ON notifications TO notif_svc/, 'release must restore notification table grants');
 requireText(release, /RELEASE_HEALTH_TIMEOUT|RELEASE_HEALTH_MAX_ATTEMPTS/, 'health checks must be bounded and poll');
+requireText(release, /docker pull "\$USER_IMAGE_REF"/, 'release must pull immutable candidate images directly');
+requireText(release, /docker run --rm --env MESSAGE_BROKER_URL "\$CHAT_IMAGE_REF" build\/src\/preflight\/brokerPreflight\.js/, 'broker preflight must run inside the immutable candidate chat image without printing the URL');
+requireText(release, /MIGRATIONS_ROLLBACK_SAFE:-.*== "true"/, 'release must require an explicitly verified migration flag');
+requireText(release, /PENDING_STATE_FILE/, 'release must prepare non-authoritative pending state');
+const releaseFlow = release.slice(release.lastIndexOf('if ! pull_images'));
+for (const [earlier, later] of [
+  ['pull_images', 'run_broker_preflight'],
+  ['run_broker_preflight', 'deploy_candidate'],
+]) assert.ok(releaseFlow.indexOf(earlier) < releaseFlow.indexOf(later), `${earlier} must precede ${later}`);
+const candidateFlow = release.slice(release.indexOf('deploy_candidate()'), release.indexOf('\nrollback()'));
+for (const [earlier, later] of [
+  ['MIGRATIONS_ROLLBACK_SAFE', 'write_pending_state'],
+  ['write_pending_state', 'run_migrations'],
+  ['run_migrations', 'up -d --no-deps user chat notification nginx'],
+  ['up -d --no-deps user chat notification nginx', 'verify_running_images'],
+  ['verify_running_images', 'health_check'],
+  ['health_check', 'write_state'],
+]) assert.ok(candidateFlow.indexOf(earlier) < candidateFlow.indexOf(later), `${earlier} must precede ${later}`);
+const rollback = release.slice(release.indexOf('rollback()'), release.lastIndexOf('if ! pull_images'));
+assert.doesNotMatch(rollback, /write_state/, 'rollback must preserve authoritative release state');
 assert.doesNotMatch(release, /DROP\s+SCHEMA|docker\s+system\s+prune/, 'release must not destructively reset the database or global Docker state');
 assert.doesNotMatch(release, /(^|[^A-Za-z])frontend([^A-Za-z]|$)|docker\s+(volume|container)\s+prune|docker\s+image\s+prune/, 'release must not alter unowned services or prune shared state');
 
