@@ -42,10 +42,7 @@ jobs:
 
       - name: Run npm audit
         working-directory: ${{ matrix.service }}
-        run: |
-          # Report high and critical vulnerabilities (non-blocking)
-          npm audit --audit-level=high
-        continue-on-error: true
+        run: npm audit --omit=dev --audit-level=low
 
       - name: Generate audit report (JSON)
         if: always()
@@ -94,7 +91,6 @@ jobs:
           exit-code: '1'
           severity: 'CRITICAL,HIGH'
           ignore-unfixed: true
-        continue-on-error: true
 
       - name: Upload Trivy results to GitHub Security tab
         # Upload SARIF only for non-fork runs. Forked PRs do not have permission to call the

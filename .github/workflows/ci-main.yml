@@ -120,7 +120,7 @@ jobs:
   # Build and push Docker images to GitHub Container Registry
   docker-build:
     name: Build & Push Docker Images
-    needs: integration-tests
+    needs: [integration-tests, security-audit]
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 20
