@@ -102,8 +102,6 @@ jobs:
 
   unit-tests:
     name: Unit Tests & Coverage
-    # Runs after typescript-check; does NOT wait for security-audit
-    # so audit findings never block tests or deployment
     needs: verify-openapi-contracts
     if: github.ref == 'refs/heads/main'
     uses: ./.github/workflows/unit-tests.yml
