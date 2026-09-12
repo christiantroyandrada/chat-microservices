@@ -17,3 +17,4 @@ Thumbs.db
 certbot/
 # Temporary compose file for ACME challenge (auto-deleted)
 docker-compose.acme.yml
+.worktrees/
