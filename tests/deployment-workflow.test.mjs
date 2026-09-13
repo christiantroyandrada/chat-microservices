@@ -139,8 +139,38 @@ test('candidate broker preflight follows immutable pulls and fails before state,
   assert.equal(await readFile(path.join(h.root, 'release-state.env'), 'utf8'), initial);
   const log = await readFile(h.log, 'utf8');
   const preflight = log.indexOf('run --rm --env MESSAGE_BROKER_URL');
-  assert.ok(preflight > log.indexOf(`pull ghcr.io/acme/chat-chat-service:${sha}`), log);
+  assert.ok(preflight >= 0, 'preflight must be attempted');
+  for (const image of [
+    `pull ghcr.io/acme/chat-user-service:${sha}`,
+    `pull ghcr.io/acme/chat-chat-service:${sha}`,
+    `pull ghcr.io/acme/chat-notification-service:${sha}`,
+    `pull ghcr.io/acme/chat-nginx:${sha}`,
+  ]) {
+    const idx = log.indexOf(image);
+    assert.ok(idx >= 0, `${image} must be pulled`);
+    assert.ok(preflight > idx, `${image} must precede preflight`);
+  }
   assert.doesNotMatch(log, /compose .* (run|up -d)/);
+  // pending state must not be created before preflight success
+  const pendingExists = await readFile(path.join(h.root, 'release-state.env.pending'), 'utf8').then(() => true).catch(() => false);
+  assert.equal(pendingExists, false, 'pending state must not be created on preflight failure');
+});
+
+test('failed pull or preflight does not create persistent JWT secret and leaves state/runtime untouched', async () => {
+  const initial = stateFor();
+  for (const dockerBody of ['if [ "$1" = pull ]; then exit 91; fi', 'if [ "$1" = run ]; then exit 91; fi']) {
+    const failH = await harness({ state: initial, dockerBody });
+    const sPath = path.join(failH.root, '.jwt_secret');
+    const secretBefore = await readFile(sPath, 'utf8').then(() => true).catch(() => false);
+    assert.equal(secretBefore, false, 'secret must be absent before test');
+    const result = run(failH.env);
+    assert.notEqual(result.status, 0);
+    const secretAfter = await readFile(sPath, 'utf8').then(() => true).catch(() => false);
+    assert.equal(secretAfter, false, 'secret file must remain absent after pull/preflight failure');
+    assert.equal(await readFile(path.join(failH.root, 'release-state.env'), 'utf8'), initial);
+    const log = await readFile(failH.log, 'utf8').catch(() => '');
+    assert.doesNotMatch(log, /compose .* (run|up -d)/);
+  }
 });
 
 test('pending candidate failures preserve verified state and are not treated as current on the next release', async () => {

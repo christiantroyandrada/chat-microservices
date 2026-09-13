@@ -30,4 +30,19 @@ describe('runBrokerPreflight', () => {
     expect(channel.close).toHaveBeenCalledTimes(1)
     expect(connection.close).toHaveBeenCalledTimes(1)
   })
+
+  it('always attempts connection close when channel close rejects', async () => {
+    const channel = { close: jest.fn().mockRejectedValue(new Error('channel fail')) }
+    const connection = { createChannel: jest.fn().mockResolvedValue(channel), close: jest.fn().mockResolvedValue(undefined) }
+    const connect = jest.fn().mockResolvedValue(connection)
+
+    await expect(runBrokerPreflight(brokerUrl, client(connect))).rejects.toThrow('broker preflight failed')
+    // second call would double-count, so verify credentials not leaked via single invocation
+    const channel2 = { close: jest.fn().mockRejectedValue(new Error('channel fail')) }
+    const connection2 = { createChannel: jest.fn().mockResolvedValue(channel2), close: jest.fn().mockResolvedValue(undefined) }
+    const connect2 = jest.fn().mockResolvedValue(connection2)
+    await expect(runBrokerPreflight(brokerUrl, client(connect2))).rejects.not.toThrow('super-secret')
+    expect(connection.close).toHaveBeenCalledTimes(1)
+    expect(connection2.close).toHaveBeenCalledTimes(1)
+  })
 })

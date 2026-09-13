@@ -30,6 +30,10 @@ export async function runBrokerPreflight(url = process.env.MESSAGE_BROKER_URL, c
   }
   try {
     await channel?.close()
+  } catch {
+    failed = true
+  }
+  try {
     await connection?.close()
   } catch {
     failed = true

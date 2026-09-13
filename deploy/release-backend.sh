@@ -55,12 +55,6 @@ cleanup() {
 trap cleanup EXIT
 
 JWT_SECRET_FILE="$DEPLOY_PATH/.jwt_secret"
-if [[ ! -s "$JWT_SECRET_FILE" ]]; then
-  umask 077
-  openssl rand -base64 64 | tr -d '\n' > "$JWT_SECRET_FILE"
-fi
-JWT_SECRET="$(<"$JWT_SECRET_FILE")"
-export JWT_SECRET
 
 while IFS='=' read -r key value; do
   case "$key" in
@@ -416,6 +410,12 @@ deploy_candidate() {
     echo "release-backend: MIGRATIONS_ROLLBACK_SAFE=true is required" >&2
     return 1
   }
+  if [[ ! -s "$JWT_SECRET_FILE" ]]; then
+    umask 077
+    openssl rand -base64 64 | tr -d '\n' > "$JWT_SECRET_FILE"
+  fi
+  JWT_SECRET="$(<"$JWT_SECRET_FILE")"
+  export JWT_SECRET
   write_pending_state || return 1
   [[ "${RELEASE_FAIL_AFTER_PENDING:-}" != "1" ]] || return 1
   write_compose || return 1
