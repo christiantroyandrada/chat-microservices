@@ -19,6 +19,8 @@ const encrypted = { encrypted: 'ct', iv: 'iv', salt: 'salt', version: 1, deviceI
 const keyOf = (u: string, d: string) => `${u}:${d}`
 
 type Hooks = {
+  failConnect?: unknown
+  failStartTransaction?: unknown
   failQuery?: unknown
   failFind?: unknown
   failSave?: unknown
@@ -27,28 +29,40 @@ type Hooks = {
   failRelease?: unknown
 }
 
-// Fake QueryRunner + repository over an in-memory row map. The fakes record the
-// observable call order and persist into the shared map so tests assert real
-// transaction/repository state, not mock presence.
+// Fake QueryRunner + repository over an in-memory row map. Each QueryRunner
+// stages writes locally (visible to its own subsequent reads) and publishes to
+// the shared map only on successful commit; rollback discards the staged rows.
+// This models real transaction isolation: failed saves/commits leave shared
+// bytes unchanged. The advisory-lock mutex behavior is unchanged.
 function setup(store = new Map<string, any>(), hooks: Hooks = {}) {
   const order: string[] = []
+  const staged = new Map<string, any>()
   const repo: any = {
     findOne: jest.fn(async (opts: any) => {
       order.push('findOne')
       if (hooks.failFind) throw hooks.failFind
-      return store.get(keyOf(opts.where.userId, opts.where.deviceId))
+      const k = keyOf(opts.where.userId, opts.where.deviceId)
+      if (staged.has(k)) return staged.get(k)
+      const row = store.get(k)
+      return row === undefined ? row : structuredClone(row)
     }),
     create: jest.fn((v: any) => ({ ...v })),
     save: jest.fn(async (entity: any) => {
       order.push('save')
       if (hooks.failSave) throw hooks.failSave
-      store.set(keyOf(entity.userId, entity.deviceId), entity)
+      staged.set(keyOf(entity.userId, entity.deviceId), entity)
       return entity
     }),
   }
   const qr: any = {
-    connect: jest.fn(async () => { order.push('connect') }),
-    startTransaction: jest.fn(async () => { order.push('startTransaction') }),
+    connect: jest.fn(async () => {
+      order.push('connect')
+      if (hooks.failConnect) throw hooks.failConnect
+    }),
+    startTransaction: jest.fn(async () => {
+      order.push('startTransaction')
+      if (hooks.failStartTransaction) throw hooks.failStartTransaction
+    }),
     query: jest.fn(async (sql: string, params: any[]) => {
       order.push(`lock:${params?.[0]}`)
       if (hooks.failQuery) throw hooks.failQuery
@@ -57,10 +71,15 @@ function setup(store = new Map<string, any>(), hooks: Hooks = {}) {
     commitTransaction: jest.fn(async () => {
       order.push('commit')
       if (hooks.failCommit) throw hooks.failCommit
+      for (const [k, v] of staged) store.set(k, v)
+      staged.clear()
     }),
     rollbackTransaction: jest.fn(async () => {
-      order.push('rollback')
-      if (hooks.failRollback) throw hooks.failRollback
+      try {
+        if (hooks.failRollback) throw hooks.failRollback
+      } finally {
+        staged.clear()
+      }
     }),
     release: jest.fn(async () => {
       order.push('release')
@@ -99,6 +118,27 @@ describe('PrekeyMutationService', () => {
     expect(result).toEqual({ created: false })
     expect(repo.save).toHaveBeenCalledTimes(1)
     expect(store.get(keyOf(userId, deviceId)).bundle).toEqual({ ...published, _encryptedKeyBundle: encrypted })
+  })
+
+  it('catches a backup-overwriting publish: conflicting caller _encryptedKeyBundle preserves the stored backup', async () => {
+    const seed = { userId, deviceId, bundle: { identityKey: 'old', registrationId: 1, signedPreKey: { id: 1, publicKey: 'o', signature: 'o' }, preKeys: [{ id: 1, publicKey: 'o' }], _encryptedKeyBundle: encrypted } }
+    const { store } = setup(new Map([[keyOf(userId, deviceId), seed]]))
+    const hostile = { ...published, _encryptedKeyBundle: { encrypted: 'evil', iv: 'evil', salt: 'evil', version: 9, deviceId } }
+
+    const result = await new PrekeyMutationService().publish(userId, deviceId, hostile as any)
+
+    expect(result).toEqual({ created: false })
+    expect(store.get(keyOf(userId, deviceId)).bundle).toEqual({ ...published, _encryptedKeyBundle: encrypted })
+  })
+
+  it('catches a backup-injecting publish: create never persists caller-supplied _encryptedKeyBundle', async () => {
+    const { store } = setup()
+    const hostile = { ...published, _encryptedKeyBundle: { encrypted: 'evil', iv: 'evil', salt: 'evil', version: 9, deviceId } }
+
+    const result = await new PrekeyMutationService().publish(userId, deviceId, hostile as any)
+
+    expect(result).toEqual({ created: true })
+    expect(store.get(keyOf(userId, deviceId)).bundle).toEqual(published)
   })
 
   it('catches a lost backup write: creates the row with bundle and backup timestamp', async () => {
@@ -181,14 +221,17 @@ describe('PrekeyMutationService', () => {
     ['merge/save', { failSave: new Error('fail:save') }],
     ['commit', { failCommit: new Error('fail:commit') }],
   ])('catches a leaked transaction: %s failure rolls back, releases, and rethrows the primary error', async (_label, hooks) => {
-    const { order, qr } = setup(new Map(), hooks as Hooks)
+    const seed = { userId, deviceId, bundle: { identityKey: 'old', registrationId: 1, signedPreKey: { id: 1, publicKey: 'o', signature: 'o' }, preKeys: [{ id: 9, publicKey: 'old' }] } }
+    const { store, order, qr } = setup(new Map([[keyOf(userId, deviceId), seed]]), hooks as Hooks)
     const primary = Object.values(hooks)[0] as Error
+    const before = JSON.stringify(store.get(keyOf(userId, deviceId)))
 
     await expect(new PrekeyMutationService().publish(userId, deviceId, published as any)).rejects.toThrow(primary.message)
 
     expect(qr.rollbackTransaction).toHaveBeenCalledTimes(1)
     expect(qr.release).toHaveBeenCalledTimes(1)
     expect(order[order.length - 1]).toBe('release')
+    expect(JSON.stringify(store.get(keyOf(userId, deviceId)))).toBe(before)
   })
 
   it('catches swallowed cleanup: rollback failure still releases and preserves the primary error', async () => {
@@ -208,6 +251,53 @@ describe('PrekeyMutationService', () => {
 
     expect(qr.rollbackTransaction).toHaveBeenCalledTimes(1)
     expect(qr.release).toHaveBeenCalledTimes(1)
+  })
+
+  it('catches a phantom write: commit failure leaves the shared row unchanged', async () => {
+    const seed = { userId, deviceId, bundle: { identityKey: 'old', registrationId: 1, signedPreKey: { id: 1, publicKey: 'o', signature: 'o' }, preKeys: [{ id: 9, publicKey: 'old' }] } }
+    const before = JSON.stringify(seed)
+    const { store, qr } = setup(new Map([[keyOf(userId, deviceId), seed]]), { failCommit: new Error('fail:commit') })
+
+    await expect(new PrekeyMutationService().publish(userId, deviceId, published as any)).rejects.toThrow('fail:commit')
+
+    expect(qr.rollbackTransaction).toHaveBeenCalledTimes(1)
+    expect(qr.release).toHaveBeenCalledTimes(1)
+    expect(JSON.stringify(store.get(keyOf(userId, deviceId)))).toBe(before)
+  })
+
+  it.each([
+    ['connect', { failConnect: new Error('fail:connect') }],
+    ['startTransaction', { failStartTransaction: new Error('fail:start') }],
+  ])('catches a skipped cleanup: %s failure still rolls back, releases once, and rethrows without touching the repository', async (_label, hooks) => {
+    const { store, order, repo, qr } = setup(new Map(), hooks as Hooks)
+    const primary = Object.values(hooks)[0] as Error
+    const bytesBefore = JSON.stringify([...store.entries()])
+
+    await expect(new PrekeyMutationService().publish(userId, deviceId, published as any)).rejects.toThrow(primary.message)
+
+    expect(qr.rollbackTransaction).toHaveBeenCalledTimes(1)
+    expect(qr.release).toHaveBeenCalledTimes(1)
+    expect(order[order.length - 1]).toBe('release')
+    expect(repo.findOne).not.toHaveBeenCalled()
+    expect(repo.save).not.toHaveBeenCalled()
+    expect(qr.commitTransaction).not.toHaveBeenCalled()
+    expect(JSON.stringify([...store.entries()])).toBe(bytesBefore)
+  })
+
+  it('catches a masked setup error: cleanup failures never hide the connect error', async () => {
+    const { repo, qr } = setup(new Map(), {
+      failConnect: new Error('fail:connect'),
+      failRollback: new Error('fail:rollback'),
+      failRelease: new Error('fail:release'),
+    })
+
+    await expect(new PrekeyMutationService().publish(userId, deviceId, published as any)).rejects.toThrow('fail:connect')
+
+    expect(qr.rollbackTransaction).toHaveBeenCalledTimes(1)
+    expect(qr.release).toHaveBeenCalledTimes(1)
+    expect(repo.findOne).not.toHaveBeenCalled()
+    expect(repo.save).not.toHaveBeenCalled()
+    expect(qr.commitTransaction).not.toHaveBeenCalled()
   })
 
   it('catches a publish/backup race: interleaved writers serialize into one row with both bundle halves', async () => {
@@ -280,5 +370,74 @@ describe('PrekeyMutationService', () => {
     expect(marks[3].startsWith('commit:')).toBe(true)
     expect(marks[0].slice('lock:'.length)).toBe(marks[1].slice('commit:'.length))
     expect(marks[2].slice('lock:'.length)).toBe(marks[3].slice('commit:'.length))
+  })
+
+  it('catches a double backup: concurrent same-user/same-device backups serialize into one write and one 24h throttle', async () => {
+    const store = new Map<string, any>()
+    const now = new Date('2026-09-01T00:00:00.000Z')
+    let locked = false
+    const waiters: Array<() => void> = []
+    const runners: any[] = []
+    const runnerFor = (tag: string) => {
+      const staged = new Map<string, any>()
+      const repo: any = {
+        findOne: jest.fn(async (opts: any) => {
+          const k = keyOf(opts.where.userId, opts.where.deviceId)
+          return staged.has(k) ? staged.get(k) : store.get(k)
+        }),
+        create: jest.fn((v: any) => ({ ...v })),
+        save: jest.fn(async (entity: any) => {
+          staged.set(keyOf(entity.userId, entity.deviceId), entity)
+          return entity
+        }),
+      }
+      const qr: any = {
+        connect: jest.fn().mockResolvedValue(undefined),
+        startTransaction: jest.fn().mockResolvedValue(undefined),
+        query: jest.fn(async (sql: string, params: any[]) => {
+          expect(sql).toBe(lockSQL)
+          expect(params).toEqual([lockId])
+          if (locked) await new Promise<void>((r) => waiters.push(r))
+          locked = true
+        }),
+        commitTransaction: jest.fn(async () => {
+          for (const [k, v] of staged) store.set(k, v)
+          staged.clear()
+          locked = false
+          waiters.shift()?.()
+        }),
+        rollbackTransaction: jest.fn(async () => {
+          staged.clear()
+          locked = false
+          waiters.shift()?.()
+        }),
+        release: jest.fn(async () => { /* release frees the connection; lock already freed by commit/rollback */ }),
+        manager: { getRepository: jest.fn(() => repo) },
+      }
+      ;(qr as any).__tag = tag
+      ;(qr as any).__repo = repo
+      runners.push(qr)
+      return qr
+    }
+
+    const svc = new PrekeyMutationService()
+    const spy = jest.spyOn(AppDataSource, 'createQueryRunner')
+    spy.mockReturnValueOnce(runnerFor('a')).mockReturnValueOnce(runnerFor('b'))
+
+    const [first, second] = await Promise.all([
+      svc.storeBackup(userId, deviceId, encrypted as any, now),
+      svc.storeBackup(userId, deviceId, encrypted as any, now),
+    ])
+
+    const sorted = [first, second].sort((x, y) => Number(x.created) - Number(y.created))
+    expect(sorted[0]).toEqual({ created: false, hoursRemaining: 24 })
+    expect(sorted[1]).toEqual({ created: true })
+    const saves = runners.map((qr) => (qr.__repo.save as jest.Mock).mock.calls.length)
+    expect(saves.sort()).toEqual([0, 1])
+    expect(store.size).toBe(1)
+    const row = store.get(keyOf(userId, deviceId))
+    expect(row.bundle).toEqual({ _encryptedKeyBundle: encrypted })
+    expect(row.lastBackupTimestamp).toEqual(now)
+    for (const qr of runners) expect(qr.release).toHaveBeenCalledTimes(1)
   })
 })

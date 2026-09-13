@@ -3,6 +3,7 @@ process.env.JWT_SECRET = process.env.JWT_SECRET || 'test_jwt_secret_which_is_lon
 
 import PrekeyController from '../../src/controllers/PrekeyController'
 import { PrekeyMutationService } from '../../src/services/PrekeyMutationService'
+import * as logger from '../../src/utils/logger'
 
 const userId = 'u1'
 const bundle = {
@@ -103,5 +104,27 @@ describe('PrekeyController mutations via PrekeyMutationService', () => {
     expect(storeBackup).not.toHaveBeenCalled()
     expect(next).toHaveBeenCalledTimes(1)
     expect(next.mock.calls[0][0].statusCode).toBe(400)
+  })
+
+  it('catches an unaudited backup failure: storeBackup rejection reaches next with a failed STORE_KEYS audit', async () => {
+    const failure = new Error('backup db down')
+    jest.spyOn(PrekeyMutationService.prototype, 'storeBackup').mockRejectedValue(failure)
+    const info = jest.spyOn(logger, 'logInfo').mockImplementation(() => undefined)
+    const { req, res, next } = reqRes({ deviceId: 'd1', encryptedBundle })
+
+    await PrekeyController.storeSignalKeys(req, res, next)
+
+    expect(res.json).not.toHaveBeenCalled()
+    expect(next).toHaveBeenCalledTimes(1)
+    expect(next.mock.calls[0][0]).toBe(failure)
+    const audits = info.mock.calls.filter((c) => String(c[0]).includes('STORE_KEYS'))
+    expect(audits).toHaveLength(1)
+    const line = String(audits[0][0])
+    expect(line).toContain('STORE_KEYS')
+    expect(line).toContain(`User: ${userId}`)
+    expect(line).toContain('Device: d1')
+    expect(line).toContain('IP: 127.0.0.1')
+    expect(line).toContain('FAILURE')
+    expect(line).toContain('backup db down')
   })
 })

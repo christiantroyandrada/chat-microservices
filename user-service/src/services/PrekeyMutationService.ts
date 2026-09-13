@@ -13,10 +13,10 @@ const ADVISORY_LOCK_SQL = 'SELECT pg_advisory_xact_lock(hashtextextended($1, 0))
 export class PrekeyMutationService {
   private async mutate<T>(userId: string, deviceId: string, work: (repo: Repository<Prekey>) => Promise<T>): Promise<T> {
     const qr = AppDataSource.createQueryRunner()
-    await qr.connect()
-    await qr.startTransaction()
     let result: T
     try {
+      await qr.connect()
+      await qr.startTransaction()
       await qr.query(ADVISORY_LOCK_SQL, [`prekey:${userId}:${deviceId}`])
       const repo = qr.manager.getRepository(Prekey)
       result = await work(repo)
@@ -39,16 +39,20 @@ export class PrekeyMutationService {
   }
 
   async publish(userId: string, deviceId: string, bundle: PrekeyBundle): Promise<{ created: boolean }> {
+    // Whitelist once: caller-supplied extras (notably _encryptedKeyBundle) must
+    // never overwrite the backup half via publish.
+    const { identityKey, registrationId, signedPreKey, preKeys } = bundle
+    const sanitized = { identityKey, registrationId, signedPreKey, preKeys }
     return this.mutate(userId, deviceId, async (repo) => {
       const existing = await repo.findOne({ where: { userId, deviceId }, lock: { mode: 'pessimistic_write' } })
       if (existing) {
         // Merge published fields so the backup half written by storeBackup survives a republish.
         const current = ((existing.bundle as unknown) as Record<string, unknown>) || {}
-        existing.bundle = { ...current, ...(bundle as unknown as Record<string, unknown>) } as StoredBundle
+        existing.bundle = { ...current, ...sanitized } as StoredBundle
         await repo.save(existing)
         return { created: false }
       }
-      await repo.save(repo.create({ userId, deviceId, bundle }))
+      await repo.save(repo.create({ userId, deviceId, bundle: sanitized }))
       return { created: true }
     })
   }
