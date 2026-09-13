@@ -406,10 +406,6 @@ run_broker_preflight() {
 }
 
 deploy_candidate() {
-  [[ "${MIGRATIONS_ROLLBACK_SAFE:-}" == "true" ]] || {
-    echo "release-backend: MIGRATIONS_ROLLBACK_SAFE=true is required" >&2
-    return 1
-  }
   if [[ ! -s "$JWT_SECRET_FILE" ]]; then
     umask 077
     openssl rand -base64 64 | tr -d '\n' > "$JWT_SECRET_FILE"
@@ -468,6 +464,10 @@ if ! run_broker_preflight; then
   echo "release-backend: broker preflight failed" >&2
   exit 1
 fi
+[[ "${MIGRATIONS_ROLLBACK_SAFE:-}" == "true" ]] || {
+  echo "release-backend: MIGRATIONS_ROLLBACK_SAFE=true is required" >&2
+  exit 1
+}
 
 if deploy_candidate; then
   echo "release-backend: deployed immutable backend release"

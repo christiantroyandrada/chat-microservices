@@ -64,7 +64,8 @@ requireText(release, /PENDING_STATE_FILE/, 'release must prepare non-authoritati
 const releaseFlow = release.slice(release.lastIndexOf('if ! pull_images'));
 for (const [earlier, later] of [
   ['pull_images', 'run_broker_preflight'],
-  ['run_broker_preflight', 'deploy_candidate'],
+  ['run_broker_preflight', 'MIGRATIONS_ROLLBACK_SAFE'],
+  ['MIGRATIONS_ROLLBACK_SAFE', 'deploy_candidate'],
 ]) {
   const a = releaseFlow.indexOf(earlier);
   const b = releaseFlow.indexOf(later);
@@ -73,7 +74,6 @@ for (const [earlier, later] of [
 }
 const candidateFlow = release.slice(release.indexOf('deploy_candidate()'), release.indexOf('\nrollback()'));
 for (const [earlier, later] of [
-  ['MIGRATIONS_ROLLBACK_SAFE', 'write_pending_state'],
   ['write_pending_state', 'run_migrations'],
   ['run_migrations', 'up -d --no-deps user chat notification nginx'],
   ['up -d --no-deps user chat notification nginx', 'verify_running_images'],

@@ -45,9 +45,11 @@ ${dockerBody}
 exit 0
 `);
   await writeFile(path.join(bin, 'curl'), '#!/bin/sh\nprintf "%s\\n" "$*" >> "$FAKE_CURL_LOG"\nexit 0\n');
+  await writeFile(path.join(bin, 'mv'), '#!/bin/sh\nprintf "%s\\n" "$*" >> "$FAKE_MV_LOG"\nexec /bin/mv "$@"\n');
   if (!realFlock) await writeFile(path.join(bin, 'flock'), '#!/bin/sh\nprintf "%s\\n" "flock $*" >> "$FAKE_FLOCK_LOG"\nexit 0\n');
   await chmod(path.join(bin, 'docker'), 0o755);
   await chmod(path.join(bin, 'curl'), 0o755);
+  await chmod(path.join(bin, 'mv'), 0o755);
   if (!realFlock) await chmod(path.join(bin, 'flock'), 0o755);
   await writeFile(path.join(root, 'release-state.env'), state);
   const env = {
@@ -77,6 +79,7 @@ exit 0
     FAKE_DOCKER_LOG: log,
     FAKE_CURL_LOG: path.join(root, 'curl.log'),
     FAKE_FLOCK_LOG: path.join(root, 'flock.log'),
+    FAKE_MV_LOG: path.join(root, 'mv.log'),
     ...extraEnv,
   };
   return { root, log, env };
@@ -173,11 +176,29 @@ test('failed pull or preflight does not create persistent JWT secret and leaves 
   }
 });
 
+test('pre-mutation migration flag rejection creates no secret, mutates nothing, and never enters rollback', async () => {
+  const initial = stateFor();
+  for (const flag of ['', 'false']) {
+    const h = await harness({ state: initial, extraEnv: { MIGRATIONS_ROLLBACK_SAFE: flag } });
+    const result = run(h.env);
+    assert.notEqual(result.status, 0);
+    assert.match(`${result.stdout}\n${result.stderr}`, /MIGRATIONS_ROLLBACK_SAFE=true is required/);
+    assert.equal(await readFile(path.join(h.root, 'release-state.env'), 'utf8'), initial);
+    assert.equal(await readFile(path.join(h.root, '.jwt_secret'), 'utf8').then(() => true).catch(() => false), false, 'secret must not be created on pre-mutation rejection');
+    assert.equal(await readFile(path.join(h.root, 'chat-microservices/backend.compose.yml'), 'utf8').then(() => true).catch(() => false), false, 'compose must not be written on pre-mutation rejection');
+    const log = await readFile(h.log, 'utf8').catch(() => '');
+    assert.doesNotMatch(log, /compose .* (run|up -d|pull)/, log);
+    assert.doesNotMatch(`${result.stdout}\n${result.stderr}`, /attempting exact rollback|manual intervention/);
+  }
+});
+
 test('pending candidate failures preserve verified state and are not treated as current on the next release', async () => {
   const initial = stateFor();
   const h = await harness({ state: initial, extraEnv: { RELEASE_FAIL_AFTER_PENDING: '1' } });
   assert.notEqual(run(h.env).status, 0);
   assert.equal(await readFile(path.join(h.root, 'release-state.env'), 'utf8'), initial);
+  const mvLog = await readFile(path.join(h.root, 'mv.log'), 'utf8');
+  assert.match(mvLog, /release-state\.env\.pending/, 'write_pending_state must publish the pending file before failing');
 
   assert.equal(run({ ...h.env, RELEASE_FAIL_AFTER_PENDING: '' }).status, 0);
   const promoted = await readFile(path.join(h.root, 'release-state.env'), 'utf8');
