@@ -273,7 +273,8 @@ describe('PrekeyMutationService', () => {
     const primary = Object.values(hooks)[0] as Error
     const bytesBefore = JSON.stringify([...store.entries()])
 
-    await expect(new PrekeyMutationService().publish(userId, deviceId, published as any)).rejects.toThrow(primary.message)
+    // Identity, not message: cleanup must rethrow the original error instance.
+    await expect(new PrekeyMutationService().publish(userId, deviceId, published as any)).rejects.toBe(primary)
 
     expect(qr.rollbackTransaction).toHaveBeenCalledTimes(1)
     expect(qr.release).toHaveBeenCalledTimes(1)
@@ -285,13 +286,14 @@ describe('PrekeyMutationService', () => {
   })
 
   it('catches a masked setup error: cleanup failures never hide the connect error', async () => {
+    const primary = new Error('fail:connect')
     const { repo, qr } = setup(new Map(), {
-      failConnect: new Error('fail:connect'),
+      failConnect: primary,
       failRollback: new Error('fail:rollback'),
       failRelease: new Error('fail:release'),
     })
 
-    await expect(new PrekeyMutationService().publish(userId, deviceId, published as any)).rejects.toThrow('fail:connect')
+    await expect(new PrekeyMutationService().publish(userId, deviceId, published as any)).rejects.toBe(primary)
 
     expect(qr.rollbackTransaction).toHaveBeenCalledTimes(1)
     expect(qr.release).toHaveBeenCalledTimes(1)
@@ -303,18 +305,28 @@ describe('PrekeyMutationService', () => {
   it('catches a publish/backup race: interleaved writers serialize into one row with both bundle halves', async () => {
     const store = new Map<string, any>()
     const events: string[] = []
+    const preCommit: number[] = []
     let locked = false
     const waiters: Array<() => void> = []
     const now = new Date('2026-09-01T00:00:00.000Z')
 
     const runnerFor = (tag: string) => {
+      // Each runner stages its own writes: shared rows are cloned on read so
+      // mutations cannot leak through aliasing, and saves stay invisible
+      // until this runner successfully commits.
+      const staged = new Map<string, any>()
       const repo: any = {
-        findOne: jest.fn(async (opts: any) => store.get(keyOf(opts.where.userId, opts.where.deviceId))),
+        findOne: jest.fn(async (opts: any) => {
+          const k = keyOf(opts.where.userId, opts.where.deviceId)
+          if (staged.has(k)) return staged.get(k)
+          const row = store.get(k)
+          return row === undefined ? row : structuredClone(row)
+        }),
         create: jest.fn((v: any) => ({ ...v })),
         save: jest.fn(async (entity: any) => {
           events.push(`save:${tag}`)
           await new Promise((r) => setImmediate(r))
-          store.set(keyOf(entity.userId, entity.deviceId), entity)
+          staged.set(keyOf(entity.userId, entity.deviceId), entity)
           return entity
         }),
       }
@@ -331,11 +343,17 @@ describe('PrekeyMutationService', () => {
           events.push(`lock:${tag}`)
         }),
         commitTransaction: jest.fn(async () => {
+          // Observe shared state before publishing: the first committer must
+          // not have leaked its saved row into the shared map yet.
+          preCommit.push(store.size)
+          for (const [k, v] of staged) store.set(k, v)
+          staged.clear()
           events.push(`commit:${tag}`)
           locked = false
           waiters.shift()?.()
         }),
         rollbackTransaction: jest.fn(async () => {
+          staged.clear()
           locked = false
           waiters.shift()?.()
         }),
@@ -356,6 +374,9 @@ describe('PrekeyMutationService', () => {
 
     // Exactly one writer saw the absent row; the other merged into it.
     expect([pubResult.created, backupResult.created].sort()).toEqual([false, true])
+    // Transaction isolation: the first writer's save stayed invisible until
+    // its commit; the second committer then saw exactly one shared row.
+    expect(preCommit).toEqual([0, 1])
     expect(store.size).toBe(1)
     const row = store.get(keyOf(userId, deviceId))
     expect(row.bundle).toEqual({ ...published, _encryptedKeyBundle: encrypted })
