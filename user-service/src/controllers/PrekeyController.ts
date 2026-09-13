@@ -4,7 +4,8 @@ import { APIError } from '../utils'
 import { logError, logInfo, logWarn } from '../utils/logger'
 import { prekeyPoolExhaustedTotal } from '../utils/metrics'
 import { consumeOneTimePreKey, isPrekeyBundle } from '../utils/prekeyConsumption'
-import type { PrekeyBundle, EncryptedKeyBundle, StoredBundle } from '../types'
+import { PrekeyMutationService } from '../services/PrekeyMutationService'
+import type { PrekeyBundle, EncryptedKeyBundle } from '../types'
 
 /**
  * Audit log helper - logs all key operations for security monitoring
@@ -59,42 +60,15 @@ const storeSignalKeys = async (req: Request, res: Response, next: NextFunction) 
       throw new APIError(400, 'Device ID mismatch')
     }
 
-    const prekeyRepo = AppDataSource.getRepository(Prekey)
+    const { created, hoursRemaining } = await new PrekeyMutationService().storeBackup(userId, deviceId, encryptedBundle)
 
-    // CVE-005 FIX: Store per userId AND deviceId - each device has isolated encrypted backup
-    let existing = await prekeyRepo.findOne({ where: { userId, deviceId } })
-    
-    if (existing) {
-      // CVE-008 FIX: Rate limiting - enforce 1 backup per 24 hours
-      if (existing.lastBackupTimestamp) {
-        const hoursSinceLastBackup = (Date.now() - existing.lastBackupTimestamp.getTime()) / (1000 * 60 * 60)
-        if (hoursSinceLastBackup < 24) {
-          const hoursRemaining = Math.ceil(24 - hoursSinceLastBackup)
-          auditLog('STORE_KEYS', userId, deviceId, clientIp, false, `Rate limit exceeded - ${hoursRemaining}h remaining`)
-          throw new APIError(429, `Rate limit: Please wait ${hoursRemaining} hours before backing up keys again`)
-        }
-      }
-      
-      // Update existing encrypted bundle for this specific device
-      existing.bundle = { ...existing.bundle, _encryptedKeyBundle: encryptedBundle }
-      existing.lastBackupTimestamp = new Date()
-      await prekeyRepo.save(existing)
-      
-      auditLog('STORE_KEYS', userId, deviceId, clientIp, true, 'Keys updated')
-      return res.json({ status: 200, message: 'Encrypted keys updated' })
+    if (!created && hoursRemaining !== undefined) {
+      auditLog('STORE_KEYS', userId, deviceId, clientIp, false, `Rate limit exceeded - ${hoursRemaining}h remaining`)
+      throw new APIError(429, `Rate limit: Please wait ${hoursRemaining} hours before backing up keys again`)
     }
 
-    // Create new encrypted bundle for this device
-    const record = prekeyRepo.create({ 
-      userId, 
-      deviceId, 
-      bundle: { _encryptedKeyBundle: encryptedBundle } as StoredBundle,
-      lastBackupTimestamp: new Date()
-    })
-    await prekeyRepo.save(record)
-
-    auditLog('STORE_KEYS', userId, deviceId, clientIp, true, 'New keys stored')
-    return res.json({ status: 200, message: 'Encrypted keys stored' })
+    auditLog('STORE_KEYS', userId, deviceId, clientIp, true, created ? 'New keys stored' : 'Keys updated')
+    return res.json({ status: 200, message: created ? 'Encrypted keys stored' : 'Encrypted keys updated' })
   } catch (error) {
     // Log the error if not already logged
     if (!(error instanceof APIError)) {
@@ -172,25 +146,9 @@ const publishPrekey = async (req: Request, res: Response, next: NextFunction) =>
     if (!publisherId) throw new APIError(401, 'Authentication required')
     if (!deviceId || !bundle) throw new APIError(400, 'deviceId and bundle are required')
 
-    const prekeyRepo = AppDataSource.getRepository(Prekey)
+    const { created } = await new PrekeyMutationService().publish(publisherId, deviceId, bundle)
 
-    // Upsert by userId + deviceId
-    let existing = await prekeyRepo.findOne({ where: { userId: publisherId, deviceId } })
-    if (existing) {
-      // Merge with existing bundle data so that _encryptedKeyBundle (written by
-      // storeSignalKeys) is preserved.  Replacing the entire column would wipe
-      // the encrypted key backup, forcing the user to rely solely on local
-      // IndexedDB after the next republishPrekeys call.
-      const existingBundle = ((existing.bundle as unknown) as Record<string, unknown>) || {}
-      existing.bundle = { ...existingBundle, ...(bundle as unknown as Record<string, unknown>) } as unknown as PrekeyBundle
-      await prekeyRepo.save(existing)
-      return res.json({ status: 200, message: 'Prekey bundle updated' })
-    }
-
-  const record = prekeyRepo.create({ userId: publisherId, deviceId, bundle })
-    await prekeyRepo.save(record)
-
-    return res.json({ status: 200, message: 'Prekey bundle published' })
+    return res.json({ status: 200, message: created ? 'Prekey bundle published' : 'Prekey bundle updated' })
   } catch (error) {
     next(error)
   }

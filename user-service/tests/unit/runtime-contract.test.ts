@@ -3,6 +3,7 @@ process.env.JWT_SECRET = process.env.JWT_SECRET || 'test_jwt_secret_which_is_lon
 
 import { AppDataSource } from '../../src/database'
 import PrekeyController from '../../src/controllers/PrekeyController'
+import { PrekeyMutationService } from '../../src/services/PrekeyMutationService'
 import spec from '../../src/openapi'
 
 type Schema = {
@@ -187,13 +188,7 @@ describe('user-service runtime OpenAPI conformance', () => {
   })
 
   it('publishes a prekey bundle with the status/message-only success shape', async () => {
-    const record = { userId, deviceId: 'device-1', bundle: prekeyBundle }
-    const repo = {
-      findOne: jest.fn().mockResolvedValue(undefined),
-      create: jest.fn().mockReturnValue(record),
-      save: jest.fn().mockResolvedValue(record),
-    }
-    jest.spyOn(AppDataSource, 'getRepository').mockReturnValue(repo as any)
+    jest.spyOn(PrekeyMutationService.prototype, 'publish').mockResolvedValue({ created: true })
 
     const result = await invoke(PrekeyController.publishPrekey, {
       user: { id: userId },
@@ -203,7 +198,6 @@ describe('user-service runtime OpenAPI conformance', () => {
     expect(result.statusCode).toBe(200)
     expect(result.body).toEqual({ status: 200, message: 'Prekey bundle published' })
     assertContractResponse('/prekeys', 'post', result.statusCode, result.body)
-    expect(repo.create).toHaveBeenCalledWith({ userId, deviceId: 'device-1', bundle: prekeyBundle })
   })
 
   it('stores Signal backups with the status/message-only success shape', async () => {
@@ -214,13 +208,7 @@ describe('user-service runtime OpenAPI conformance', () => {
       version: 1,
       deviceId: 'device-1',
     }
-    const record = { userId, deviceId: 'device-1', bundle: { _encryptedKeyBundle: encryptedBundle } }
-    const repo = {
-      findOne: jest.fn().mockResolvedValue(undefined),
-      create: jest.fn().mockReturnValue(record),
-      save: jest.fn().mockResolvedValue(record),
-    }
-    jest.spyOn(AppDataSource, 'getRepository').mockReturnValue(repo as any)
+    jest.spyOn(PrekeyMutationService.prototype, 'storeBackup').mockResolvedValue({ created: true })
 
     const result = await invoke(PrekeyController.storeSignalKeys, {
       user: { id: userId },
