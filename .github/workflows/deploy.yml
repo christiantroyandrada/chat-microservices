@@ -3,8 +3,20 @@ name: Backend Release
 on:
   workflow_call:
     inputs:
-      image_tag:
-        description: Full 40-character commit SHA to deploy
+      user_digest:
+        description: Digest for chat-user-service image (sha256:...)
+        required: true
+        type: string
+      chat_digest:
+        description: Digest for chat-chat-service image (sha256:...)
+        required: true
+        type: string
+      notification_digest:
+        description: Digest for chat-notification-service image (sha256:...)
+        required: true
+        type: string
+      nginx_digest:
+        description: Digest for chat-nginx image (sha256:...)
         required: true
         type: string
     secrets:
@@ -28,17 +40,6 @@ on:
         required: true
       VPS_SUDO_PASSWORD:
         required: false
-  workflow_dispatch:
-    inputs:
-      image_tag:
-        description: Full 40-character commit SHA to deploy
-        required: true
-        type: string
-      reason:
-        description: Why this immutable release is being deployed
-        required: false
-        type: string
-        default: Manual release
 
 permissions:
   contents: read
@@ -57,7 +58,7 @@ jobs:
       - name: Checkout release script
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
-          ref: ${{ inputs.image_tag }}
+          ref: ${{ github.sha }}
 
       - name: Fetch secrets from Infisical
         uses: Infisical/secrets-action@77ab1f4ccd183a543cb5b42435fbd181189f4995 # v1.0.16
@@ -71,12 +72,17 @@ jobs:
 
       - name: Validate release input
         env:
-          IMAGE_TAG: ${{ inputs.image_tag }}
+          USER_DIGEST: ${{ inputs.user_digest }}
+          CHAT_DIGEST: ${{ inputs.chat_digest }}
+          NOTIFICATION_DIGEST: ${{ inputs.notification_digest }}
+          NGINX_DIGEST: ${{ inputs.nginx_digest }}
         run: |
-          if [[ ! "$IMAGE_TAG" =~ ^[0-9a-fA-F]{40}$ ]]; then
-            echo "image_tag must be a full 40-character commit SHA" >&2
-            exit 1
-          fi
+          for d in "$USER_DIGEST" "$CHAT_DIGEST" "$NOTIFICATION_DIGEST" "$NGINX_DIGEST"; do
+            if ! echo "$d" | grep -Eq '^sha256:[0-9a-f]{64}$'; then
+              echo "digest must be sha256:<64 lowercase hex>" >&2
+              exit 1
+            fi
+          done
 
       - name: Verify migration policy
         run: node scripts/verify-migration-policy.mjs
@@ -96,7 +102,10 @@ jobs:
           EMAIL_FROM: ${{ env.EMAIL_FROM }}
           PGADMIN_EMAIL: ${{ secrets.PGADMIN_EMAIL }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          IMAGE_TAG: ${{ inputs.image_tag }}
+          USER_IMAGE: ghcr.io/${{ github.repository_owner }}/chat-user-service@${{ inputs.user_digest }}
+          CHAT_IMAGE: ghcr.io/${{ github.repository_owner }}/chat-chat-service@${{ inputs.chat_digest }}
+          NOTIFICATION_IMAGE: ghcr.io/${{ github.repository_owner }}/chat-notification-service@${{ inputs.notification_digest }}
+          NGINX_IMAGE: ghcr.io/${{ github.repository_owner }}/chat-nginx@${{ inputs.nginx_digest }}
           REPO_OWNER: ${{ github.repository_owner }}
           DB_USER_SVC_PASS: ${{ env.DB_USER_SVC_PASS }}
           DB_CHAT_SVC_PASS: ${{ env.DB_CHAT_SVC_PASS }}
@@ -108,5 +117,5 @@ jobs:
           key: ${{ secrets.VPS_SSH_PRIVATE_KEY }}
           port: ${{ secrets.VPS_PORT }}
           command_timeout: 30m
-          envs: ADMIN_USERNAME,ADMIN_PASSWORD,ADMIN_PASSWORD_ENCODED,CORS_ORIGINS,MESSAGE_BROKER_URL,SENDINBLUE_APIKEY,SMTP_HOST,SMTP_PASS,SMTP_USER,EMAIL_FROM,PGADMIN_EMAIL,GITHUB_TOKEN,IMAGE_TAG,REPO_OWNER,DB_USER_SVC_PASS,DB_CHAT_SVC_PASS,DB_NOTIF_SVC_PASS,MIGRATIONS_ROLLBACK_SAFE
+          envs: ADMIN_USERNAME,ADMIN_PASSWORD,ADMIN_PASSWORD_ENCODED,CORS_ORIGINS,MESSAGE_BROKER_URL,SENDINBLUE_APIKEY,SMTP_HOST,SMTP_PASS,SMTP_USER,EMAIL_FROM,PGADMIN_EMAIL,GITHUB_TOKEN,USER_IMAGE,CHAT_IMAGE,NOTIFICATION_IMAGE,NGINX_IMAGE,REPO_OWNER,DB_USER_SVC_PASS,DB_CHAT_SVC_PASS,DB_NOTIF_SVC_PASS,MIGRATIONS_ROLLBACK_SAFE
           script_path: deploy/release-backend.sh

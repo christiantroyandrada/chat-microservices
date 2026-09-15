@@ -124,7 +124,11 @@ jobs:
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 20
-
+    outputs:
+      user_digest: ${{ steps.build-user.outputs.digest }}
+      chat_digest: ${{ steps.build-chat.outputs.digest }}
+      notification_digest: ${{ steps.build-notification.outputs.digest }}
+      nginx_digest: ${{ steps.build-nginx.outputs.digest }}
     steps:
       - name: Checkout
         # Pinned to specific commit SHA for supply-chain security
@@ -143,6 +147,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and push user-service
+        id: build-user
         # Pinned to specific commit SHA for supply-chain security
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
@@ -155,6 +160,7 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Build and push chat-service
+        id: build-chat
         # Pinned to specific commit SHA for supply-chain security
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
@@ -167,6 +173,7 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Build and push notification-service
+        id: build-notification
         # Pinned to specific commit SHA for supply-chain security
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
@@ -179,6 +186,7 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Build and push nginx
+        id: build-nginx
         # Pinned to specific commit SHA for supply-chain security
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
@@ -198,5 +206,8 @@ jobs:
     if: github.ref == 'refs/heads/main'
     uses: ./.github/workflows/deploy.yml
     with:
-      image_tag: ${{ github.sha }}
+      user_digest: ${{ needs.docker-build.outputs.user_digest }}
+      chat_digest: ${{ needs.docker-build.outputs.chat_digest }}
+      notification_digest: ${{ needs.docker-build.outputs.notification_digest }}
+      nginx_digest: ${{ needs.docker-build.outputs.nginx_digest }}
     secrets: inherit

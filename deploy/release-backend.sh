@@ -9,7 +9,10 @@ PENDING_STATE_FILE="${RELEASE_PENDING_STATE_FILE:-${STATE_FILE}.pending}"
 LOCK_PATH="${RELEASE_LOCK_PATH:-/opt/chat-app/.release.lock}"
 PROJECT_NAME="chat-microservices"
 REPO_OWNER="${REPO_OWNER:-}"
-IMAGE_TAG="${IMAGE_TAG:-}"
+USER_IMAGE_REF="${USER_IMAGE:-}"
+CHAT_IMAGE_REF="${CHAT_IMAGE:-}"
+NOTIFICATION_IMAGE_REF="${NOTIFICATION_IMAGE:-}"
+NGINX_IMAGE_REF="${NGINX_IMAGE:-}"
 ADMIN_USERNAME="${ADMIN_USERNAME:-postgres}"
 ADMIN_PASSWORD_ENCODED="${ADMIN_PASSWORD_ENCODED:-}"
 
@@ -20,11 +23,10 @@ die() {
 
 [[ -n "$REPO_OWNER" ]] || die "REPO_OWNER is required"
 [[ "$REPO_OWNER" =~ ^[a-z0-9-]+$ ]] || die "REPO_OWNER is not a valid GHCR owner"
-
-USER_IMAGE_REF="${USER_IMAGE:-ghcr.io/$REPO_OWNER/chat-user-service:$IMAGE_TAG}"
-CHAT_IMAGE_REF="${CHAT_IMAGE:-ghcr.io/$REPO_OWNER/chat-chat-service:$IMAGE_TAG}"
-NOTIFICATION_IMAGE_REF="${NOTIFICATION_IMAGE:-ghcr.io/$REPO_OWNER/chat-notification-service:$IMAGE_TAG}"
-NGINX_IMAGE_REF="${NGINX_IMAGE:-ghcr.io/$REPO_OWNER/chat-nginx:$IMAGE_TAG}"
+[[ -n "$USER_IMAGE_REF" ]] || die "USER_IMAGE is required"
+[[ -n "$CHAT_IMAGE_REF" ]] || die "CHAT_IMAGE is required"
+[[ -n "$NOTIFICATION_IMAGE_REF" ]] || die "NOTIFICATION_IMAGE is required"
+[[ -n "$NGINX_IMAGE_REF" ]] || die "NGINX_IMAGE is required"
 
 validate_ref() {
   local service="$1" ref="$2" repository
@@ -35,7 +37,7 @@ validate_ref() {
     nginx) repository=chat-nginx ;;
     *) die "unknown owned service: $service" ;;
   esac
-  [[ "$ref" =~ ^ghcr\.io/$REPO_OWNER/$repository:[0-9a-fA-F]{40}$ ]] || \
+  [[ "$ref" =~ ^ghcr\.io/$REPO_OWNER/$repository@sha256:[0-9a-f]{64}$ ]] || \
     die "immutable image ref rejected for $service"
 }
 

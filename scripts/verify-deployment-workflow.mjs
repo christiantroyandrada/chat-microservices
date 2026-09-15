@@ -12,7 +12,19 @@ function requireText(source, pattern, message) {
 }
 
 requireText(ci, /uses:\s+\.\/\.github\/workflows\/deploy\.yml/, 'main CI must call the reusable release workflow');
-requireText(ci, /with:\s*\n\s*image_tag:\s*\$\{\{\s*github\.sha\s*\}\}/, 'main CI must pass its commit SHA');
+requireText(ci, /id:\s*build-user/, 'main CI must give user-service build an id');
+requireText(ci, /id:\s*build-chat/, 'main CI must give chat-service build an id');
+requireText(ci, /id:\s*build-notification/, 'main CI must give notification-service build an id');
+requireText(ci, /id:\s*build-nginx/, 'main CI must give nginx build an id');
+requireText(ci, /outputs:\s*\n[\s\S]*?user_digest:\s*\$\{\{\s*steps\.build-user\.outputs\.digest\s*\}\}/, 'main CI must export user-service digest');
+requireText(ci, /chat_digest:\s*\$\{\{\s*steps\.build-chat\.outputs\.digest\s*\}\}/, 'main CI must export chat-service digest');
+requireText(ci, /notification_digest:\s*\$\{\{\s*steps\.build-notification\.outputs\.digest\s*\}\}/, 'main CI must export notification-service digest');
+requireText(ci, /nginx_digest:\s*\$\{\{\s*steps\.build-nginx\.outputs\.digest\s*\}\}/, 'main CI must export nginx digest');
+requireText(ci, /with:\s*\n\s*user_digest:\s*\$\{\{\s*needs\.docker-build\.outputs\.user_digest\s*\}\}/, 'main CI must pass user digest to deploy');
+requireText(ci, /chat_digest:\s*\$\{\{\s*needs\.docker-build\.outputs\.chat_digest\s*\}\}/, 'main CI must pass chat digest to deploy');
+requireText(ci, /notification_digest:\s*\$\{\{\s*needs\.docker-build\.outputs\.notification_digest\s*\}\}/, 'main CI must pass notification digest to deploy');
+requireText(ci, /nginx_digest:\s*\$\{\{\s*needs\.docker-build\.outputs\.nginx_digest\s*\}\}/, 'main CI must pass nginx digest to deploy');
+assert.doesNotMatch(ci, /image_tag:\s*\$\{\{\s*github\.sha\s*\}\}/, 'main CI must not pass image_tag SHA');
 requireText(ci, /node --test tests\/deployment-workflow\.test\.mjs/, 'main CI must run deployment workflow tests');
 requireText(ci, /node scripts\/verify-deployment-workflow\.mjs/, 'main CI must run the deployment verifier');
 requireText(ci, /node --test tests\/migration-policy\.test\.mjs/, 'main CI must run migration policy tests');
@@ -20,16 +32,25 @@ requireText(ci, /node scripts\/verify-migration-policy\.mjs/, 'main CI must veri
 assert.doesNotMatch(ci.slice(ci.indexOf('\n  deploy:')), /appleboy\/ssh-action|script:\s*\|/, 'main CI must not embed remote deploy code');
 
 requireText(deploy, /workflow_call:/, 'release workflow must support workflow_call');
-requireText(deploy, /workflow_dispatch:/, 'release workflow must support manual dispatch');
-requireText(deploy, /image_tag:[\s\S]*required:\s*true/, 'manual release must require an image SHA');
+assert.doesNotMatch(deploy, /workflow_dispatch:/, 'release workflow must not support manual dispatch');
+assert.doesNotMatch(deploy, /image_tag:/, 'release workflow must not accept image_tag');
+requireText(deploy, /user_digest:[\s\S]*required:\s*true/, 'release must require user_digest');
+requireText(deploy, /chat_digest:[\s\S]*required:\s*true/, 'release must require chat_digest');
+requireText(deploy, /notification_digest:[\s\S]*required:\s*true/, 'release must require notification_digest');
+requireText(deploy, /nginx_digest:[\s\S]*required:\s*true/, 'release must require nginx_digest');
 requireText(deploy, /actions\/checkout@[0-9a-f]{40}/, 'release workflow must checkout an exact revision');
-requireText(deploy, /actions\/checkout@[0-9a-f]{40}[\s\S]*?ref:\s*\$\{\{\s*inputs\.image_tag\s*\}\}/, 'release checkout must be bound to the deployed image_tag');
+assert.doesNotMatch(deploy, /ref:\s*\$\{\{\s*inputs\.image_tag\s*\}\}/, 'release checkout must not be bound to image_tag');
 requireText(deploy, /appleboy\/ssh-action@[0-9a-f]{40}/, 'SSH action must remain pinned');
 requireText(deploy, /script_path:\s*deploy\/release-backend\.sh/, 'SSH action must invoke the checked-out script');
+requireText(deploy, /ghcr\.io\/\$\{\{\s*github\.repository_owner\s*\}\}\/chat-user-service@\$\{\{\s*inputs\.user_digest\s*\}\}/, 'release must construct user-service digest ref');
+requireText(deploy, /ghcr\.io\/\$\{\{\s*github\.repository_owner\s*\}\}\/chat-chat-service@\$\{\{\s*inputs\.chat_digest\s*\}\}/, 'release must construct chat-service digest ref');
+requireText(deploy, /ghcr\.io\/\$\{\{\s*github\.repository_owner\s*\}\}\/chat-notification-service@\$\{\{\s*inputs\.notification_digest\s*\}\}/, 'release must construct notification-service digest ref');
+requireText(deploy, /ghcr\.io\/\$\{\{\s*github\.repository_owner\s*\}\}\/chat-nginx@\$\{\{\s*inputs\.nginx_digest\s*\}\}/, 'release must construct nginx digest ref');
 requireText(deploy, /name:\s*Verify migration policy[\s\S]*node scripts\/verify-migration-policy\.mjs/, 'manual release must verify migration policy before SSH');
 requireText(deploy, /MIGRATIONS_ROLLBACK_SAFE:\s*['"]true['"]/, 'manual release must pass the verified migration flag');
 requireText(deploy, /envs:.*MIGRATIONS_ROLLBACK_SAFE/, 'SSH must receive the verified migration flag');
 assert.doesNotMatch(deploy, /chat-frontend|frontend:|:latest\b/, 'release workflow must not consume mutable or unowned images');
+assert.doesNotMatch(deploy, /reason:/, 'release workflow must not expose manual reason input');
 
 requireText(release, /LOCK_PATH="\$\{RELEASE_LOCK_PATH:-\/opt\/chat-app\/\.release\.lock\}"/, 'release must use the shared host lock');
 requireText(release, /flock -x 9/, 'release must acquire an exclusive lock');
@@ -61,6 +82,10 @@ requireText(release, /docker pull "\$NGINX_IMAGE_REF"/, 'release must pull the n
 requireText(release, /docker run --rm --env MESSAGE_BROKER_URL "\$CHAT_IMAGE_REF" build\/src\/preflight\/brokerPreflight\.js/, 'broker preflight must run inside the immutable candidate chat image without printing the URL');
 requireText(release, /MIGRATIONS_ROLLBACK_SAFE:-.*== "true"/, 'release must require an explicitly verified migration flag');
 requireText(release, /PENDING_STATE_FILE/, 'release must prepare non-authoritative pending state');
+requireText(release, /@sha256:/, 'release must use digest-qualified references');
+assert.doesNotMatch(release, /chat-user-service:\$IMAGE_TAG/, 'release must not use tag fallback');
+assert.doesNotMatch(release, /\$IMAGE_TAG/, 'release must not reference IMAGE_TAG');
+requireText(release, /REPO_OWNER.*@sha256:/, 'release must validate digest refs');
 const releaseFlow = release.slice(release.lastIndexOf('if ! pull_images'));
 for (const [earlier, later] of [
   ['pull_images', 'run_broker_preflight'],
