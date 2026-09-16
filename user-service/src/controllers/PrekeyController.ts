@@ -165,6 +165,12 @@ const getPrekeyBundle = async (req: Request, res: Response, next: NextFunction) 
 
   let qr: QueryRunner | undefined
   let transactionStarted = false
+  let releaseAttempted = false
+  const releaseOnce = async (): Promise<void> => {
+    if (!qr || releaseAttempted) return
+    releaseAttempted = true
+    await qr.release()
+  }
   try {
     qr = AppDataSource.createQueryRunner()
     await qr.connect()
@@ -184,15 +190,7 @@ const getPrekeyBundle = async (req: Request, res: Response, next: NextFunction) 
     if (!bundles || bundles.length === 0) {
       await qr.commitTransaction()
       transactionStarted = false
-      try {
-        await qr.release()
-      } catch (releaseError) {
-        if (res.headersSent) {
-          logError('[Prekey] Queryrunner release fail after response sent', releaseError)
-          return
-        }
-        return next(releaseError)
-      }
+      await releaseOnce()
       return next(new APIError(404, 'No prekey bundle found for user'))
     }
 
@@ -206,15 +204,7 @@ const getPrekeyBundle = async (req: Request, res: Response, next: NextFunction) 
     if (!chosen || !isPrekeyBundle(chosen.bundle)) {
       await qr.commitTransaction()
       transactionStarted = false
-      try {
-        await qr.release()
-      } catch (releaseError) {
-        if (res.headersSent) {
-          logError('[Prekey] Queryrunner release fail after response sent', releaseError)
-          return
-        }
-        return next(releaseError)
-      }
+      await releaseOnce()
       return next(new APIError(404, 'No prekey bundle found for user'))
     }
 
@@ -229,17 +219,8 @@ const getPrekeyBundle = async (req: Request, res: Response, next: NextFunction) 
       await repo.save(chosen)
       await qr.commitTransaction()
       transactionStarted = false
-      res.json({ status: 200, data: { userId: chosen.userId, deviceId: chosen.deviceId, bundle: clientBundle } })
-      try {
-        await qr.release()
-      } catch (releaseError) {
-        if (res.headersSent) {
-          logError('[Prekey] Queryrunner release fail after response sent', releaseError)
-          return
-        }
-        return next(releaseError)
-      }
-      return
+      await releaseOnce()
+      return res.json({ status: 200, data: { userId: chosen.userId, deviceId: chosen.deviceId, bundle: clientBundle } })
     }
 
     // No one-time prekeys left — surface for replenishment. X3DH can still proceed
@@ -248,17 +229,8 @@ const getPrekeyBundle = async (req: Request, res: Response, next: NextFunction) 
     logWarn('[Prekey] one-time prekey pool exhausted', { userId, deviceId: chosen.deviceId })
     await qr.commitTransaction()
     transactionStarted = false
-    res.json({ status: 200, data: { userId: chosen.userId, deviceId: chosen.deviceId, bundle: clientBundle } })
-    try {
-      await qr.release()
-    } catch (releaseError) {
-      if (res.headersSent) {
-        logError('[Prekey] Queryrunner release fail after response sent', releaseError)
-        return
-      }
-      return next(releaseError)
-    }
-    return
+    await releaseOnce()
+    return res.json({ status: 200, data: { userId: chosen.userId, deviceId: chosen.deviceId, bundle: clientBundle } })
   } catch (error) {
     if (transactionStarted && qr) {
       try {
@@ -269,7 +241,7 @@ const getPrekeyBundle = async (req: Request, res: Response, next: NextFunction) 
     }
     if (qr) {
       try {
-        await qr.release()
+        await releaseOnce()
       } catch (releaseError) {
         logError('[Prekey] Queryrunner release fail', releaseError)
       }

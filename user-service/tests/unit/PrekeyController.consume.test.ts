@@ -163,15 +163,15 @@ describe('PrekeyController.getPrekeyBundle — one-time prekey consumption', () 
     expect(persisted.bundle.preKeys).toHaveLength(1)
     const handedOutId = payload.data.bundle.preKeys[0].id
     expect(persisted.bundle.preKeys.some((p: TestPreKey) => p.id === handedOutId)).toBe(false)
-    // persists before commit, commits before responding, releases once
+    // persists before commit, commits before release, releases before responding
     expect(saveSpy.mock.invocationCallOrder[0]).toBeLessThan(
       (qr.commitTransaction as jest.Mock).mock.invocationCallOrder[0],
     )
     expect((qr.commitTransaction as jest.Mock).mock.invocationCallOrder[0]).toBeLessThan(
-      jsonSpy.mock.invocationCallOrder[0],
-    )
-    expect(jsonSpy.mock.invocationCallOrder[0]).toBeLessThan(
       (qr.release as jest.Mock).mock.invocationCallOrder[0],
+    )
+    expect((qr.release as jest.Mock).mock.invocationCallOrder[0]).toBeLessThan(
+      jsonSpy.mock.invocationCallOrder[0],
     )
     expect(qr.release).toHaveBeenCalledTimes(1)
   })
@@ -189,6 +189,13 @@ describe('PrekeyController.getPrekeyBundle — one-time prekey consumption', () 
     const payload = jsonSpy.mock.calls[0][0] as { data: { bundle: { preKeys: TestPreKey[] } } }
     expect(payload.data.bundle.preKeys).toHaveLength(0)
     expect(qr.release).toHaveBeenCalledTimes(1)
+    // commits before release, releases before responding
+    expect((qr.commitTransaction as jest.Mock).mock.invocationCallOrder[0]).toBeLessThan(
+      (qr.release as jest.Mock).mock.invocationCallOrder[0],
+    )
+    expect((qr.release as jest.Mock).mock.invocationCallOrder[0]).toBeLessThan(
+      jsonSpy.mock.invocationCallOrder[0],
+    )
   })
 
   it('createQueryRunner throw routes to next once without rollback or release', async () => {
@@ -330,20 +337,19 @@ describe('PrekeyController.getPrekeyBundle — one-time prekey consumption', () 
     expect(jsonSpy).not.toHaveBeenCalled()
   })
 
-  it('release rejection after response sent: log sanitized failure, preserve response, no next', async () => {
+  it('release rejection after commit: next once with release error, no response', async () => {
+    const releaseError = new Error('release after send boom')
     const { qr } = mockQueryRunner(recordWithPrekeys(), {
-      releaseReject: new Error('release after send boom'),
+      releaseReject: releaseError,
     })
-    const logSpy = jest.spyOn(logger, 'logError').mockImplementation(() => undefined)
     const { req, res, jsonSpy } = mockReqRes('u1')
     const next = jest.fn()
 
     await expect(PrekeyController.getPrekeyBundle(req, res, next)).resolves.toBeUndefined()
 
-    expect(jsonSpy).toHaveBeenCalledTimes(1)
-    expect(res.headersSent).toBe(true)
     expect(qr.release).toHaveBeenCalledTimes(1)
-    expect(logSpy).toHaveBeenCalled()
-    expect(next).not.toHaveBeenCalled()
+    expect(jsonSpy).not.toHaveBeenCalled()
+    expect(next).toHaveBeenCalledTimes(1)
+    expect(next.mock.calls[0][0]).toBe(releaseError)
   })
 })
