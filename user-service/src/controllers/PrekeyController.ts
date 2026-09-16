@@ -1,4 +1,5 @@
 import { Request, Response, NextFunction } from 'express'
+import type { QueryRunner } from 'typeorm'
 import { AppDataSource, Prekey } from '../database'
 import { APIError } from '../utils'
 import { logError, logInfo, logWarn } from '../utils/logger'
@@ -162,10 +163,13 @@ const getPrekeyBundle = async (req: Request, res: Response, next: NextFunction) 
   const userId = req.params.userId
   if (!userId) return next(new APIError(400, 'userId is required'))
 
-  const qr = AppDataSource.createQueryRunner()
-  await qr.connect()
-  await qr.startTransaction()
+  let qr: QueryRunner | undefined
+  let transactionStarted = false
   try {
+    qr = AppDataSource.createQueryRunner()
+    await qr.connect()
+    await qr.startTransaction()
+    transactionStarted = true
     const repo = qr.manager.getRepository(Prekey)
 
     // Lock candidate rows for update to avoid concurrent consumption
@@ -179,6 +183,16 @@ const getPrekeyBundle = async (req: Request, res: Response, next: NextFunction) 
 
     if (!bundles || bundles.length === 0) {
       await qr.commitTransaction()
+      transactionStarted = false
+      try {
+        await qr.release()
+      } catch (releaseError) {
+        if (res.headersSent) {
+          logError('[Prekey] Queryrunner release fail after response sent', releaseError)
+          return
+        }
+        return next(releaseError)
+      }
       return next(new APIError(404, 'No prekey bundle found for user'))
     }
 
@@ -191,6 +205,16 @@ const getPrekeyBundle = async (req: Request, res: Response, next: NextFunction) 
 
     if (!chosen || !isPrekeyBundle(chosen.bundle)) {
       await qr.commitTransaction()
+      transactionStarted = false
+      try {
+        await qr.release()
+      } catch (releaseError) {
+        if (res.headersSent) {
+          logError('[Prekey] Queryrunner release fail after response sent', releaseError)
+          return
+        }
+        return next(releaseError)
+      }
       return next(new APIError(404, 'No prekey bundle found for user'))
     }
 
@@ -204,7 +228,18 @@ const getPrekeyBundle = async (req: Request, res: Response, next: NextFunction) 
       chosen.bundle = storedBundle
       await repo.save(chosen)
       await qr.commitTransaction()
-      return res.json({ status: 200, data: { userId: chosen.userId, deviceId: chosen.deviceId, bundle: clientBundle } })
+      transactionStarted = false
+      res.json({ status: 200, data: { userId: chosen.userId, deviceId: chosen.deviceId, bundle: clientBundle } })
+      try {
+        await qr.release()
+      } catch (releaseError) {
+        if (res.headersSent) {
+          logError('[Prekey] Queryrunner release fail after response sent', releaseError)
+          return
+        }
+        return next(releaseError)
+      }
+      return
     }
 
     // No one-time prekeys left — surface for replenishment. X3DH can still proceed
@@ -212,16 +247,38 @@ const getPrekeyBundle = async (req: Request, res: Response, next: NextFunction) 
     prekeyPoolExhaustedTotal.inc()
     logWarn('[Prekey] one-time prekey pool exhausted', { userId, deviceId: chosen.deviceId })
     await qr.commitTransaction()
-    return res.json({ status: 200, data: { userId: chosen.userId, deviceId: chosen.deviceId, bundle: clientBundle } })
-  } catch (error) {
+    transactionStarted = false
+    res.json({ status: 200, data: { userId: chosen.userId, deviceId: chosen.deviceId, bundle: clientBundle } })
     try {
-      await qr.rollbackTransaction()
-    } catch (e) {
-      logError('[Prekey] Queryrunner rollbackTransaction fail', e)
+      await qr.release()
+    } catch (releaseError) {
+      if (res.headersSent) {
+        logError('[Prekey] Queryrunner release fail after response sent', releaseError)
+        return
+      }
+      return next(releaseError)
     }
-    next(error)
-  } finally {
-    await qr.release()
+    return
+  } catch (error) {
+    if (transactionStarted && qr) {
+      try {
+        await qr.rollbackTransaction()
+      } catch (e) {
+        logError('[Prekey] Queryrunner rollbackTransaction fail', e)
+      }
+    }
+    if (qr) {
+      try {
+        await qr.release()
+      } catch (releaseError) {
+        logError('[Prekey] Queryrunner release fail', releaseError)
+      }
+    }
+    if (res.headersSent) {
+      logError('[Prekey] Queryrunner cleanup fail after response sent', error)
+      return
+    }
+    return next(error)
   }
 }
 
