@@ -42,8 +42,12 @@ export async function runBrokerPreflight(url = process.env.MESSAGE_BROKER_URL, c
 }
 
 if (require.main === module) {
+  const deadline = setTimeout(() => {
+    console.error('broker preflight failed')
+    process.exit(1)
+  }, 10000)
   runBrokerPreflight().catch(() => {
     console.error('broker preflight failed')
-    process.exitCode = 1
-  })
+    process.exit(1)
+  }).finally(() => clearTimeout(deadline))
 }
