@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { chmod, mkdtemp, readFile, readdir, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, readFile, readdir, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
@@ -267,7 +267,51 @@ test('successful release preserves unowned state and never operates an unowned s
   assert.match(await readFile(path.join(h.root, 'flock.log'), 'utf8'), /flock -x 9/);
   const names = await readdir(path.join(h.root, 'chat-microservices'));
   assert.equal(names.filter(name => name.includes('.tmp.')).length, 0);
+  const calls = (await readFile(h.log, 'utf8')).split('\n').filter(line => line.startsWith('docker compose '));
+  assert.ok(calls.length > 0);
+  assert.ok(calls.every(line => line.startsWith(`docker compose --project-name chat-microservices --file ${h.root}/chat-microservices/backend.compose.yml `)));
+  assert.ok(calls.every(line => !line.includes('docker-compose.override.yml')));
 });
+
+for (const failsHealth of [false, true]) {
+  test(`host gateway override is retained throughout ${failsHealth ? 'failed deployment and rollback' : 'successful deployment'}`, async () => {
+    const initial = stateFor();
+    const h = await harness({
+      state: initial,
+      extraEnv: failsHealth ? {
+        RELEASE_HEALTHCHECK_COMMAND: '',
+        FAKE_HEALTH_STATUS: 'unhealthy',
+        RELEASE_HEALTH_MAX_ATTEMPTS: '1',
+        RELEASE_ROLLBACK_HEALTHCHECK_COMMAND: 'true',
+      } : {},
+    });
+    const override = path.join(h.root, 'chat-microservices/docker-compose.override.yml');
+    const bytes = Buffer.from(`services:
+  nginx:
+    volumes:
+      - /opt/worksmart/runtime/gateway-nginx.conf:/opt/bitnami/nginx/conf/nginx.conf:ro
+    networks:
+      worksmart_gateway: {}
+networks:
+  worksmart_gateway:
+    name: worksmart_gateway
+    external: true
+`);
+    await mkdir(path.dirname(override));
+    await writeFile(override, bytes);
+    const result = run(h.env);
+    assert.equal(result.status, failsHealth ? 1 : 0, result.stderr || result.stdout);
+    const log = await readFile(h.log, 'utf8');
+    const calls = log.split('\n').filter(line => line.startsWith('docker compose '));
+    assert.ok(calls.length > 0, 'release must execute Compose');
+    const prefix = `docker compose --project-name chat-microservices --file ${h.root}/chat-microservices/backend.compose.yml --file ${override} `;
+    assert.ok(calls.every(line => line.startsWith(prefix)), 'every Compose call must load the host override after the generated base');
+    assert.equal(calls.filter(line => line.endsWith('up -d --no-deps user chat notification nginx')).length, failsHealth ? 2 : 1);
+    assert.deepEqual(await readFile(override), bytes, 'host-owned override bytes must remain intact');
+    assert.doesNotMatch(log, /compose .* (up|stop|rm).*worksmart/);
+    if (failsHealth) assert.equal(await readFile(path.join(h.root, 'release-state.env'), 'utf8'), initial);
+  });
+}
 
 test('candidate broker preflight follows immutable pulls and fails before state, migrations, or runtime mutation', async () => {
   const initial = stateFor();

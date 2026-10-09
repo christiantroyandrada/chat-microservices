@@ -264,7 +264,9 @@ EOF
 }
 
 compose() {
-  docker compose --project-name "$PROJECT_NAME" --file "$COMPOSE_FILE" "$@"
+  local args=(--project-name "$PROJECT_NAME" --file "$COMPOSE_FILE")
+  [[ ! -f "$SERVICE_DIR/docker-compose.override.yml" ]] || args+=(--file "$SERVICE_DIR/docker-compose.override.yml")
+  docker compose "${args[@]}" "$@"
 }
 
 run_migrations() {
