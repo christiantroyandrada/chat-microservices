@@ -20,8 +20,6 @@ on:
         required: true
         type: string
     secrets:
-      GITHUB_TOKEN:
-        required: false
       PGADMIN_EMAIL:
         required: false
       VPS_HOST:

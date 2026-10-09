@@ -48,3 +48,11 @@ test('image publication waits for integration tests and the security audit', () 
 	assert.ok(dependencies.includes('integration-tests'));
 	assert.ok(dependencies.includes('security-audit'));
 });
+
+test('release uses the built-in GitHub token without declaring a reserved caller secret', () => {
+	const deploy = workflow('deploy.yml');
+	const declared = Object.keys(deploy.on.workflow_call.secrets);
+	assert.ok(!declared.some(name => name.toUpperCase() === 'GITHUB_TOKEN'), 'GitHub rejects the reserved GITHUB_TOKEN workflow_call secret');
+	assert.equal(deploy.permissions.packages, 'read');
+	assert.equal(step(deploy.jobs.deploy, 'Deploy owned backend release').env.GITHUB_TOKEN, '${{ secrets.GITHUB_TOKEN }}');
+});
