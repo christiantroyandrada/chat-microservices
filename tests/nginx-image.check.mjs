@@ -9,6 +9,7 @@ import test from 'node:test';
 const image = process.env.NGINX_TEST_IMAGE;
 assert.ok(image, 'Set NGINX_TEST_IMAGE to the locally built gateway image');
 const context = process.env.NGINX_TEST_DOCKER_CONTEXT ?? 'default';
+const tcpProbe = "if command -v nc >/dev/null 2>&1; then nc -z -w 2 127.0.0.1 8080; else timeout 2 bash -c '</dev/tcp/127.0.0.1/8080'; fi";
 
 function docker(...args) {
 	const result = spawnSync('docker', ['--context', context, ...args], { encoding: 'utf8', timeout: 30000 });
@@ -49,7 +50,7 @@ test('gateway remains non-root with development, production TLS and read-only sh
 			assert.equal(docker('exec', id, 'id', '-u'), '1001');
 			if (fixture.name === 'development') {
 				docker('exec', id, 'apk', 'info', '--exists', 'zlib=1.3.2-r1');
-				docker('exec', id, 'nc', '-z', '-w', '2', '127.0.0.1', '8080');
+				docker('exec', id, 'sh', '-c', tcpProbe);
 			}
 			let published;
 			for (let attempt = 0; attempt < 100; attempt++) {
@@ -105,6 +106,28 @@ test('gateway remains non-root with development, production TLS and read-only sh
 		}
 	} finally {
 		for (const id of containers) docker('rm', '-f', id);
+		rmSync(directory, { recursive: true, force: true });
+	}
+});
+
+test('TCP probe supports Bash-only rollback images and fails on a closed port', () => {
+	const directory = mkdtempSync(join(import.meta.dirname, '.nginx-check-'));
+	try {
+		writeFileSync(join(directory, 'probe.mjs'), `
+import assert from 'node:assert/strict';
+import { execFileSync, spawnSync } from 'node:child_process';
+import { createServer } from 'node:net';
+assert.notEqual(spawnSync('sh', ['-c', 'command -v nc']).status, 0);
+const probe = ${JSON.stringify(tcpProbe)};
+const server = createServer();
+server.listen(8080, '127.0.0.1', () => {
+  try { execFileSync('sh', ['-c', probe]); }
+  catch (error) { console.error(error.message); process.exitCode = 1; }
+  finally { server.close(() => assert.notEqual(spawnSync('sh', ['-c', probe]).status, 0)); }
+});
+`);
+		docker('run', '--rm', '--platform', 'linux/amd64', '--network', 'none', '-v', `${directory}:/fixture:ro`, 'node:22-trixie-slim@sha256:154ba2f4d6fec323d28e4f4bb86bba4677f1223391a1979cf521304e03a98dfa', '/fixture/probe.mjs');
+	} finally {
 		rmSync(directory, { recursive: true, force: true });
 	}
 });

@@ -248,7 +248,7 @@ services:
       chat: { condition: service_started }
       notification: { condition: service_started }
     healthcheck:
-      test: ["CMD", "nc", "-z", "-w", "2", "127.0.0.1", "8080"]
+      test: ["CMD-SHELL", "if command -v nc >/dev/null 2>&1; then nc -z -w 2 127.0.0.1 8080; else timeout 2 bash -c '</dev/tcp/127.0.0.1/8080'; fi"]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -300,10 +300,10 @@ provision_database() {
   for password in "$DB_USER_SVC_PASS" "$DB_CHAT_SVC_PASS" "$DB_NOTIF_SVC_PASS"; do
     [[ "$password" =~ ^[A-Za-z0-9]+$ ]] || { echo "release-backend: role passwords must be alphanumeric" >&2; return 1; }
   done
-  compose exec -T postgres psql -v ON_ERROR_STOP=1 -U "$ADMIN_USERNAME" -d chat_db \
-    -c "DO \\$\$ BEGIN CREATE ROLE user_svc LOGIN PASSWORD '${DB_USER_SVC_PASS}'; EXCEPTION WHEN duplicate_object THEN ALTER ROLE user_svc LOGIN PASSWORD '${DB_USER_SVC_PASS}'; END \\$\$;" \
-    -c "DO \\$\$ BEGIN CREATE ROLE chat_svc LOGIN PASSWORD '${DB_CHAT_SVC_PASS}'; EXCEPTION WHEN duplicate_object THEN ALTER ROLE chat_svc LOGIN PASSWORD '${DB_CHAT_SVC_PASS}'; END \\$\$;" \
-    -c "DO \\$\$ BEGIN CREATE ROLE notif_svc LOGIN PASSWORD '${DB_NOTIF_SVC_PASS}'; EXCEPTION WHEN duplicate_object THEN ALTER ROLE notif_svc LOGIN PASSWORD '${DB_NOTIF_SVC_PASS}'; END \\$\$;" \
+  compose exec -T postgres psql -v ON_ERROR_STOP=1 -v VERBOSITY=terse -U "$ADMIN_USERNAME" -d chat_db \
+    -c "DO \$\$ BEGIN CREATE ROLE user_svc LOGIN PASSWORD '${DB_USER_SVC_PASS}'; EXCEPTION WHEN duplicate_object THEN ALTER ROLE user_svc LOGIN PASSWORD '${DB_USER_SVC_PASS}'; END \$\$;" \
+    -c "DO \$\$ BEGIN CREATE ROLE chat_svc LOGIN PASSWORD '${DB_CHAT_SVC_PASS}'; EXCEPTION WHEN duplicate_object THEN ALTER ROLE chat_svc LOGIN PASSWORD '${DB_CHAT_SVC_PASS}'; END \$\$;" \
+    -c "DO \$\$ BEGIN CREATE ROLE notif_svc LOGIN PASSWORD '${DB_NOTIF_SVC_PASS}'; EXCEPTION WHEN duplicate_object THEN ALTER ROLE notif_svc LOGIN PASSWORD '${DB_NOTIF_SVC_PASS}'; END \$\$;" \
     -c "GRANT CONNECT ON DATABASE chat_db TO user_svc, chat_svc, notif_svc;" \
     -c "GRANT USAGE ON SCHEMA public TO user_svc, chat_svc, notif_svc;" || return 1
 }

@@ -37,6 +37,15 @@ async function harness({ state = '', dockerBody = '', extraEnv = {}, realFlock =
   const log = path.join(root, 'docker.log');
   await writeFile(path.join(bin, 'docker'), `#!/bin/sh
 printf '%s\n' "docker $*" >> "$FAKE_DOCKER_LOG"
+if [ "$1" = compose ] && echo "$*" | grep -q 'exec -T postgres psql'; then
+  previous=''
+  for argument do
+    if [ "$previous" = '-c' ]; then
+      case "$argument" in 'DO '*) printf '%s\n' "$argument" >> "$FAKE_SQL_LOG" ;; esac
+    fi
+    previous="$argument"
+  done
+fi
 if [ "$1" = compose ] && echo "$*" | grep -q 'ps .*--format'; then
   printf '%s\n' "\${FAKE_HEALTH_STATUS:-healthy}"
   exit 0
@@ -94,6 +103,7 @@ exit 0
     RELEASE_HEALTHCHECK_COMMAND: 'true',
     RELEASE_POLL_INTERVAL: '0',
     FAKE_DOCKER_LOG: log,
+    FAKE_SQL_LOG: path.join(root, 'roles.sql'),
     FAKE_CURL_LOG: path.join(root, 'curl.log'),
     FAKE_FLOCK_LOG: path.join(root, 'flock.log'),
     FAKE_MV_LOG: path.join(root, 'mv.log'),
@@ -123,6 +133,22 @@ function stateFor(ref = oldDig) {
     '',
   ].join('\n');
 }
+
+test('role creation emits literal PostgreSQL dollar delimiters through real Bash', async (t) => {
+  const h = await harness({ state: stateFor() });
+  const result = run(h.env);
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(await readFile(h.log, 'utf8'), /psql -v ON_ERROR_STOP=1 -v VERBOSITY=terse -U/);
+  const sql = await readFile(h.env.FAKE_SQL_LOG, 'utf8');
+  const statements = sql.trim().split('\n');
+  assert.equal(statements.length, 3);
+  for (const [index, role] of ['user_svc', 'chat_svc', 'notif_svc'].entries()) {
+    assert.ok(statements[index].startsWith(`DO $$ BEGIN CREATE ROLE ${role} LOGIN PASSWORD `));
+    assert.ok(statements[index].endsWith('END $$;'));
+    assert.ok(!statements[index].includes('\\'));
+  }
+  t.diagnostic(`Test-only role SQL fixture: ${h.env.FAKE_SQL_LOG}`);
+});
 
 test('static verifier accepts the immutable, split ownership workflow', () => {
   const result = spawnSync(process.execPath, [verifier], { cwd: repo, encoding: 'utf8' });
@@ -237,7 +263,7 @@ test('valid digest set reaches pull/preflight and is written to state and Compos
   assert.match(compose, new RegExp(chatDigestRef.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   assert.match(compose, new RegExp(notifDigestRef.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   assert.match(compose, new RegExp(nginxDigestRef.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
-  assert.deepEqual(yaml.load(compose).services.nginx.healthcheck.test, ['CMD', 'nc', '-z', '-w', '2', '127.0.0.1', '8080']);
+  assert.deepEqual(yaml.load(compose).services.nginx.healthcheck.test, ['CMD-SHELL', "if command -v nc >/dev/null 2>&1; then nc -z -w 2 127.0.0.1 8080; else timeout 2 bash -c '</dev/tcp/127.0.0.1/8080'; fi"]);
   const log = await readFile(h.log, 'utf8');
   assert.match(log, new RegExp(`pull ${userDigestRef.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
   assert.match(log, new RegExp(`pull ${chatDigestRef.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));

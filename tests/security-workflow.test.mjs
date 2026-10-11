@@ -52,7 +52,7 @@ test('nginx compatibility is checked after building and before its security scan
 
 test('nginx uses the TCP healthcheck verified against its slim image', () => {
 	const compose = yaml.load(readFileSync(path.join(repo, 'docker-compose.yml'), 'utf8'));
-	assert.deepEqual(compose.services.nginx.healthcheck.test, ['CMD', 'nc', '-z', '-w', '2', '127.0.0.1', '8080']);
+	assert.deepEqual(compose.services.nginx.healthcheck.test, ['CMD-SHELL', "if command -v nc >/dev/null 2>&1; then nc -z -w 2 127.0.0.1 8080; else timeout 2 bash -c '</dev/tcp/127.0.0.1/8080'; fi"]);
 });
 
 test('image publication waits for integration tests and the security audit', () => {

@@ -300,7 +300,7 @@ services:
         condition: service_healthy
       # Note: frontend dependency removed - frontend uses profile and may not be present on VPS
     healthcheck:
-      test: ["CMD", "nc", "-z", "-w", "2", "127.0.0.1", "8080"]
+      test: ["CMD-SHELL", "if command -v nc >/dev/null 2>&1; then nc -z -w 2 127.0.0.1 8080; else timeout 2 bash -c '</dev/tcp/127.0.0.1/8080'; fi"]
       interval: 10s
       timeout: 5s
       retries: 3
