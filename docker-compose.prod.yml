@@ -27,7 +27,6 @@ services:
   chat:
     environment:
       NODE_ENV: production
-      USER_SERVICE_URL: http://user:8081
     deploy:
       resources:
         limits:

@@ -1,15 +1,14 @@
 // Mock ESM-only modules before importing application code
 jest.mock('uuid', () => ({ v4: () => 'mock-uuid' }))
 jest.mock('amqplib', () => ({ connect: jest.fn() }))
+jest.mock('../../src/services/RabbitMQService', () => ({ rabbitMQService: { getUserDetails: jest.fn() } }))
 
 import MessageController from '../../src/controllers/MessageController'
 import { AppDataSource } from '../../src/database/connection'
+import { rabbitMQService } from '../../src/services/RabbitMQService'
 
 describe('MessageController additional branches', () => {
-  const originalFetch = global.fetch
-
   beforeEach(() => jest.resetAllMocks())
-  afterAll(() => { global.fetch = originalFetch })
 
   test('sendMessage - sender and receiver same triggers validation error', async () => {
     const req: any = { body: { receiverId: 'same', message: JSON.stringify({ __encrypted: true, body: 'x' }) }, user: { _id: 'same', email: 'a@b', username: 'u' } }
@@ -75,7 +74,7 @@ describe('MessageController additional branches', () => {
     const repo: any = { query: jest.fn().mockResolvedValue(conversationsRaw) }
     jest.spyOn(AppDataSource, 'getRepository').mockReturnValue(repo as any)
 
-    global.fetch = jest.fn().mockResolvedValue({ ok: false, status: 404 }) as any
+    jest.mocked(rabbitMQService.getUserDetails).mockImplementation(async (_id, callback) => callback(null))
 
     const req: any = { user: { _id: 's1' } }
     const res: any = { json: jest.fn().mockImplementation((v) => v), status: jest.fn().mockReturnThis() }

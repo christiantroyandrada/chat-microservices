@@ -20,7 +20,7 @@ export interface NotifyReceiverArgs {
 
 class RabbitMQService {
   private readonly requestQueue = 'USER_DETAILS_REQUEST'
-  private readonly responseQueue = 'USER_DETAILS_RESPONSE'
+  private responseQueue = ''
   // store callback + timeout so we can clean up if no response arrives
   private readonly correlationMap = new Map<string, { callback: UserDetailsCallback; timer: NodeJS.Timeout }>()
   private channel!: Channel
@@ -49,7 +49,9 @@ class RabbitMQService {
     })
 
     await this.channel.assertQueue(this.requestQueue)
-    await this.channel.assertQueue(this.responseQueue)
+    // Private replies cannot be consumed and dropped by another chat instance.
+    const replyQueue = await this.channel.assertQueue('', { exclusive: true })
+    this.responseQueue = replyQueue.queue
     // Declare the notifications queue to MATCH the existing broker topology:
     // durable, NO dead-letter args. The live CloudAMQP queue was created without
     // a DLX, so declaring x-dead-letter-exchange here (even '') throws
@@ -57,7 +59,7 @@ class RabbitMQService {
     // must declare identical args; both use { durable: true } only.
     await this.channel.assertQueue(config.queue.notifications, { durable: true })
 
-    this.channel.consume(
+    await this.channel.consume(
       this.responseQueue,
       (msg) => {
         if (!msg) return
@@ -68,8 +70,8 @@ class RabbitMQService {
           const entry = this.correlationMap.get(correlationId)
           if (entry) {
             clearTimeout(entry.timer)
-            entry.callback(user)
             this.correlationMap.delete(correlationId)
+            entry.callback(user)
           }
           } catch (parseError) {
           // parse errors are unexpected - surface via logger
@@ -119,13 +121,17 @@ class RabbitMQService {
     }, 5000)
 
     this.correlationMap.set(correlationId, { callback, timer })
-    this.channel.sendToQueue(
-      this.requestQueue,
-      Buffer.from(JSON.stringify({ userId })),
-      // replyTo is REQUIRED: user-service replies to msg.properties.replyTo.
-      // Without it the response was sent nowhere and getUserDetails always timed out.
-      { correlationId, replyTo: this.responseQueue },
-    )
+    try {
+      this.channel.sendToQueue(
+        this.requestQueue,
+        Buffer.from(JSON.stringify({ userId })),
+        { correlationId, replyTo: this.responseQueue },
+      )
+    } catch (error) {
+      clearTimeout(timer)
+      this.correlationMap.delete(correlationId)
+      throw error
+    }
   }
 
   async notifyReceiver (args: NotifyReceiverArgs) {

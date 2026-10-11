@@ -10,8 +10,8 @@ import type { UserDetails } from '../types'
  */
 async function resolveReceiver (receiverId: string): Promise<UserDetails | null> {
   try {
-    return await new Promise<UserDetails | null>((resolve) => {
-      rabbitMQService.getUserDetails(receiverId, resolve)
+    return await new Promise<UserDetails | null>((resolve, reject) => {
+      rabbitMQService.getUserDetails(receiverId, resolve).catch(reject)
     })
   } catch (err) {
     logWarn('[chat-service] receiver lookup failed; notifying without email', err)

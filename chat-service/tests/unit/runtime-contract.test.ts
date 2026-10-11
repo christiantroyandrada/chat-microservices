@@ -3,6 +3,7 @@ process.env.JWT_SECRET = process.env.JWT_SECRET || 'test_jwt_secret_which_is_lon
 
 jest.mock('uuid', () => ({ v4: () => 'mock-uuid' }))
 jest.mock('amqplib', () => ({ connect: jest.fn() }))
+jest.mock('../../src/services/RabbitMQService', () => ({ rabbitMQService: { getUserDetails: jest.fn() } }))
 
 import { AppDataSource } from '../../src/database/connection'
 import MessageController, { clearUserDetailCache } from '../../src/controllers/MessageController'
@@ -12,6 +13,7 @@ import {
 import { validateRequest } from '../../src/middleware/validation/validateRequest'
 import { MessageStatus } from '../../src/database/models/MessageModel'
 import spec from '../../src/openapi'
+import { rabbitMQService } from '../../src/services/RabbitMQService'
 
 type Schema = {
   $ref?: string
@@ -230,10 +232,7 @@ describe('chat-service runtime OpenAPI conformance', () => {
       ]),
     }
     jest.spyOn(AppDataSource, 'getRepository').mockReturnValue(repo as any)
-    global.fetch = jest.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({ data: { username: 'bob' } }),
-    }) as any
+    jest.mocked(rabbitMQService.getUserDetails).mockImplementation(async (id, callback) => callback({ id, username: 'bob', email: 'bob@example.com' }))
 
     const result = await invoke(MessageController.getConversations, {
       user: { _id: userIds.sender },

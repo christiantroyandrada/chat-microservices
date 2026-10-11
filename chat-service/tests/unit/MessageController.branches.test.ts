@@ -1,4 +1,5 @@
 /* eslint-disable @typescript-eslint/no-var-requires */
+jest.mock('../../src/services/RabbitMQService', () => ({ rabbitMQService: { getUserDetails: jest.fn() } }))
 describe('MessageController branch coverage', () => {
   beforeEach(() => {
     jest.resetModules()
@@ -70,21 +71,20 @@ describe('MessageController branch coverage', () => {
     const AppDataSource = { getRepository: jest.fn().mockReturnValue(messageRepo) }
     jest.doMock('../../src/database', () => ({ AppDataSource }))
 
-    // First: fetch returns username
-  global.fetch = jest.fn().mockResolvedValue({ ok: true, json: async () => ({ data: { username: 'bob' } }) }) as any
   const { requireControllerAfterMocks } = require('../utils/testHelpers')
   const { controller } = requireControllerAfterMocks('../../src/controllers/MessageController')
   const MC = controller.default || controller
+  const { rabbitMQService } = require('../../src/services/RabbitMQService')
+  rabbitMQService.getUserDetails.mockImplementation(async (id: string, callback: (user: { id: string, username: string, email: string }) => void) => callback({ id, username: 'bob', email: 'bob@example.com' }))
   const res1: any = { json: jest.fn(), status: jest.fn().mockReturnThis() }
   await MC.getConversations({ user: { _id: 'u1' } } as any, res1, jest.fn())
     expect(res1.json).toHaveBeenCalled()
     const called1 = res1.json.mock.calls[0][0]
     expect(called1.data[0]).toHaveProperty('username', 'bob')
 
-    // Second: fetch fails -> username Unknown User
-    // Use a different userId so the in-memory cache from the first call doesn't mask the failure
+    // Use a different userId so the cache cannot mask a missing broker user.
     messageRepo.query.mockResolvedValue([ { userId: 'u3', lastMessage: 'hi', lastMessageSenderId: 'u3', lastMessageTime: new Date().toISOString(), unreadCount: 0 } ])
-    global.fetch = jest.fn().mockResolvedValue({ ok: false }) as any
+    rabbitMQService.getUserDetails.mockImplementation(async (_id: string, callback: (user: null) => void) => callback(null))
     const res2: any = { json: jest.fn(), status: jest.fn().mockReturnThis() }
     await MC.getConversations({ user: { _id: 'u1' } } as any, res2, jest.fn())
     expect(res2.json).toHaveBeenCalled()

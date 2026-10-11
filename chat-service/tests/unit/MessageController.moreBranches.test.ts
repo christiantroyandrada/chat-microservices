@@ -1,4 +1,5 @@
 /* eslint-disable @typescript-eslint/no-var-requires */
+jest.mock('../../src/services/RabbitMQService', () => ({ rabbitMQService: { getUserDetails: jest.fn() } }))
 describe('MessageController more branch exercises', () => {
   beforeEach(() => {
     jest.resetModules()

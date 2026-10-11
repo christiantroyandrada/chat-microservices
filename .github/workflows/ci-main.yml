@@ -94,6 +94,7 @@ jobs:
           node scripts/verify-migration-policy.mjs
           node --test tests/deployment-workflow.test.mjs
           node scripts/verify-deployment-workflow.mjs
+          node --test tests/coverage-workflow.test.mjs tests/security-workflow.test.mjs
 
   security-audit:
     name: Security Audit

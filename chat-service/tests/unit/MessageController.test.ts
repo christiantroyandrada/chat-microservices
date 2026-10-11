@@ -1,4 +1,5 @@
 import MessageController from '../../src/controllers/MessageController'
+jest.mock('../../src/services/RabbitMQService', () => ({ rabbitMQService: { getUserDetails: jest.fn() } }))
 import { AppDataSource } from '../../src/database'
 import { validationResult } from 'express-validator'
 import { fetchConversationValidation } from '../../src/middleware/validation/messageValidation'

@@ -1,4 +1,5 @@
-// Follow existing test style: mock database and utils before importing controller
+import type { UserDetailsCallback } from '../../src/types'
+jest.mock('../../src/services/RabbitMQService', () => ({ rabbitMQService: { getUserDetails: jest.fn() } }))
 jest.mock('../../src/database', () => ({
   Message: {},
   AppDataSource: {
@@ -18,6 +19,7 @@ jest.mock('../../src/utils', () => ({
 import MessageController from '../../src/controllers/MessageController'
 import { clearUserDetailCache } from '../../src/controllers/MessageController'
 import { AppDataSource } from '../../src/database'
+import { rabbitMQService } from '../../src/services/RabbitMQService'
 
 describe('MessageController targeted branch fixes', () => {
   afterEach(() => {
@@ -25,14 +27,14 @@ describe('MessageController targeted branch fixes', () => {
     clearUserDetailCache()
   })
 
-  it('getConversations: maps Unknown User when fetch returns non-ok', async () => {
+  it('getConversations: maps Unknown User when broker returns no user', async () => {
     const mockReq: any = { user: { _id: 'user1' } }
     const mockRes: any = { json: jest.fn(), status: jest.fn().mockReturnThis() }
 
     const repo: any = { query: jest.fn().mockResolvedValue([{ userId: 'u2', lastMessage: 'hi', lastMessageTime: new Date().toISOString(), lastMessageSenderId: 'u2', unreadCount: 0 }]) }
     ;(AppDataSource.getRepository as jest.Mock).mockReturnValue(repo)
 
-    ;(global as any).fetch = jest.fn().mockResolvedValue({ ok: false, status: 404 })
+    jest.mocked(rabbitMQService.getUserDetails).mockImplementation(async (_id, callback) => callback(null))
 
     await MessageController.getConversations(mockReq, mockRes, jest.fn())
 
@@ -41,14 +43,14 @@ describe('MessageController targeted branch fixes', () => {
     expect(callArg.data[0].username).toBe('Unknown User')
   })
 
-  it('getConversations: maps returned username when fetch ok and nested data', async () => {
+  it('getConversations: maps returned broker username', async () => {
     const mockReq: any = { user: { _id: 'user1' } }
     const mockRes: any = { json: jest.fn(), status: jest.fn().mockReturnThis() }
 
     const repo: any = { query: jest.fn().mockResolvedValue([{ userId: 'u2', lastMessage: 'hi', lastMessageTime: new Date().toISOString(), lastMessageSenderId: 'u2', unreadCount: 0 }]) }
     ;(AppDataSource.getRepository as jest.Mock).mockReturnValue(repo)
 
-    ;(global as any).fetch = jest.fn().mockResolvedValue({ ok: true, json: async () => ({ data: { id: 'u2', username: 'bob' } }) })
+    jest.mocked(rabbitMQService.getUserDetails).mockImplementation(async (id, callback) => callback({ id, username: 'bob', email: 'bob@example.com' }))
 
     await MessageController.getConversations(mockReq, mockRes, jest.fn())
 
@@ -105,17 +107,14 @@ describe('MessageController targeted branch fixes', () => {
     expect(typeof error.message).toBe('string')
   })
 
-  it('getConversations: respects USER_SERVICE_URL env and treats null json as Unknown User', async () => {
-    const prev = process.env.USER_SERVICE_URL
-    process.env.USER_SERVICE_URL = 'http://custom-user-service'
-
+  it('getConversations: treats malformed broker payload as Unknown User', async () => {
     const mockReq: any = { user: { _id: 'user1' } }
     const mockRes: any = { json: jest.fn(), status: jest.fn().mockReturnThis() }
 
     const repo: any = { query: jest.fn().mockResolvedValue([{ userId: 'u2', lastMessage: 'hi', lastMessageTime: new Date().toISOString(), lastMessageSenderId: 'u2', unreadCount: 0 }]) }
     ;(AppDataSource.getRepository as jest.Mock).mockReturnValue(repo)
 
-    ;(global as any).fetch = jest.fn().mockResolvedValue({ ok: true, json: async () => null })
+    jest.mocked(rabbitMQService.getUserDetails).mockImplementation(async (_id, callback) => callback({ error: 'not found' } as unknown as Parameters<UserDetailsCallback>[0]))
 
     await MessageController.getConversations(mockReq, mockRes, jest.fn())
 
@@ -123,22 +122,16 @@ describe('MessageController targeted branch fixes', () => {
     expect(callArg.status).toBe(200)
     expect(callArg.data[0].username).toBe('Unknown User')
 
-    if (prev === undefined) delete process.env.USER_SERVICE_URL
-    else process.env.USER_SERVICE_URL = prev
   })
 
-  it('getConversations: uses HTTPS user service in production and maps nested username', async () => {
-    const prevNode = process.env.NODE_ENV
-    delete process.env.USER_SERVICE_URL
-    process.env.NODE_ENV = 'production'
-
+  it('getConversations: caches a resolved broker username without email', async () => {
     const mockReq: any = { user: { _id: 'user1' } }
     const mockRes: any = { json: jest.fn(), status: jest.fn().mockReturnThis() }
 
     const repo: any = { query: jest.fn().mockResolvedValue([{ userId: 'u3', lastMessage: 'yo', lastMessageTime: new Date().toISOString(), lastMessageSenderId: 'u3', unreadCount: 0 }]) }
     ;(AppDataSource.getRepository as jest.Mock).mockReturnValue(repo)
 
-    ;(global as any).fetch = jest.fn().mockResolvedValue({ ok: true, json: async () => ({ data: { id: 'u3', username: 'prod-user' } }) })
+    jest.mocked(rabbitMQService.getUserDetails).mockImplementation(async (id, callback) => callback({ id, username: 'prod-user', email: 'private@example.com' }))
 
     await MessageController.getConversations(mockReq, mockRes, jest.fn())
 
@@ -146,7 +139,8 @@ describe('MessageController targeted branch fixes', () => {
     expect(callArg.status).toBe(200)
     expect(callArg.data[0].username).toBe('prod-user')
 
-    if (prevNode === undefined) delete process.env.NODE_ENV
-    else process.env.NODE_ENV = prevNode
+    await MessageController.getConversations(mockReq, mockRes, jest.fn())
+    expect(rabbitMQService.getUserDetails).toHaveBeenCalledTimes(1)
+    expect(callArg.data[0]).not.toHaveProperty('email')
   })
 })

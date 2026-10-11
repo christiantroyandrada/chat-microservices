@@ -1,6 +1,6 @@
 import { Response, Request, NextFunction } from 'express'
 import { LRUCache } from 'lru-cache'
-import type { ConversationRow } from '../types'
+import type { ConversationRow, UserDetails } from '../types'
 import { AuthenticatedRequest } from '../middleware'
 import { parseConversationPagination } from '../middleware/validation/messageValidation'
 import { Message, AppDataSource } from '../database'
@@ -8,11 +8,9 @@ import { APIError, handleMessageReceived } from '../utils'
 import { logWarn, logError } from '../utils/logger'
 import { MessageStatus } from '../database/models/MessageModel'
 import { chatMessagesSentTotal, chatMessagesReadTotal } from '../utils/metrics'
+import { rabbitMQService } from '../services/RabbitMQService'
 
-// LRU cache for user details — bounded to 500 entries with 60s TTL.
-// Prevents unbounded memory growth from the old Map<string, ...> approach
-// while still avoiding N+1 HTTP calls per conversation load.
-// We wrap values in { data: ... } because LRU cache does not store null directly.
+// Cache only profile names, never the caller's credentials or contact details.
 const USER_CACHE_TTL_MS = 60_000; // 1 minute TTL
 type CachedUserDetail = { data: { username?: string } | null };
 const userDetailCache = new LRUCache<string, CachedUserDetail>({
@@ -25,8 +23,6 @@ export const clearUserDetailCache = () => userDetailCache.clear();
 
 const fetchUserDetails = async (
   userId: string,
-  jwtToken?: string,
-  requestId?: string,
 ): Promise<{ username?: string } | null> => {
   // LRU cache handles TTL expiration automatically
   const cached = userDetailCache.get(userId);
@@ -35,29 +31,11 @@ const fetchUserDetails = async (
   }
 
   try {
-    const userServiceUrl = process.env.USER_SERVICE_URL || "http://user:8081";
-    const headers: Record<string, string> = {};
-    // Forward JWT for service-to-service auth
-    if (jwtToken) {
-      headers["Cookie"] = `jwt=${jwtToken}`;
-    }
-    // Propagate correlation ID for distributed tracing
-    if (requestId) {
-      headers["X-Request-ID"] = requestId;
-    }
-    const response = await fetch(`${userServiceUrl}/users/${userId}`, {
-      headers,
+    const user = await new Promise<UserDetails | null>((resolve, reject) => {
+      rabbitMQService.getUserDetails(userId, resolve).catch(reject);
     });
-
-    if (!response.ok) {
-      logWarn(`Failed to fetch user ${userId}: ${response.status}`);
-      return null;
-    }
-
-    const data = await response.json();
-    const result = data?.data || data || null;
-
-    // Store in LRU cache (TTL managed by lru-cache)
+    if (!user || typeof user.username !== 'string' || !user.username.trim()) return null;
+    const result = { username: user.username };
     userDetailCache.set(userId, { data: result });
 
     return result;
@@ -73,8 +51,6 @@ const fetchUserDetails = async (
  */
 const fetchUserDetailsBatch = async (
   userIds: string[],
-  jwtToken?: string,
-  requestId?: string,
 ): Promise<Map<string, { username?: string } | null>> => {
   const results = new Map<string, { username?: string } | null>();
   const uncached: string[] = [];
@@ -91,7 +67,7 @@ const fetchUserDetailsBatch = async (
   // Fetch all uncached in parallel
   if (uncached.length > 0) {
     const fetched = await Promise.all(
-      uncached.map((id) => fetchUserDetails(id, jwtToken, requestId)),
+      uncached.map((id) => fetchUserDetails(id)),
     );
     uncached.forEach((id, idx) => results.set(id, fetched[idx]));
   }
@@ -310,18 +286,10 @@ const getConversations = async (
         ? [conversationsRaw]
         : [];
 
-    // Forward JWT for service-to-service auth
-    const jwtToken = req.cookies?.jwt;
-    const requestId = (req.headers?.["x-request-id"] ?? undefined) as
-      string | undefined;
     const userIds = (conversationsArray as ConversationRow[]).map(
       (c) => c.userId,
     );
-    const userDetailsMap = await fetchUserDetailsBatch(
-      userIds,
-      jwtToken,
-      requestId,
-    );
+    const userDetailsMap = await fetchUserDetailsBatch(userIds);
 
     const conversations = (conversationsArray as ConversationRow[]).map((conv) => {
       const userDetails = userDetailsMap.get(conv.userId)

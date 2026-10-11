@@ -1,6 +1,7 @@
 // ESM-workarounds used across the test suite
 jest.mock('uuid', () => ({ v4: () => 'mock-uuid' }))
 jest.mock('amqplib', () => ({}))
+jest.mock('../../src/services/RabbitMQService', () => ({ rabbitMQService: { getUserDetails: jest.fn() } }))
 
 describe('MessageController - query builder and repository branches', () => {
   beforeEach(() => {
@@ -28,13 +29,13 @@ describe('MessageController - query builder and repository branches', () => {
     expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ status: 200, data: messages }))
   })
 
-  it('getConversations returns Unknown User when fetch user returns non-ok', async () => {
+  it('getConversations returns Unknown User when broker user is missing', async () => {
     const convs = [ { userId: 'u2', lastMessage: 'hey', lastMessageSenderId: 'u1', lastMessageTime: new Date().toISOString(), unreadCount: 0 } ]
 
     const { requireControllerWithMock } = require('../utils/testHelpers')
     const { controller, repo } = requireControllerWithMock('../../src/controllers/MessageController', { queryResult: convs })
-    // Mock fetch to return a non-ok response
-    global.fetch = jest.fn().mockResolvedValue({ ok: false, status: 404 }) as any
+    const { rabbitMQService } = require('../../src/services/RabbitMQService')
+    rabbitMQService.getUserDetails.mockImplementation(async (_id: string, callback: (user: null) => void) => callback(null))
     const MC = controller.default || controller
 
     const req: any = { user: { _id: 'u1' } }
@@ -48,13 +49,13 @@ describe('MessageController - query builder and repository branches', () => {
     expect(called.data[0].username).toBe('Unknown User')
   })
 
-  it('getConversations attaches real username when fetch returns data', async () => {
+  it('getConversations attaches real username when broker returns data', async () => {
     const convs = [ { userId: 'u2', lastMessage: 'hey', lastMessageSenderId: 'u1', lastMessageTime: new Date().toISOString(), unreadCount: 0 } ]
 
     const { requireControllerWithMock } = require('../utils/testHelpers')
     const { controller, repo } = requireControllerWithMock('../../src/controllers/MessageController', { queryResult: convs })
-    // Mock fetch to return ok response with nested data
-    global.fetch = jest.fn().mockResolvedValue({ ok: true, json: async () => ({ data: { username: 'bob' } }) }) as any
+    const { rabbitMQService } = require('../../src/services/RabbitMQService')
+    rabbitMQService.getUserDetails.mockImplementation(async (id: string, callback: (user: { id: string, username: string, email: string }) => void) => callback({ id, username: 'bob', email: 'bob@example.com' }))
     const MC = controller.default || controller
 
     const req: any = { user: { _id: 'u1' } }

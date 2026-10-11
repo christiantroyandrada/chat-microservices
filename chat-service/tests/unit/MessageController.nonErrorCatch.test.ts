@@ -1,4 +1,5 @@
 // Tests that ensure non-Error thrown values hit the 'Internal Server Error' branch
+jest.mock('../../src/services/RabbitMQService', () => ({ rabbitMQService: { getUserDetails: jest.fn() } }))
 jest.mock('../../src/database', () => ({
   Message: {},
   AppDataSource: { getRepository: jest.fn() }

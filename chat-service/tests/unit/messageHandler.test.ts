@@ -2,7 +2,7 @@
 jest.mock('../../src/services/RabbitMQService', () => ({
   rabbitMQService: {
     notifyReceiver: jest.fn(),
-    getUserDetails: jest.fn((_id: string, cb: (u: null) => void) => cb(null))
+    getUserDetails: jest.fn(async (_id: string, cb: (u: null) => void) => cb(null))
   }
 }))
 
@@ -14,7 +14,7 @@ describe('handleMessageReceived', () => {
     jest.resetAllMocks()
     // resetAllMocks wipes factory impls; resolveReceiver awaits this callback.
     ;(rabbitMQService.getUserDetails as jest.Mock).mockImplementation(
-      (_id: string, cb: (u: null) => void) => cb(null),
+      async (_id: string, cb: (u: null) => void) => cb(null),
     )
   })
 

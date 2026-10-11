@@ -1,4 +1,5 @@
 import { AppDataSource } from '../../src/database'
+jest.mock('../../src/services/RabbitMQService', () => ({ rabbitMQService: { getUserDetails: jest.fn(async (id: string, callback: (user: { id: string, username: string, email: string }) => void) => callback({ id, username: 'other', email: 'other@example.com' })) } }))
 
 describe('MessageController additional tests', () => {
   beforeEach(() => {
@@ -20,8 +21,6 @@ describe('MessageController additional tests', () => {
   afterEach(() => {
     jest.restoreAllMocks()
     jest.resetModules()
-    // clear any global.fetch we set
-    try { delete (global as any).fetch } catch {}
   })
 
   it('sendMessage rejects when receiver missing or same as sender', async () => {
@@ -117,7 +116,6 @@ describe('MessageController additional tests', () => {
   const repo = { query: jest.fn().mockResolvedValue(conv) }
   jest.spyOn(AppDataSource, 'getRepository').mockReturnValue(repo as any)
 
-  global.fetch = jest.fn().mockResolvedValue({ ok: true, json: async () => ({ data: { username: 'other' } }) }) as any
   const { requireControllerAfterMocks } = require('../utils/testHelpers')
   const { controller } = requireControllerAfterMocks('../../src/controllers/MessageController')
   const MessageController = controller && controller.default ? controller.default : controller

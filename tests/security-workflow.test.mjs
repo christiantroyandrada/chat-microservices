@@ -56,3 +56,28 @@ test('release uses the built-in GitHub token without declaring a reserved caller
 	assert.equal(deploy.permissions.packages, 'read');
 	assert.equal(step(deploy.jobs.deploy, 'Deploy owned backend release').env.GITHUB_TOKEN, '${{ secrets.GITHUB_TOKEN }}');
 });
+
+test('coverage artifacts cannot overwrite one another or silently omit a failing suite', () => {
+	assert.match(step(workflow('ci-main.yml').jobs['verify-openapi-contracts'], 'Verify committed OpenAPI contracts').run,
+		/node --test tests\/coverage-workflow\.test\.mjs tests\/security-workflow\.test\.mjs/);
+	const unit = workflow('unit-tests.yml');
+	const download = step(unit.jobs['merge-and-upload'], 'Download all LCOV artifacts');
+	assert.equal(download.with['merge-multiple'], false);
+	assert.equal(step(unit.jobs['unit-tests'], 'Upload LCOV (if present)').with['if-no-files-found'], 'error');
+	assert.equal(step(unit.jobs['merge-and-upload'], 'Upload combined LCOV').with['if-no-files-found'], 'error');
+	const run = step(unit.jobs['unit-tests'], 'Run tests (coverage optional)').run;
+	assert.ok(!run.includes('--if-present'));
+	assert.ok(!run.includes('if npm run coverage'), 'failed coverage tests must not fall back to a green unit run');
+});
+
+test('Sonar fails closed on missing coverage and waits for the server quality gate', () => {
+	const job = workflow('sonar.yml').jobs['build-and-sonar'];
+	assert.equal(step(job, 'Checkout').with?.['fetch-depth'], 0);
+	assert.equal(step(job, 'Download combined LCOV artifact')['continue-on-error'], undefined);
+	const scan = step(job, 'SonarCloud Scan');
+	assert.equal(scan['continue-on-error'], undefined);
+	assert.ok(scan.with.args.includes('-Dsonar.qualitygate.wait=true'));
+	assert.equal(step(job, 'Download combined LCOV artifact').with.path, 'coverage');
+	const prepare = step(job, 'Validate coverage file');
+	assert.match(prepare.run, /test -s coverage\/combined-lcov\.info/);
+});

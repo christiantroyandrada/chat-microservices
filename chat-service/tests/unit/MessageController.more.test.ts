@@ -1,4 +1,5 @@
 // Additional MessageController tests: empty, too-long, sender==receiver, unknown username mapping
+jest.mock('../../src/services/RabbitMQService', () => ({ rabbitMQService: { getUserDetails: jest.fn(async (_id: string, callback: (user: null) => void) => callback(null)) } }))
 
 describe('MessageController additional sendMessage validations', () => {
   afterEach(() => jest.clearAllMocks())
@@ -97,9 +98,6 @@ describe('MessageController additional sendMessage validations', () => {
   const { mockRepoWith } = require('../utils/dbMock')
   const conv = [{ userId: 'r1', lastMessage: 'x', lastMessageTime: new Date(), unreadCount: 0 }]
   mockRepoWith({ queryResult: conv })
-
-  // Mock fetch to return an empty object so username is undefined
-  global.fetch = jest.fn().mockResolvedValue({ ok: true, json: async () => ({}) }) as jest.Mock
 
   const { requireControllerAfterMocks } = require('../utils/testHelpers')
   const { controller } = requireControllerAfterMocks('../../src/controllers/MessageController')

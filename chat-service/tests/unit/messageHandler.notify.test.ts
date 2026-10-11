@@ -20,7 +20,7 @@ describe('handleMessageReceived — offline notification with receiver email', (
 
   it('resolves the receiver email and forwards it when recipient is offline', async () => {
     isOnline.mockResolvedValue(false)
-    getUserDetails.mockImplementation((_id: string, cb: any) =>
+    getUserDetails.mockImplementation(async (_id: string, cb: any) =>
       cb({ id: 'r1', username: 'bob', email: 'bob@example.com' }),
     )
 
@@ -53,7 +53,7 @@ describe('handleMessageReceived — offline notification with receiver email', (
 
   it('still notifies (without email) when lookup returns null', async () => {
     isOnline.mockResolvedValue(false)
-    getUserDetails.mockImplementation((_id: string, cb: any) => cb(null))
+    getUserDetails.mockImplementation(async (_id: string, cb: any) => cb(null))
 
     await handleMessageReceived({
       senderName: 'Alice',
@@ -63,6 +63,14 @@ describe('handleMessageReceived — offline notification with receiver email', (
       isEncrypted: true,
     })
 
+    expect(notifyReceiver).toHaveBeenCalledTimes(1)
+    expect(notifyReceiver.mock.calls[0][0].receiverEmail).toBeUndefined()
+  })
+
+  it('still persists a notification when the broker rejects the lookup', async () => {
+    isOnline.mockResolvedValue(false)
+    getUserDetails.mockRejectedValue(new Error('channel closed'))
+    await handleMessageReceived({ senderName: 'Alice', senderEmail: 'alice@example.com', receiverId: 'r1', messageContent: '[Encrypted message]', isEncrypted: true })
     expect(notifyReceiver).toHaveBeenCalledTimes(1)
     expect(notifyReceiver.mock.calls[0][0].receiverEmail).toBeUndefined()
   })

@@ -1,4 +1,5 @@
 // Tests for MessageController.sendMessage
+jest.mock('../../src/services/RabbitMQService', () => ({ rabbitMQService: { getUserDetails: jest.fn() } }))
 // We mock database and utils before importing the controller so the
 // controller uses the mocked implementations.
 
