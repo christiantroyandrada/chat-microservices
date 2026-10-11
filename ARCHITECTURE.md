@@ -363,8 +363,8 @@ All backend services declare `depends_on` with `condition: service_healthy` for 
 **RabbitMQ**: `rabbitmq:3.13-management-alpine` with `rabbitmq-diagnostics -q ping` healthcheck and management UI on `localhost:15672`.
 
 **Build Strategy**: Multi-stage builds
-1. **Builder stage**: `node:22-bookworm-slim` — Install, compile TypeScript
-2. **Runtime stage**: `gcr.io/distroless/nodejs22-debian12:nonroot` — Minimal runtime
+1. **Builder stage**: `node:22-trixie-slim` — Install, compile TypeScript
+2. **Runtime stage**: `gcr.io/distroless/nodejs22-debian13:nonroot` — Minimal runtime
 
 ### CI/CD Pipeline (GitHub Actions)
 

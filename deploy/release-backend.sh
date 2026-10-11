@@ -248,7 +248,7 @@ services:
       chat: { condition: service_started }
       notification: { condition: service_started }
     healthcheck:
-      test: ["CMD-SHELL", "timeout 2 bash -c '</dev/tcp/localhost/8080' || exit 1"]
+      test: ["CMD", "nc", "-z", "-w", "2", "127.0.0.1", "8080"]
       interval: 10s
       timeout: 5s
       retries: 3

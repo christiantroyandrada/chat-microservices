@@ -1,5 +1,5 @@
-# Build stage — use Debian 12 (bookworm) for better security updates
-FROM node:22-bookworm-slim AS builder
+# Match the builder libc to the production runtime.
+FROM node:22-trixie-slim@sha256:154ba2f4d6fec323d28e4f4bb86bba4677f1223391a1979cf521304e03a98dfa AS builder
 
 # OCI Image Labels for traceability and security compliance
 LABEL org.opencontainers.image.title="User Service" \
@@ -8,7 +8,7 @@ LABEL org.opencontainers.image.title="User Service" \
       org.opencontainers.image.source="https://github.com/christiantroyandrada/chat-microservices" \
       org.opencontainers.image.documentation="https://github.com/christiantroyandrada/chat-microservices/blob/main/README.md" \
       org.opencontainers.image.licenses="MIT" \
-      org.opencontainers.image.base.name="gcr.io/distroless/nodejs22-debian12:nonroot"
+      org.opencontainers.image.base.name="gcr.io/distroless/nodejs22-debian13:nonroot"
 
 WORKDIR /usr/src/app
 
@@ -32,7 +32,7 @@ RUN npm run build \
 	&& rm -rf /root/.npm /tmp/*
 
 # Production stage - use latest pinned distroless image
-FROM gcr.io/distroless/nodejs22-debian12:nonroot@sha256:80dab95b787dc01d567ece51520a5d634cb5f205a278f7a2a2744d253a2cc33b
+FROM gcr.io/distroless/nodejs22-debian13:nonroot@sha256:ec2313763dd43931543bd03830466e0c409ce73a487e8d46f10db72d3b816c1c
 
 WORKDIR /usr/src/app
 

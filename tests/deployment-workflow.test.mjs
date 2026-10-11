@@ -3,9 +3,11 @@ import { chmod, mkdir, mkdtemp, readFile, readdir, writeFile } from 'node:fs/pro
 import os from 'node:os';
 import path from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
+import { createRequire } from 'node:module';
 import test from 'node:test';
 
 const repo = path.resolve(import.meta.dirname, '..');
+const yaml = createRequire(path.join(repo, 'user-service', 'package.json'))('js-yaml');
 const script = path.join(repo, 'deploy/release-backend.sh');
 const verifier = path.join(repo, 'scripts/verify-deployment-workflow.mjs');
 const sha = 'a'.repeat(40);
@@ -235,6 +237,7 @@ test('valid digest set reaches pull/preflight and is written to state and Compos
   assert.match(compose, new RegExp(chatDigestRef.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   assert.match(compose, new RegExp(notifDigestRef.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   assert.match(compose, new RegExp(nginxDigestRef.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  assert.deepEqual(yaml.load(compose).services.nginx.healthcheck.test, ['CMD', 'nc', '-z', '-w', '2', '127.0.0.1', '8080']);
   const log = await readFile(h.log, 'utf8');
   assert.match(log, new RegExp(`pull ${userDigestRef.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
   assert.match(log, new RegExp(`pull ${chatDigestRef.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));

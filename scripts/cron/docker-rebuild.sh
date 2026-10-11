@@ -57,12 +57,10 @@ declare -a NEW_DIGESTS=()
 # Function to get remote image digest
 get_remote_digest() {
     local image="$1"
-    # Use docker manifest inspect or skopeo if available
-    if command -v skopeo &> /dev/null; then
-        skopeo inspect "docker://$image" 2>/dev/null | jq -r '.Digest' || echo ""
-    else
-        # Fallback to docker manifest
-        docker manifest inspect "$image" 2>/dev/null | jq -r '.config.digest // .manifests[0].digest' || echo ""
+    if command -v crane &> /dev/null; then
+        crane digest "$image" 2>/dev/null || echo ""
+    elif command -v skopeo &> /dev/null; then
+        skopeo inspect --format '{{.Digest}}' "docker://$image" 2>/dev/null || echo ""
     fi
 }
 
@@ -75,9 +73,9 @@ get_local_digest() {
 # Base images to check for updates
 # Format: "image:tag" or "image@sha256:..." 
 declare -a BASE_IMAGES=(
-    "node:22-bookworm-slim"
-    "gcr.io/distroless/nodejs22-debian12:nonroot"
-    "bitnami/nginx:latest"
+    "node:22-trixie-slim"
+    "gcr.io/distroless/nodejs22-debian13:nonroot"
+    "nginxinc/nginx-unprivileged:stable-alpine-slim"
     "postgres:17.6-trixie"
 )
 

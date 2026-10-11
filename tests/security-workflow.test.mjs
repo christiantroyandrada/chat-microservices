@@ -40,6 +40,21 @@ test('production npm and Trivy scans fail closed while keeping evidence uploads'
 	}
 });
 
+test('nginx compatibility is checked after building and before its security scan', () => {
+	const job = workflow('security-audit.yml').jobs['trivy-scan'];
+	const check = step(job, 'Check nginx runtime compatibility');
+	assert.equal(check.if, "matrix.service == 'nginx'");
+	assert.equal(check.env.NGINX_TEST_IMAGE, 'nginx:test');
+	assert.equal(check.run, 'node --test tests/nginx-image.check.mjs tests/image-digest-updater.check.mjs');
+	assert.ok(job.steps.indexOf(check) > job.steps.indexOf(step(job, 'Build Docker image')));
+	assert.ok(job.steps.indexOf(check) < job.steps.indexOf(step(job, 'Run Trivy vulnerability scanner (SARIF)')));
+});
+
+test('nginx uses the TCP healthcheck verified against its slim image', () => {
+	const compose = yaml.load(readFileSync(path.join(repo, 'docker-compose.yml'), 'utf8'));
+	assert.deepEqual(compose.services.nginx.healthcheck.test, ['CMD', 'nc', '-z', '-w', '2', '127.0.0.1', '8080']);
+});
+
 test('image publication waits for integration tests and the security audit', () => {
 	const ci = workflow('ci-main.yml');
 	const dependencies = ci.jobs['docker-build'].needs;

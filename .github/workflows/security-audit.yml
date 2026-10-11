@@ -80,6 +80,12 @@ jobs:
             docker build -t ${{ matrix.service }}:test ${{ matrix.service }}
           fi
 
+      - name: Check nginx runtime compatibility
+        if: matrix.service == 'nginx'
+        env:
+          NGINX_TEST_IMAGE: nginx:test
+        run: node --test tests/nginx-image.check.mjs tests/image-digest-updater.check.mjs
+
       # Replaced setup-trivy (broken internal ref 75c4dc0f) with trivy-action v0.34.1
       # trivy-action handles Trivy installation + scanning in a single step
       - name: Run Trivy vulnerability scanner (SARIF)

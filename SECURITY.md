@@ -231,7 +231,7 @@ A comprehensive security audit was completed with **6 critical vulnerabilities i
 **Distroless Runtime Migration**: All Node.js services migrated to minimal distroless runtime images
 
 - **Multi-stage builds**: Builder stage (Node.js slim) + minimal runtime stage (distroless)
-- **Distroless runtime**: `gcr.io/distroless/nodejs22-debian12:nonroot` for user/chat/notification services
+- **Distroless runtime**: `gcr.io/distroless/nodejs22-debian13:nonroot` for user/chat/notification services
 - **Pinned builder digest**: Official Node.js 22 slim image pinned to digest `sha256:204476c3121ff0...` for reproducible builds
 - **Vendor nginx image**: Bitnami nginx pinned to digest `sha256:8fed12f41a27...` (0 vulnerabilities)
 - **Build hardening**: `npm ci`, `npm cache clean --force`, `npm prune --production` to minimize attack surface
