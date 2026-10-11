@@ -27,6 +27,9 @@ ARG NGINX_ENV=development
 # Copy both config files
 USER root
 
+# The pinned base predates the zlib CVE-2026-85091 fix.
+RUN apk add --no-cache --upgrade zlib=1.3.2-r1
+
 # Keep the existing VPS bind-mount path and UID; only nginx's writable cache changes owner.
 RUN mkdir -p /opt/bitnami/nginx/conf /var/www/certbot /etc/letsencrypt \
     && chown -R 1001:0 /var/cache/nginx /var/www/certbot /etc/letsencrypt \

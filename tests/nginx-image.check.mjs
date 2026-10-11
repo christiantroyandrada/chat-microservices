@@ -48,6 +48,7 @@ test('gateway remains non-root with development, production TLS and read-only sh
 			containers.push(id);
 			assert.equal(docker('exec', id, 'id', '-u'), '1001');
 			if (fixture.name === 'development') {
+				docker('exec', id, 'apk', 'info', '--exists', 'zlib=1.3.2-r1');
 				docker('exec', id, 'nc', '-z', '-w', '2', '127.0.0.1', '8080');
 			}
 			let published;
