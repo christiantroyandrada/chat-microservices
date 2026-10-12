@@ -24,6 +24,11 @@
       "path": "user-service/src/database/migrations/1740000000000-AddTrigramSearchIndexes.ts",
       "sha256": "4dce05ffa9ee033ed701eab3d12068b32204bc9abed191f00927f1c1f168a271",
       "classification": "backward-compatible"
+    },
+    {
+      "path": "user-service/src/database/migrations/1789171200000-EnforceUniquePrekeyDevice.ts",
+      "sha256": "55499c0d6bb7fc054955851fb01db1020f459fce2c753aaec198ec672f01b59c",
+      "classification": "backward-compatible"
     }
   ]
 }

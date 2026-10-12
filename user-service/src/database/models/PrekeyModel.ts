@@ -1,7 +1,8 @@
-import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn } from 'typeorm'
+import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, Index } from 'typeorm'
 import type { StoredBundle } from '../../types'
 
 @Entity('prekeys')
+@Index('IDX_prekeys_user_device', ['userId', 'deviceId'], { unique: true })
 export class Prekey {
   @PrimaryGeneratedColumn('uuid')
   id: string
@@ -12,7 +13,7 @@ export class Prekey {
   @Column({ type: 'varchar', length: 255 })
   deviceId: string
 
-  // Store the bundle as JSON (Postgres JSONB)
+  // Store the bundle as PostgreSQL JSON.
   // StoredBundle is either a full PrekeyBundle or an encrypted-only backup blob
   @Column({ type: 'json' })
   bundle: StoredBundle

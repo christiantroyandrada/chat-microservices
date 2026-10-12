@@ -6,6 +6,7 @@ import { User } from './models/UserModel'
 import { Prekey } from './models/PrekeyModel'
 import { InitialSchema1733150000000 } from './migrations/1733150000000-InitialSchema'
 import { AddTrigramSearchIndexes1740000000000 } from './migrations/1740000000000-AddTrigramSearchIndexes'
+import { EnforceUniquePrekeyDevice1789171200000 } from './migrations/1789171200000-EnforceUniquePrekeyDevice'
 
 export const AppDataSource = new DataSource({
   type: 'postgres',
@@ -13,7 +14,7 @@ export const AppDataSource = new DataSource({
   synchronize: false, // Schema is owned by migrations (applied as admin in the migrate step). The runtime role (user_svc) has no DDL rights.
   logging: config.env === 'development',
   entities: [User, Prekey],
-  migrations: [InitialSchema1733150000000, AddTrigramSearchIndexes1740000000000],
+  migrations: [InitialSchema1733150000000, AddTrigramSearchIndexes1740000000000, EnforceUniquePrekeyDevice1789171200000],
   migrationsRun: false, // We run migrations explicitly before starting services
   // Per-service migrations table: all three services define a migration class
   // named InitialSchema1733150000000 and share one DB, so a single shared
