@@ -71,9 +71,9 @@ export class EnforceUniquePrekeyDevice1789171200000 implements MigrationInterfac
         json_typeof(p."bundle"->'preKeys') AS "preKeysType",
         CASE WHEN json_typeof(p."bundle"->'preKeys') = 'array' THEN NOT EXISTS (
           SELECT 1 FROM json_array_elements(p."bundle"->'preKeys') item
-          WHERE json_typeof(item) <> 'object'
-             OR json_typeof(item->'id') <> 'number'
-             OR json_typeof(item->'publicKey') <> 'string'
+          WHERE json_typeof(item) IS DISTINCT FROM 'object'
+             OR json_typeof(item->'id') IS DISTINCT FROM 'number'
+             OR json_typeof(item->'publicKey') IS DISTINCT FROM 'string'
         ) ELSE false END AS "preKeysValid",
         json_typeof(p."bundle"->'_encryptedKeyBundle') AS "backupType"
       FROM "prekeys" p

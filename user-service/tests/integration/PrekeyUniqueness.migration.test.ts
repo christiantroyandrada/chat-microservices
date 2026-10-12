@@ -365,6 +365,40 @@ describe('prekey uniqueness migration', () => {
     expect(await hasConstraint()).toBe(false)
   })
 
+  it.each([
+    ['missing id', { publicKey: 'never-log-missing-id' }],
+    ['missing publicKey', { id: 7, marker: 'never-log-missing-public-key' }],
+    ['empty object', { marker: 'never-log-empty-object' }],
+    ['primitive', 'never-log-primitive'],
+  ])('rejects and rolls back a malformed preKey item with %s', async (_case, malformedItem) => {
+    await seed(
+      {
+        id: '00000000-0000-0000-0000-000000000044',
+        bundle: published('valid'),
+      },
+      {
+        id: '00000000-0000-0000-0000-000000000045',
+        bundle: { ...published('malformed'), preKeys: [malformedItem] },
+        updatedAt: '2026-01-02T00:00:00.000Z',
+      },
+    )
+    const before = await AppDataSource.query('SELECT * FROM "prekeys" ORDER BY "id"')
+
+    const log = jest.spyOn(console, 'log').mockImplementation()
+    let diagnostic = ''
+    try {
+      await expect(migrate()).rejects.toThrow(/malformed prekey bundle/i)
+      diagnostic = log.mock.calls.flat().map(String).join(' ')
+    } finally {
+      log.mockRestore()
+    }
+
+    expect(diagnostic).toMatch(/Migration "EnforceUniquePrekeyDevice1789171200000" failed.*Malformed prekey bundle.*00000000-0000-0000-0000-000000000045/)
+    expect(diagnostic).not.toContain('never-log-')
+    expect(await AppDataSource.query('SELECT * FROM "prekeys" ORDER BY "id"')).toEqual(before)
+    expect(await hasConstraint()).toBe(false)
+  })
+
   it('preserves singleton rows byte-for-byte even when their legacy JSON shape is unsupported', async () => {
     await seed({
       id: '00000000-0000-0000-0000-000000000050',
