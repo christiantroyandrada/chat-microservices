@@ -11,6 +11,11 @@
       "classification": "backward-compatible"
     },
     {
+      "path": "chat-service/src/database/migrations/1789171201000-AddMessageIdempotencyOutbox.ts",
+      "sha256": "ca58b9c4e659b80e906b0ffdf60e53185316d5c575998479f816e1c8676d9600",
+      "classification": "backward-compatible"
+    },
+    {
       "path": "notification-service/src/database/migrations/1733150000000-InitialSchema.ts",
       "sha256": "945a2e8ee0ba7d2089cdce647f31f77e89c8f2845f103ab7c478b42a67774490",
       "classification": "backward-compatible"

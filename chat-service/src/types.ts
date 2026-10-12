@@ -35,6 +35,8 @@ export interface ConversationRow {
 // Notification payload sent to RabbitMQ queue
 export interface NotificationPayload {
   type: 'MESSAGE_RECEIVED'
+  eventId?: string
+  senderId?: string
   userId: string
   message: string
   from: string
@@ -45,8 +47,16 @@ export interface NotificationPayload {
   // can actually deliver. Without userEmail the consumer only writes a DB row.
   userEmail?: string
   userToken?: string
+  recipientOnline?: boolean
 }
 // Notification payload published to RabbitMQ in `chat-service/src/services/RabbitMQService.ts`
+
+export interface MessageReceivedEventPayload extends NotificationPayload {
+  eventId: string
+  senderId: string
+  envelope: string
+  isEncrypted: true
+}
 
 // User details response from RabbitMQ user service
 export interface UserDetails {

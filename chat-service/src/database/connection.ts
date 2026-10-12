@@ -3,16 +3,22 @@ import { DataSource } from 'typeorm'
 import config from '../config/config'
 import { logInfo, logError } from '../utils/logger'
 import { Message } from './models/MessageModel'
+import { OutboxEvent } from './models/OutboxEventModel'
 import { InitialSchema1733150000000 } from './migrations/1733150000000-InitialSchema'
 import { AddPerformanceIndexes1740000000000 } from './migrations/1740000000000-AddPerformanceIndexes'
+import { AddMessageIdempotencyOutbox1789171201000 } from './migrations/1789171201000-AddMessageIdempotencyOutbox'
 
 export const AppDataSource = new DataSource({
   type: 'postgres',
   url: config.DATABASE_URL,
   synchronize: false, // Schema is owned by migrations (applied as admin in the migrate step). The runtime role (chat_svc) has no DDL rights.
   logging: config.env === 'development',
-  entities: [Message],
-  migrations: [InitialSchema1733150000000, AddPerformanceIndexes1740000000000],
+  entities: [Message, OutboxEvent],
+  migrations: [
+    InitialSchema1733150000000,
+    AddPerformanceIndexes1740000000000,
+    AddMessageIdempotencyOutbox1789171201000,
+  ],
   migrationsRun: false, // We run migrations explicitly before starting services
   // Per-service migrations table — avoids cross-service migration-name collisions
   // on the shared DB (all services define InitialSchema1733150000000).

@@ -10,6 +10,7 @@
     "migrate": "node build/src/migrate.js",
     "test": "npm run test:unit",
     "test:unit": "jest --config jest.config.js --runInBand",
+    "test:integration": "jest --config jest.config.js --runInBand --testMatch '**/tests/integration/**/*.test.ts'",
     "coverage": "jest --config jest.config.js --coverage --coverageReporters=lcov --coverageDirectory=coverage",
     "gen:spec": "ts-node scripts/export-spec.ts"
   },
