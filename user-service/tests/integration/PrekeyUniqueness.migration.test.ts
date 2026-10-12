@@ -1,8 +1,13 @@
 process.env.NODE_ENV = 'production'
 process.env.JWT_SECRET = process.env.JWT_SECRET || 'test_jwt_secret_which_is_long_enough_32_chars'
 
-const databaseUrl = process.env.DATABASE_URL
-if (!databaseUrl) throw new Error('DATABASE_URL must point to the isolated Task 5 PostgreSQL database')
+const {
+  assertPrekeyIntegrationDatabaseIdentity,
+  requirePrekeyIntegrationDatabase,
+} = require('../utils/prekeyIntegrationDatabase') as typeof import('../utils/prekeyIntegrationDatabase')
+const integrationDatabase = requirePrekeyIntegrationDatabase(process.env)
+const databaseUrl = integrationDatabase.url
+process.env.DATABASE_URL = databaseUrl
 
 const { DataSource } = require('typeorm') as typeof import('typeorm')
 const { AppDataSource } = require('../../src/database') as typeof import('../../src/database')
@@ -69,6 +74,23 @@ async function seed(...values: Seed[]): Promise<void> {
   }
 }
 
+async function seedRaw(value: Omit<Seed, 'bundle'>, bundle: string): Promise<void> {
+  await AppDataSource.query(
+    `INSERT INTO "prekeys"
+      ("id", "userId", "deviceId", "bundle", "lastBackupTimestamp", "createdAt", "updatedAt")
+     VALUES ($1, $2, $3, $4::json, $5, $6, $7)`,
+    [
+      value.id,
+      value.userId ?? 'user-1',
+      value.deviceId ?? 'device-1',
+      bundle,
+      value.lastBackupTimestamp ?? null,
+      value.createdAt ?? '2026-01-01 00:00:00',
+      value.updatedAt ?? '2026-01-01 00:00:00',
+    ],
+  )
+}
+
 async function rows(userId = 'user-1', deviceId = 'device-1'): Promise<any[]> {
   return AppDataSource.query(
     'SELECT * FROM "prekeys" WHERE "userId" = $1 AND "deviceId" = $2 ORDER BY "id"',
@@ -100,6 +122,11 @@ async function migrate(): Promise<void> {
 describe('prekey uniqueness migration', () => {
   beforeAll(async () => {
     await AppDataSource.initialize()
+    const [identity] = await AppDataSource.query(`
+      SELECT current_database() AS database, current_user AS user,
+             inet_server_addr()::text AS address, inet_server_port() AS port
+    `)
+    assertPrekeyIntegrationDatabaseIdentity(integrationDatabase, identity)
   })
 
   beforeEach(resetToLegacySchema)
@@ -238,6 +265,66 @@ describe('prekey uniqueness migration', () => {
     })
   })
 
+  it('orders public, keeper, and backup sources at PostgreSQL microsecond precision before id', async () => {
+    await seed(
+      {
+        id: '00000000-0000-0000-0000-000000000061',
+        bundle: { ...published('older-public'), _encryptedKeyBundle: backup('newer-backup') },
+        lastBackupTimestamp: '2026-01-04 00:00:00.000002',
+        updatedAt: '2026-01-03 00:00:00.000001',
+      },
+      {
+        id: '00000000-0000-0000-0000-000000000060',
+        bundle: { ...published('newer-public'), _encryptedKeyBundle: backup('older-backup') },
+        lastBackupTimestamp: '2026-01-04 00:00:00.000001',
+        updatedAt: '2026-01-03 00:00:00.000002',
+      },
+    )
+
+    await migrate()
+
+    const [merged] = await rows()
+    expect(merged.id).toBe('00000000-0000-0000-0000-000000000060')
+    expect(merged.bundle).toEqual({
+      ...published('newer-public'),
+      _encryptedKeyBundle: backup('newer-backup'),
+    })
+  })
+
+  it('preserves raw JSON numeric fragments in unknown and opaque encrypted fields', async () => {
+    const integer = '900719925474099312345678901234567890'
+    const exponent = '1e400'
+    await seed({
+      id: '00000000-0000-0000-0000-000000000070',
+      bundle: published('public'),
+      updatedAt: '2026-01-03 00:00:00.000001',
+    })
+    await seedRaw({
+      id: '00000000-0000-0000-0000-000000000071',
+      lastBackupTimestamp: '2026-01-04 00:00:00.000001',
+      updatedAt: '2026-01-03 00:00:00.000002',
+    }, `{"unknown":{"largeInteger":${integer},"largeExponent":${exponent}},"_encryptedKeyBundle":{"encrypted":"ct","iv":"iv","salt":"salt","version":1,"deviceId":"device-1","opaque":{"largeInteger":${integer},"largeExponent":${exponent}}}}`)
+
+    await migrate()
+
+    const [stored] = await AppDataSource.query(`
+      SELECT "bundle"::text AS text,
+             "bundle"->'unknown'->>'largeInteger' AS "unknownInteger",
+             "bundle"->'unknown'->>'largeExponent' AS "unknownExponent",
+             "bundle"->'_encryptedKeyBundle'->'opaque'->>'largeInteger' AS "backupInteger",
+             "bundle"->'_encryptedKeyBundle'->'opaque'->>'largeExponent' AS "backupExponent"
+      FROM "prekeys" WHERE "userId" = 'user-1' AND "deviceId" = 'device-1'
+    `)
+    expect(stored.text).toContain(integer)
+    expect(stored.text).toContain(exponent)
+    expect(stored).toMatchObject({
+      unknownInteger: integer,
+      unknownExponent: exponent,
+      backupInteger: integer,
+      backupExponent: exponent,
+    })
+  })
+
   it('rolls back all reconciliation when duplicate JSON is malformed', async () => {
     await seed(
       {
@@ -258,13 +345,22 @@ describe('prekey uniqueness migration', () => {
       {
         id: '00000000-0000-0000-0000-000000000043',
         userId: 'z-malformed-group',
-        bundle: { identityKey: 'partial' },
+        bundle: { identityKey: 'never-log-secret-bundle-payload' },
       },
     )
     const before = await AppDataSource.query('SELECT * FROM "prekeys" ORDER BY "id"')
 
-    await expect(migrate()).rejects.toThrow(/malformed prekey bundle/i)
+    const log = jest.spyOn(console, 'log').mockImplementation()
+    let diagnostic = ''
+    try {
+      await expect(migrate()).rejects.toThrow(/malformed prekey bundle/i)
+      diagnostic = log.mock.calls.flat().map(String).join(' ')
+    } finally {
+      log.mockRestore()
+    }
 
+    expect(diagnostic).toMatch(/Migration "EnforceUniquePrekeyDevice1789171200000" failed.*Malformed prekey bundle.*00000000-0000-0000-0000-000000000043/)
+    expect(diagnostic).not.toContain('never-log-secret-bundle-payload')
     expect(await AppDataSource.query('SELECT * FROM "prekeys" ORDER BY "id"')).toEqual(before)
     expect(await hasConstraint()).toBe(false)
   })

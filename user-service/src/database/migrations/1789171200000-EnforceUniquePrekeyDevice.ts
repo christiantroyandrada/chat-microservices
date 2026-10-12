@@ -2,46 +2,48 @@ import { MigrationInterface, QueryRunner } from 'typeorm'
 
 const INDEX_NAME = 'IDX_prekeys_user_device'
 const PUBLIC_FIELDS = ['identityKey', 'registrationId', 'signedPreKey', 'preKeys'] as const
-const KNOWN_FIELDS = new Set<string>([...PUBLIC_FIELDS, '_encryptedKeyBundle'])
+const KNOWN_FIELDS = [...PUBLIC_FIELDS, '_encryptedKeyBundle'] as const
 
 type DuplicateRow = {
   id: string
   userId: string
   deviceId: string
-  bundle: unknown
+  latestRank: string
   backupRank: string
+  bundleType: string | null
+  identityType: string | null
+  registrationType: string | null
+  signedType: string | null
+  signedIdType: string | null
+  signedPublicKeyType: string | null
+  signedSignatureType: string | null
+  preKeysType: string | null
+  preKeysValid: boolean
+  backupType: string | null
 }
 
-const owns = (value: Record<string, unknown>, key: string) => Object.prototype.hasOwnProperty.call(value, key)
-const isObject = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === 'object' && !Array.isArray(value)
-
-function validatedBundle(row: DuplicateRow): Record<string, unknown> {
-  if (!isObject(row.bundle)) throw new Error(`Malformed prekey bundle for duplicate row ${row.id}`)
-
-  const present = PUBLIC_FIELDS.map(field => owns(row.bundle as Record<string, unknown>, field))
+function validateRow(row: DuplicateRow): { publicComplete: boolean; backupPresent: boolean } {
+  const publicTypes = [row.identityType, row.registrationType, row.signedType, row.preKeysType]
+  const present = publicTypes.map(type => type !== null)
   if (present.some(Boolean) && !present.every(Boolean)) throw new Error(`Malformed prekey bundle for duplicate row ${row.id}`)
-
-  if (present.every(Boolean)) {
-    const signed = row.bundle.signedPreKey
-    const preKeys = row.bundle.preKeys
-    if (
-      typeof row.bundle.identityKey !== 'string' ||
-      typeof row.bundle.registrationId !== 'number' ||
-      !isObject(signed) ||
-      typeof signed.id !== 'number' ||
-      typeof signed.publicKey !== 'string' ||
-      typeof signed.signature !== 'string' ||
-      !Array.isArray(preKeys) ||
-      !preKeys.every(key => isObject(key) && typeof key.id === 'number' && typeof key.publicKey === 'string')
-    ) {
-      throw new Error(`Malformed prekey bundle for duplicate row ${row.id}`)
-    }
-  }
-
-  if (owns(row.bundle, '_encryptedKeyBundle') && !isObject(row.bundle._encryptedKeyBundle)) {
+  const publicComplete = present.every(Boolean)
+  if (
+    row.bundleType !== 'object' ||
+    (publicComplete && (
+      row.identityType !== 'string' ||
+      row.registrationType !== 'number' ||
+      row.signedType !== 'object' ||
+      row.signedIdType !== 'number' ||
+      row.signedPublicKeyType !== 'string' ||
+      row.signedSignatureType !== 'string' ||
+      row.preKeysType !== 'array' ||
+      !row.preKeysValid
+    )) ||
+    (row.backupType !== null && row.backupType !== 'object')
+  ) {
     throw new Error(`Malformed prekey bundle for duplicate row ${row.id}`)
   }
-  return row.bundle
+  return { publicComplete, backupPresent: row.backupType === 'object' }
 }
 
 export class EnforceUniquePrekeyDevice1789171200000 implements MigrationInterface {
@@ -50,11 +52,30 @@ export class EnforceUniquePrekeyDevice1789171200000 implements MigrationInterfac
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query('LOCK TABLE "prekeys" IN ACCESS EXCLUSIVE MODE')
     const duplicates: DuplicateRow[] = await queryRunner.query(`
-      SELECT p.*,
+      SELECT p."id", p."userId", p."deviceId",
+        ROW_NUMBER() OVER (
+          PARTITION BY p."userId", p."deviceId"
+          ORDER BY p."updatedAt" DESC, p."createdAt" DESC, p."id" DESC
+        ) AS "latestRank",
         ROW_NUMBER() OVER (
           PARTITION BY p."userId", p."deviceId"
           ORDER BY p."lastBackupTimestamp" DESC NULLS LAST, p."updatedAt" DESC, p."createdAt" DESC, p."id" DESC
-        ) AS "backupRank"
+        ) AS "backupRank",
+        json_typeof(p."bundle") AS "bundleType",
+        json_typeof(p."bundle"->'identityKey') AS "identityType",
+        json_typeof(p."bundle"->'registrationId') AS "registrationType",
+        json_typeof(p."bundle"->'signedPreKey') AS "signedType",
+        json_typeof(p."bundle"->'signedPreKey'->'id') AS "signedIdType",
+        json_typeof(p."bundle"->'signedPreKey'->'publicKey') AS "signedPublicKeyType",
+        json_typeof(p."bundle"->'signedPreKey'->'signature') AS "signedSignatureType",
+        json_typeof(p."bundle"->'preKeys') AS "preKeysType",
+        CASE WHEN json_typeof(p."bundle"->'preKeys') = 'array' THEN NOT EXISTS (
+          SELECT 1 FROM json_array_elements(p."bundle"->'preKeys') item
+          WHERE json_typeof(item) <> 'object'
+             OR json_typeof(item->'id') <> 'number'
+             OR json_typeof(item->'publicKey') <> 'string'
+        ) ELSE false END AS "preKeysValid",
+        json_typeof(p."bundle"->'_encryptedKeyBundle') AS "backupType"
       FROM "prekeys" p
       JOIN (
         SELECT "userId", "deviceId"
@@ -62,7 +83,7 @@ export class EnforceUniquePrekeyDevice1789171200000 implements MigrationInterfac
         GROUP BY "userId", "deviceId"
         HAVING COUNT(*) > 1
       ) d ON d."userId" = p."userId" AND d."deviceId" = p."deviceId"
-      ORDER BY p."userId", p."deviceId", p."updatedAt", p."createdAt", p."id"
+      ORDER BY p."userId", p."deviceId", "latestRank" DESC
     `)
 
     for (let start = 0; start < duplicates.length;) {
@@ -74,39 +95,66 @@ export class EnforceUniquePrekeyDevice1789171200000 implements MigrationInterfac
       ) end++
 
       const group = duplicates.slice(start, end)
-      const bundles = group.map(validatedBundle)
-      const keeper = group[group.length - 1]
-      const merged: Record<string, unknown> = Object.create(null)
-
-      for (const bundle of bundles) {
-        for (const [key, value] of Object.entries(bundle)) {
-          if (!KNOWN_FIELDS.has(key)) merged[key] = value
-        }
-      }
-
-      for (let index = group.length - 1; index >= 0; index--) {
-        if (PUBLIC_FIELDS.every(field => owns(bundles[index], field))) {
-          for (const field of PUBLIC_FIELDS) merged[field] = bundles[index][field]
-          break
-        }
-      }
-
-      const backupSource = group
-        .map((row, index) => ({ row, bundle: bundles[index] }))
-        .filter(({ bundle }) => owns(bundle, '_encryptedKeyBundle'))
+      const metadata = group.map(row => ({ row, ...validateRow(row) }))
+      const keeper = group.find(row => row.latestRank === '1')!
+      const publicSource = metadata.slice().reverse().find(({ publicComplete }) => publicComplete)?.row
+      const backupSource = metadata
+        .filter(({ backupPresent }) => backupPresent)
         .sort((left, right) => Number(left.row.backupRank) - Number(right.row.backupRank))[0]
-      if (backupSource) merged._encryptedKeyBundle = backupSource.bundle._encryptedKeyBundle
 
       await queryRunner.query(
-        `UPDATE "prekeys" keeper
-         SET "bundle" = $1::json,
+        `WITH source_rows AS (
+           SELECT source."id", source."bundle",
+             ROW_NUMBER() OVER (ORDER BY source."updatedAt", source."createdAt", source."id") AS source_order
+           FROM "prekeys" source
+           WHERE source."userId" = $1 AND source."deviceId" = $2
+         ), latest_unknown AS (
+           SELECT entry.key, MAX(source.source_order) AS source_order
+           FROM source_rows source
+           CROSS JOIN LATERAL json_each(source."bundle") WITH ORDINALITY entry(key, value, ordinality)
+           WHERE NOT (entry.key = ANY($6::text[]))
+           GROUP BY entry.key
+         ), merged_entries AS (
+           SELECT entry.key, entry.value, 0 AS section, source.source_order, entry.ordinality
+           FROM source_rows source
+           CROSS JOIN LATERAL json_each(source."bundle") WITH ORDINALITY entry(key, value, ordinality)
+           JOIN latest_unknown latest ON latest.key = entry.key AND latest.source_order = source.source_order
+           WHERE NOT (entry.key = ANY($6::text[]))
+           UNION ALL
+           SELECT entry.key, entry.value, 1, 0, entry.ordinality
+           FROM source_rows source
+           CROSS JOIN LATERAL json_each(source."bundle") WITH ORDINALITY entry(key, value, ordinality)
+           WHERE source."id" = $4::uuid AND entry.key = ANY($7::text[])
+           UNION ALL
+           SELECT entry.key, entry.value, 2, 0, entry.ordinality
+           FROM source_rows source
+           CROSS JOIN LATERAL json_each(source."bundle") WITH ORDINALITY entry(key, value, ordinality)
+           WHERE source."id" = $5::uuid AND entry.key = '_encryptedKeyBundle'
+         ), merged_bundle AS (
+           SELECT COALESCE(
+             json_object_agg(key, value ORDER BY section, source_order, ordinality),
+             '{}'::json
+           ) AS value
+           FROM merged_entries
+         )
+         UPDATE "prekeys" keeper
+         SET "bundle" = merged_bundle.value,
              "lastBackupTimestamp" = (
                SELECT MAX(source."lastBackupTimestamp")
                FROM "prekeys" source
-               WHERE source."userId" = $2 AND source."deviceId" = $3
+               WHERE source."userId" = $1 AND source."deviceId" = $2
              )
-         WHERE keeper."id" = $4`,
-        [JSON.stringify(merged), keeper.userId, keeper.deviceId, keeper.id],
+         FROM merged_bundle
+         WHERE keeper."id" = $3`,
+        [
+          keeper.userId,
+          keeper.deviceId,
+          keeper.id,
+          publicSource?.id ?? null,
+          backupSource?.row.id ?? null,
+          [...KNOWN_FIELDS],
+          [...PUBLIC_FIELDS],
+        ],
       )
       await queryRunner.query(
         'DELETE FROM "prekeys" WHERE "userId" = $1 AND "deviceId" = $2 AND "id" <> $3',

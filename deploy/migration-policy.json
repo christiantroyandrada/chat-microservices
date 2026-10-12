@@ -27,7 +27,7 @@
     },
     {
       "path": "user-service/src/database/migrations/1789171200000-EnforceUniquePrekeyDevice.ts",
-      "sha256": "55499c0d6bb7fc054955851fb01db1020f459fce2c753aaec198ec672f01b59c",
+      "sha256": "90b7c58933962ebe78b8009cf0ccd6f1302f96e601b85cc086a0fb7f295ac6d0",
       "classification": "backward-compatible"
     }
   ]
