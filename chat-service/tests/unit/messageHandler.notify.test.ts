@@ -9,7 +9,58 @@ jest.mock('../../src/services/RabbitMQService', () => ({
   rabbitMQService: { getUserDetails, notifyReceiver },
 }))
 
-import { handleMessageReceived } from '../../src/utils/messageHandler'
+import { enrichMessageReceivedPayload, handleMessageReceived } from '../../src/utils/messageHandler'
+
+const event = {
+  type: 'MESSAGE_RECEIVED' as const,
+  eventId: '11111111-1111-4111-8111-111111111111',
+  senderId: 'sender-1',
+  userId: 'r1',
+  message: '[Encrypted message]',
+  from: 'alice@example.com',
+  fromName: 'Alice',
+  isEncrypted: true as const,
+  envelope: '{"__encrypted":true,"body":"ciphertext"}',
+}
+
+describe('enrichMessageReceivedPayload', () => {
+  beforeEach(() => {
+    isOnline.mockReset()
+    getUserDetails.mockReset()
+  })
+
+  it('preserves canonical receipt fields while adding current contact and presence', async () => {
+    isOnline.mockResolvedValue(true)
+    getUserDetails.mockImplementation(async (_id: string, callback: any) =>
+      callback({ id: 'r1', username: 'bob', email: 'bob@example.com' }),
+    )
+
+    await expect(enrichMessageReceivedPayload(event)).resolves.toEqual({
+      ...event,
+      recipientOnline: true,
+      userEmail: 'bob@example.com',
+    })
+    expect(event).not.toHaveProperty('recipientOnline')
+    expect(event).not.toHaveProperty('userEmail')
+  })
+
+  it('keeps an RPC timeout retryable and resolves fresh data on the next attempt', async () => {
+    isOnline.mockResolvedValue(false)
+    getUserDetails
+      .mockImplementationOnce(async (_id: string, callback: any) => callback(null))
+      .mockImplementationOnce(async (_id: string, callback: any) =>
+        callback({ id: 'r1', username: 'bob', email: 'new@example.com' }),
+      )
+
+    await expect(enrichMessageReceivedPayload(event)).rejects.toThrow('Recipient lookup failed')
+    await expect(enrichMessageReceivedPayload(event)).resolves.toMatchObject({
+      eventId: event.eventId,
+      envelope: event.envelope,
+      userEmail: 'new@example.com',
+      recipientOnline: false,
+    })
+  })
+})
 
 describe('handleMessageReceived — offline notification with receiver email', () => {
   beforeEach(() => {

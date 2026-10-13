@@ -1,7 +1,7 @@
 import { getPresenceStore } from '../services/PresenceStore'
 import { rabbitMQService } from '../services/RabbitMQService'
 import { logWarn } from './logger'
-import type { UserDetails } from '../types'
+import type { MessageReceivedEventPayload, NotificationPayload, UserDetails } from '../types'
 
 /**
  * Resolve the recipient's contact details over the user-service RPC, degrading
@@ -17,6 +17,23 @@ async function resolveReceiver (receiverId: string): Promise<UserDetails | null>
     logWarn('[chat-service] receiver lookup failed; notifying without email', err)
     return null
   }
+}
+
+export async function enrichMessageReceivedPayload(
+  payload: MessageReceivedEventPayload,
+): Promise<NotificationPayload> {
+  const [recipientOnline, receiver] = await Promise.all([
+    getPresenceStore().isOnline(payload.userId),
+    new Promise<UserDetails>((resolve, reject) => {
+      rabbitMQService.getUserDetails(payload.userId, user => {
+        if (user) resolve(user)
+        else reject(new Error('Recipient lookup failed'))
+      }).catch(reject)
+    }),
+  ])
+
+  // Contact/presence are retry-time advisory data; canonical receipt fields remain immutable.
+  return { ...payload, recipientOnline, userEmail: receiver.email }
 }
 
 export interface IncomingMessageNotification {

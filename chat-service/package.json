@@ -11,6 +11,7 @@
     "test": "npm run test:unit",
     "test:unit": "jest --config jest.config.js --runInBand",
     "test:integration": "jest --config jest.config.js --runInBand --testMatch '**/tests/integration/**/*.test.ts'",
+    "test:broker-integration": "jest --config jest.config.js --runInBand --testMatch '**/tests/integration/**/*.test.ts' --runTestsByPath tests/integration/RabbitMQService.integration.test.ts",
     "coverage": "jest --config jest.config.js --coverage --coverageReporters=lcov --coverageDirectory=coverage",
     "gen:spec": "ts-node scripts/export-spec.ts"
   },
