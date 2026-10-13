@@ -24,8 +24,8 @@
 }
 ```
 
-- **200**: All checks pass (`status: ok`)
-- **503**: One or more checks fail (`status: degraded` or `error`)
+- **200**: All checks pass (`status: ok`).
+- **503**: One or more checks fail (`status: degraded` or `error`).
 
 ---
 
@@ -33,7 +33,7 @@
 
 ### 1. Service Returns 503 / Health Degraded
 
-**Symptoms**: Health endpoint returns `status: degraded` with one or more `checks` as `false`.
+**Symptoms**: The health endpoint returns `status: degraded`. One or more `checks` have the value `false`.
 
 **Diagnosis**:
 ```bash
@@ -56,7 +56,7 @@ docker stats --no-stream
 
 ### 2. Database Down / Connection Refused
 
-**Symptoms**: `database: false` in health checks, `ECONNREFUSED` in logs.
+**Symptoms**: Health checks contain `database: false`. Logs contain `ECONNREFUSED`.
 
 **Diagnosis**:
 ```bash
@@ -69,16 +69,18 @@ docker exec chat-app-postgres-1 df -h /var/lib/postgresql/data
 ```
 
 **Resolution**:
-1. If container crashed: `docker compose up -d postgres`
-2. If OOM killed: increase memory limits in `docker-compose.prod.yml`
-3. If disk full: run `VACUUM FULL` or expand volume
-4. If corruption: restore from latest backup (see Backup section)
+1. If the container stopped after a failure, run `docker compose up -d postgres`.
+2. If insufficient memory stopped the container, increase memory limits in `docker-compose.prod.yml`.
+3. If the disk is full, run `VACUUM FULL` or increase the volume capacity.
+4. If data is corrupt, restore the latest backup. See the Backup section.
 
-**Post-recovery**: Services will automatically reconnect via TypeORM. Verify with health checks.
+**Post-recovery**: Services automatically reconnect through TypeORM.
+
+Verify recovery with health checks.
 
 ### 3. RabbitMQ Down / Connection Lost
 
-**Symptoms**: `rabbitmq: false` in health checks, "RabbitMQ connection closed" in service logs.
+**Symptoms**: Health checks contain `rabbitmq: false`. Service logs contain "RabbitMQ connection closed".
 
 **Diagnosis**:
 ```bash
@@ -91,18 +93,20 @@ docker exec chat-app-rabbitmq-1 rabbitmqctl list_queues name messages consumers
 ```
 
 **Resolution**:
-1. If container crashed: `docker compose up -d rabbitmq`
-2. All 3 services have automatic reconnection with exponential backoff (max 10 attempts).
-3. If reconnection exhausted: `docker compose restart user-service chat-service notification-service`
+1. If the container stopped after a failure, run `docker compose up -d rabbitmq`.
+2. All 3 services reconnect automatically with exponential backoff (max 10 attempts).
+   Exponential backoff increases the delay between connection attempts.
+3. If all reconnection attempts fail, run `docker compose restart user-service chat-service notification-service`.
 
 **Impact during outage**:
-- **user-service**: User registration emails will not be sent (queued until recovery).
-- **chat-service**: Messages are still stored in DB and delivered via WebSocket, but push notifications won't fire. Username resolution RPC calls will fail (cached results used where available).
-- **notification-service**: Queue consumption paused until reconnection.
+- **user-service**: User registration emails stay in the queue until recovery.
+- **chat-service**: The service still stores messages in the database and delivers them through WebSocket. It does not send push notifications.
+  Remote procedure calls (RPC) for usernames fail. The service uses cached results when available.
+- **notification-service**: The service stops reading the queue until reconnection.
 
 ### 4. WebSocket Connections Dropping
 
-**Symptoms**: Users report "disconnected" status, reconnection loops, or messages not appearing in real-time.
+**Symptoms**: Users report "disconnected" status, repeated reconnection attempts, or messages that do not appear immediately.
 
 **Diagnosis**:
 ```bash
@@ -117,13 +121,15 @@ docker exec chat-app-chat-service-1 node -e "console.log(process.memoryUsage())"
 ```
 
 **Resolution**:
-1. Check NGINX `proxy_read_timeout` (should be ≥ 120s for WebSocket).
-2. Check if chat-service is OOM: `docker stats --no-stream chat-app-chat-service-1`
-3. If memory leak suspected: rolling restart `docker compose restart chat-service`
+The NGINX `proxy_read_timeout` should be ≥ 120s for WebSocket.
+
+1. Do a check of NGINX `proxy_read_timeout`.
+2. Do a check of chat-service for insufficient memory: `docker stats --no-stream chat-app-chat-service-1`.
+3. If you suspect a memory leak, do a rolling restart with `docker compose restart chat-service`.
 
 ### 5. Notification Emails Not Sending
 
-**Symptoms**: Users not receiving registration or message notification emails.
+**Symptoms**: Users do not receive registration or message notification emails.
 
 **Diagnosis**:
 ```bash
@@ -135,11 +141,11 @@ docker exec chat-app-rabbitmq-1 rabbitmqctl list_queues name messages consumers
 ```
 
 **Resolution**:
-1. If queue depth is growing: check consumer logs for errors
-2. If SMTP timeout: verify `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS` env vars
-3. If SendinBlue API errors: check `SENDINBLUE_APIKEY` validity and rate limits
-4. If messages are malformed: check `NOTIFICATIONS` queue for stuck messages
-5. **Purge stuck messages**: `node notification-service/scripts/purgeQueue.js`
+1. If queue depth increases, do a check of consumer logs for errors.
+2. If SMTP times out, verify the `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, and `SMTP_PASS` environment variables.
+3. If the SendinBlue API returns errors, do a check of `SENDINBLUE_APIKEY` validity and rate limits.
+4. If messages are malformed, do a check of the `NOTIFICATIONS` queue for messages that cannot be processed.
+5. Remove these messages with `node notification-service/scripts/purgeQueue.js`.
 
 ---
 
@@ -175,7 +181,7 @@ cat backup.sql | docker exec -i chat-app-postgres-1 psql -U postgres chat_db
 
 ## Rollback Procedure
 
-If a deployment introduces regressions and the system is unhealthy after a deploy:
+If a deployment introduces regressions and leaves the system unhealthy, use the rollback procedure that follows.
 
 ### Quick Rollback (Revert to Previous Image)
 
@@ -220,18 +226,19 @@ cat backup_YYYYMMDD_HHMMSS.sql | docker exec -i chat-app-postgres-1 psql -U post
 
 ### Post-Rollback Checklist
 
-1. Verify all 4 health endpoints return 200
-2. Test a login + send message flow manually
-3. Check RabbitMQ queue depth is not growing: `docker exec chat-app-rabbitmq-1 rabbitmqctl list_queues`
-4. Monitor logs for 15 minutes: `docker compose logs -f --tail=50`
-5. Open an incident report documenting the failed deployment
+1. Verify that all 4 health endpoints return 200.
+2. Do a test of the login and message send procedure manually.
+3. Verify that RabbitMQ queue depth does not increase: `docker exec chat-app-rabbitmq-1 rabbitmqctl list_queues`.
+4. Monitor logs for 15 minutes: `docker compose logs -f --tail=50`.
+5. Open an incident report that describes the failed deployment.
 
 ---
 
 ## Escalation
 
-If an incident is not resolved within 15 minutes:
-1. Check all service health endpoints and compile failing checks.
-2. Collect logs from all containers: `docker compose logs --tail 200 > incident_logs.txt`
-3. Check system resources: `docker stats --no-stream > resource_snapshot.txt`
+If an incident remains unresolved after 15 minutes, do these steps:
+1. Do a check of all service health endpoints.
+   List the failed checks.
+2. Collect logs from all containers: `docker compose logs --tail 200 > incident_logs.txt`.
+3. Do a check of system resources: `docker stats --no-stream > resource_snapshot.txt`.
 4. Escalate with both files attached.

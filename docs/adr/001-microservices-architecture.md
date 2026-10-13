@@ -6,7 +6,10 @@
 
 ## Context
 
-The chat application requires a backend that can independently scale its user management, real-time messaging, and notification delivery functions. A monolithic design would couple all three concerns, making it difficult to scale the WebSocket-heavy chat layer independently of the CPU-light user/auth layer.
+The chat application requires separate capacity increases for user management, real-time messaging, and notification delivery.
+
+A monolithic design would combine these three functions. The chat layer uses many WebSocket connections. The user/auth layer uses little CPU capacity.
+This combination would make independent capacity increases for the chat layer difficult.
 
 ## Decision
 
@@ -20,31 +23,38 @@ Split the backend into three microservices behind an NGINX reverse proxy:
 
 ### Communication patterns
 
-- **Synchronous**: `chat-service` → `user-service` via RabbitMQ RPC (`USER_DETAILS_REQUEST` / `USER_DETAILS_RESPONSE`) for username resolution.
-- **Asynchronous**: `chat-service` & `user-service` → `notification-service` via `NOTIFICATIONS` queue (fire-and-forget fanout).
-- **Client ↔ Server**: Socket.IO (WebSocket upgrade with HTTP long-polling fallback) via NGINX sticky routing.
+- **Synchronous**: `chat-service` requests usernames from `user-service` through RabbitMQ remote procedure calls (RPC).
+  The calls use `USER_DETAILS_REQUEST` / `USER_DETAILS_RESPONSE`.
+- **Asynchronous**: `chat-service` and `user-service` send events to `notification-service` through the `NOTIFICATIONS` queue.
+  Senders do not wait for a response. The queue distributes events to consumers.
+- **Client ↔ Server**: Socket.IO uses NGINX routing that keeps each client connected to the same server.
+  Socket.IO uses a WebSocket upgrade, with HTTP long-polling as an alternative.
 
 ### Data layer
 
-All three services share a single PostgreSQL 17 database (`chat_db`) with schema isolation by convention (no shared tables). This was chosen for operational simplicity at current scale; a future ADR will address database-per-service migration when needed.
+All three services share one PostgreSQL 17 database (`chat_db`). By convention, each service uses separate tables.
+The decision reduces operational work at the current scale. When separate databases become necessary, a future ADR will describe the migration.
 
 ## Consequences
 
 ### Positive
-- Independent deployability via Docker Compose service-level restarts.
-- Horizontal scalability: chat-service (WebSocket-heavy) can scale independently.
-- Fault isolation: notification-service failure does not block message delivery.
-- Technology flexibility: services can adopt different Node.js versions or libraries independently.
+- Docker Compose can restart and deploy each service independently.
+- The chat-service can use additional instances independently. It handles many WebSocket connections.
+- A notification-service failure does not stop message delivery.
+- Each service can use different Node.js versions or libraries independently.
 
 ### Negative
-- Shared database creates implicit coupling at the data layer.
-- RPC over RabbitMQ adds latency vs. in-process function calls.
-- Operational complexity: 3 services + RabbitMQ + PostgreSQL + NGINX to monitor.
-- In-memory state (activeUsers Map, typing timeouts) prevents horizontal scaling of chat-service without a shared store (e.g., Redis).
+- The shared database creates dependencies between services at the data layer.
+- RabbitMQ RPC takes more time than function calls within one process.
+- Operators must monitor 3 services + RabbitMQ + PostgreSQL + NGINX.
+- In-memory state includes the activeUsers Map and typing timeouts.
+  The chat-service requires a shared store, such as Redis, before it can use additional instances.
 
 ### Risks
-- **Single database SPOF**: All services fail if PostgreSQL is down. Mitigation: deep health checks (implemented) + DB replication (future).
-- **RabbitMQ dependency**: Message delivery stalls if RabbitMQ is unavailable. Mitigation: exponential backoff reconnection (implemented).
+- **Single database SPOF**: A single point of failure (SPOF) can stop all services.
+  If PostgreSQL stops, all services fail. Deep health checks are implemented. Database replication is planned.
+- **RabbitMQ dependency**: If RabbitMQ is unavailable, message delivery stops temporarily.
+  Reconnection with exponential backoff is implemented. Exponential backoff increases the delay between connection attempts.
 
 ## References
 

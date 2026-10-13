@@ -1,8 +1,10 @@
 # Chat Microservices Backend
 
-A secure, scalable chat system built with Node.js, TypeScript, PostgreSQL, and real-time WebSocket communication. Features end-to-end encryption (E2EE) using the Signal Protocol.
+This secure chat system uses Node.js, TypeScript, PostgreSQL, and real-time WebSocket communication. Its capacity can increase as demand increases.
+The system uses the Signal Protocol for end-to-end encryption (E2EE).
 
-## 🏗️ Architecture
+<a id="️-architecture"></a>
+## Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -27,7 +29,8 @@ A secure, scalable chat system built with Node.js, TypeScript, PostgreSQL, and r
     └─────────────────────────────────────────────────────┘
 ```
 
-## 🚀 Quick Start
+<a id="-quick-start"></a>
+## Quick Start
 
 ```bash
 # Clone and setup
@@ -45,7 +48,8 @@ docker compose up -d
 curl http://localhost:80/health
 ```
 
-## 📁 Project Structure
+<a id="-project-structure"></a>
+## Project Structure
 
 ```
 chat-microservices/
@@ -58,21 +62,23 @@ chat-microservices/
 └── docker-compose.yml   # Development environment
 ```
 
-## 🔒 Security Features
+<a id="-security-features"></a>
+## Security Features
 
-- **JWT Authentication** with httpOnly cookies
-- **End-to-End Encryption** (Signal Protocol - X3DH + Double Ratchet)
-- **Client-Side Key Encryption** (AES-256-GCM, PBKDF2 100k iterations)
-- **bcrypt** password hashing (cost factor 12)
-- **Helmet.js** security headers
-- **Rate Limiting** (global + auth-specific)
-- **Input Validation** (express-validator)
-- **SQL Injection Protection** (TypeORM parameterized queries)
-- **Distroless Docker Images** (minimal attack surface)
+- The system uses **JWT Authentication** with httpOnly cookies.
+- The system uses **End-to-End Encryption** (Signal Protocol - X3DH + Double Ratchet).
+- The client uses **Client-Side Key Encryption** (AES-256-GCM, PBKDF2 100k iterations).
+- The system uses **bcrypt** password hashing (cost factor 12).
+- The system uses **Helmet.js** security headers.
+- The system applies **Rate Limiting** globally and to authentication requests.
+- The system uses **Input Validation** (express-validator).
+- The system uses **SQL Injection Protection** (TypeORM parameterized queries).
+- The system uses **Distroless Docker Images** to minimize components that attackers can exploit.
 
 See [SECURITY.md](./SECURITY.md) for complete security documentation.
 
-## 🧪 Testing
+<a id="-testing"></a>
+## Testing
 
 ```bash
 # Run tests for each service
@@ -81,7 +87,8 @@ cd chat-service && npm run test:unit
 cd notification-service && npm run test:unit
 ```
 
-## 📚 Documentation
+<a id="-documentation"></a>
+## Documentation
 
 | Document | Description |
 |----------|-------------|
@@ -90,7 +97,8 @@ cd notification-service && npm run test:unit
 | [deploy/GITHUB_SECRETS.md](./deploy/GITHUB_SECRETS.md) | CI/CD secrets setup |
 | [docs/SSL_SETUP.md](./docs/SSL_SETUP.md) | SSL/HTTPS configuration |
 
-## ��️ Tech Stack
+<a id="️-tech-stack"></a>
+## Tech Stack
 
 | Component | Technology |
 |-----------|------------|
@@ -104,6 +112,7 @@ cd notification-service && npm run test:unit
 | Container | Docker (distroless) |
 | CI/CD | GitHub Actions |
 
-## 📄 License
+<a id="-license"></a>
+## License
 
 MIT License - see LICENSE file for details.

@@ -22,44 +22,47 @@
 
 ## Recent Engineering Improvements (March 2026)
 
+This section records historical changes from March 2026. The results do not give release approval.
+
 ### Performance — 14 improvements across all services
 
 | Area | Change | Impact |
 |------|--------|--------|
-| **chat-service: LRU user-detail cache** | Replaced unbounded `Map` with `LRUCache<string, …>` (max: 500 entries, 60s TTL via `lru-cache` v11) | Prevents memory leak under sustained load; bounded O(1) cache hits |
-| **chat-service: UNION ALL CTE** | `getConversations` rewrites OR-query to `UNION ALL` CTE + `DISTINCT ON` | Eliminates full sequential scan; index-friendly shape |
-| **chat-service: `presenceBulk` event** | `sendInitialPresence` emits one `presenceBulk` event instead of N individual `presence` events on connect | O(1) socket messages vs O(n); drops handshake latency for large user bases |
-| **chat-service: Map compaction** | `setInterval` (5 min) rebuilds `connectedUsers` and `typingTimeouts` maps from live entries | Reclaims V8 internal map capacity that `delete()` alone cannot release |
-| **chat-service: `assertQueue` once** | Queue assertion moved to `connect()` (was per-publish) | Eliminates redundant AMQP round-trips |
-| **chat-service: `AddPerformanceIndexes` migration** | Partial index on unread messages, covering indexes on senderId/receiverId + createdAt DESC, composite status index | Read queries up to 10× faster on large tables |
-| **user-service: typed `publishNotification`** | `payload: any` → `payload: Record<string, unknown>` | Removes last `any` in service; `assertQueue` moved to `connect()` |
-| **user-service: `AddTrigramSearchIndexes` migration** | `pg_trgm` extension + GIN indexes on `users.username` and `users.email` | ILIKE search scales sub-linearly |
-| **notification-service: template/logo caching** | `EmailTemplateService` caches HTML templates and logo data URI on first read (O(1) thereafter) | Removes file I/O on every email send |
-| **notification-service: `UserStatusStore` Set** | `Record<string, boolean>` → `Set<string>`; `delete()` in setUserOffline | No false-y entries in memory; O(1) has/add/delete |
-| **chat-service + notification-service: `UserStatusStore` Set** | Same Set migration in chat-service | Consistent implementation across services |
-| **frontend: `presenceBulk` handler** | `websocket.service.ts` fans out `onlineUserIds` array to registered presence callbacks | Matches new server-side bulk emit |
-| **frontend: parallel notification fetch** | `notification.store.ts` replaces sequential fetches with `Promise.all` | Halves round-trip time for initial notification load |
-| **frontend: batched Signal decrypt** | `chat.service.ts` decrypts in chunks of 20 (`BATCH_SIZE = 20`) + LRU-bounded prekey cache (max 100) | Prevents UI thread starvation on large conversations |
+| **chat-service: LRU user-detail cache** | The implementation replaced an unlimited `Map` with `LRUCache<string, …>` (max: 500 entries, 60s TTL via `lru-cache` v11). | The cache prevents memory leaks under sustained load. Cache access is bounded O(1). |
+| **chat-service: UNION ALL CTE** | `getConversations` replaces the OR-query with `UNION ALL` CTE + `DISTINCT ON`. | The query prevents a full sequential scan and supports index use. |
+| **chat-service: `presenceBulk` event** | On connection, `sendInitialPresence` sends one `presenceBulk` event instead of N individual `presence` events. | Socket messages change from O(n) to O(1). This reduces handshake delay for many users. |
+| **chat-service: Map compaction** | `setInterval` (5 min) rebuilds `connectedUsers` and `typingTimeouts` maps from active entries. | This releases V8 internal map capacity that `delete()` alone cannot release. |
+| **chat-service: `assertQueue` once** | Queue assertion moved to `connect()`. Previously, each publication asserted the queue. | The change removes unnecessary AMQP requests and responses. |
+| **chat-service: `AddPerformanceIndexes` migration** | The migration adds a partial unread-message index, covering indexes on senderId/receiverId + createdAt DESC, and a composite status index. | Read queries are up to 10× faster on large tables. |
+| **user-service: typed `publishNotification`** | The payload type changed from `payload: any` → `payload: Record<string, unknown>`. | The change removes the last `any` in the service. `assertQueue` moved to `connect()`. |
+| **user-service: `AddTrigramSearchIndexes` migration** | The migration adds the `pg_trgm` extension + GIN indexes on `users.username` and `users.email`. | ILIKE search time increases less than proportionally to the data size. |
+| **notification-service: template/logo caching** | `EmailTemplateService` caches HTML templates and the logo data URI on first read (O(1) thereafter). | The cache removes file I/O for each email send. |
+| **notification-service: `UserStatusStore` Set** | The implementation changes `Record<string, boolean>` → `Set<string>`. It uses `delete()` in setUserOffline. | Memory has no entries with false values. The has/add/delete operations use O(1). |
+| **chat-service + notification-service: `UserStatusStore` Set** | The chat-service uses the same Set migration. | The services use a consistent implementation. |
+| **frontend: `presenceBulk` handler** | `websocket.service.ts` sends the `onlineUserIds` array to registered presence callbacks. | The handler matches the new server-side bulk event. |
+| **frontend: parallel notification fetch** | `notification.store.ts` replaces sequential requests with `Promise.all`. | The change halves request and response time for initial notification loading. |
+| **frontend: batched Signal decrypt** | `chat.service.ts` decrypts in groups of 20 (`BATCH_SIZE = 20`). It uses an LRU-bounded prekey cache (max 100). | The change keeps the interface thread available during large conversations. |
 
 ### Previous Improvements (June 2025 — FAANG production readiness review)
 
 | Area | Change | Impact |
 |------|--------|--------|
-| **WebSocket Security** | Removed `receiveMessage` server-side relay (clients can no longer spoof messages to arbitrary users) | Critical vulnerability fix |
-| **RabbitMQ Resilience** | Added exponential-backoff reconnection (max 10 attempts, 1s→30s) to all 3 services | Prevents cascade failure on broker restart |
-| **Health Checks** | Deep `/health` endpoints now verify DB + RabbitMQ connectivity; return 503 with per-check breakdown on degradation | Enables proper container orchestration and load balancer routing |
-| **Graceful Shutdown** | All services handle SIGTERM/SIGINT: drain HTTP → close RabbitMQ → close DB | Zero-downtime deployments, no orphaned connections |
-| **Message Pagination** | `GET /chat/get/:receiverId` supports `?limit=50&offset=0`, returns `pagination` metadata | Prevents unbounded memory on large conversations |
-| **Docker Compose** | Added RabbitMQ 3.13 service with health check; all services depend on `rabbitmq: service_healthy` | Docker-native development actually works now |
-| **CI/CD** | Per-service `npm audit` steps with `continue-on-error` (replaces single `\|\| true` step) | Audit failures are visible per-service without blocking pipeline |
-| **Dead Code** | Removed `signal.ts.old`, unused `getUserDetails` function, phantom `csrf-csrf` dependency | Smaller attack surface, cleaner dependency tree |
-| **Documentation** | Added ADR-001 (microservices rationale), production incident runbook | Onboarding and incident response readiness |
+| **WebSocket Security** | The implementation removed the `receiveMessage` server-side relay. Clients can no longer send false messages to arbitrary users. | The change corrects a critical vulnerability. |
+| **RabbitMQ Resilience** | All 3 services added exponential-backoff reconnection (max 10 attempts, 1s→30s). | The change prevents failures from spreading when the broker restarts. |
+| **Health Checks** | Deep `/health` endpoints verify DB + RabbitMQ connectivity. On degradation, they return 503 with results for each check. | The results support container control and load balancer routing. |
+| **Graceful Shutdown** | All services process SIGTERM/SIGINT with this sequence: drain HTTP → close RabbitMQ → close DB. | Deployments have zero downtime and leave no connections without an owner. |
+| **Message Pagination** | `GET /chat/get/:receiverId` supports `?limit=50&offset=0` and returns `pagination` metadata. | Pagination prevents unlimited memory use for large conversations. |
+| **Docker Compose** | The implementation added a RabbitMQ 3.13 service with a health check. All services depend on `rabbitmq: service_healthy`. | The Docker development environment operates correctly. |
+| **CI/CD** | Each service has `npm audit` steps with `continue-on-error`. These replace the single `\|\| true` step. | Audit failures are visible for each service without stopping the pipeline. |
+| **Dead Code** | The implementation removed `signal.ts.old`, the unused `getUserDetails` function, and the unnecessary `csrf-csrf` dependency. | The change reduces components that attackers can exploit and simplifies the dependency tree. |
+| **Documentation** | The implementation added ADR-001 for the microservices rationale and a production incident runbook. | The documents help new contributors and operators respond to incidents. |
 
 ---
 
 ## System Overview
 
-A secure, real-time chat application featuring **end-to-end encryption (E2EE)** via the Signal Protocol. Built as a microservices architecture with:
+The secure, real-time chat application uses **end-to-end encryption (E2EE)** through the Signal Protocol.
+The application has a microservices architecture with these components:
 
 | Layer | Technology |
 |-------|-----------|
@@ -213,7 +216,7 @@ Client ← 'presence' → Update online/offline status
 
 ### user-service (Port 8081)
 
-**Responsibility**: Authentication, user management, Signal Protocol prekey storage
+**Responsibility**: The user-service authenticates users, manages users, and stores Signal Protocol prekeys.
 
 | Endpoint | Auth | Description |
 |----------|------|-------------|
@@ -230,7 +233,7 @@ Client ← 'presence' → Update online/offline status
 
 ### chat-service (Port 8082)
 
-**Responsibility**: Message storage, real-time messaging via WebSocket, presence tracking
+**Responsibility**: The chat-service stores messages, sends real-time messages through WebSocket, and tracks user presence.
 
 | Endpoint | Auth | Description |
 |----------|------|-------------|
@@ -251,7 +254,7 @@ Client ← 'presence' → Update online/offline status
 
 ### notification-service (Port 8083)
 
-**Responsibility**: Notification storage, email delivery, push notifications
+**Responsibility**: The notification-service stores notifications, delivers email, and sends push notifications.
 
 | Endpoint | Auth | Description |
 |----------|------|-------------|
@@ -262,9 +265,10 @@ Client ← 'presence' → Update online/offline status
 | `DELETE /notifications/:id` | JWT | Delete notification |
 | `POST /notifications/` | JWT | Create notification |
 
-**RabbitMQ Consumers**: `NOTIFICATIONS` queue
-- `MESSAGE_RECEIVED` → Create DB notification + email (if recipient offline)
-- `USER_REGISTERED` → Create welcome notification + email
+**RabbitMQ Consumers**: The notification-service reads the `NOTIFICATIONS` queue.
+- `MESSAGE_RECEIVED`: The service creates a database notification.
+  If the recipient is offline, the service also sends email.
+- `USER_REGISTERED`: The service creates a welcome notification and email.
 
 ---
 
@@ -303,7 +307,7 @@ Layer 8: CI/CD          → npm audit, Trivy scanning, TypeScript checks
 
 ### RabbitMQ Reconnection
 
-All three services implement automatic reconnection with exponential backoff:
+All three services reconnect automatically with exponential backoff. Exponential backoff increases the delay between connection attempts:
 
 ```
 Attempt 1: wait 1s   → reconnect
@@ -315,12 +319,12 @@ Max attempts: 10 (then logs critical failure, service degrades gracefully)
 ```
 
 The `RabbitMQService` class exposes:
-- `isHealthy(): boolean` — returns `true` only when both connection AND channel are alive
-- `disconnect(): Promise<void>` — cleanly closes channel then connection (used during shutdown)
+- `isHealthy(): boolean` returns `true` only when both the connection and channel are active.
+- `disconnect(): Promise<void>` closes the channel, then the connection. The service uses this method during shutdown.
 
 ### Deep Health Checks
 
-Each service exposes `GET /health` that returns:
+Each service exposes `GET /health`. This endpoint returns the responses that follow:
 
 ```json
 // Healthy (200)
@@ -330,11 +334,12 @@ Each service exposes `GET /health` that returns:
 { "status": "degraded", "checks": { "database": "ok", "rabbitmq": "fail" } }
 ```
 
-Docker Compose `healthcheck` and orchestrators use this endpoint for readiness gating.
+Docker Compose `healthcheck` and orchestrators use this endpoint to determine whether a service is ready.
 
 ### Graceful Shutdown
 
-On `SIGTERM` or `SIGINT` (e.g., `docker stop`, Kubernetes pod termination):
+On `SIGTERM` or `SIGINT`, the service obeys this shutdown sequence.
+Examples include `docker stop` and Kubernetes pod termination.
 
 ```
 1. Stop accepting new HTTP connections (server.close())
@@ -358,9 +363,11 @@ docker-compose.prod.yml     → Production overrides (HTTPS, NODE_ENV=production
 
 **Services**: `user-service`, `chat-service`, `notification-service`, `postgres`, `rabbitmq`, `nginx`
 
-All backend services declare `depends_on` with `condition: service_healthy` for both `postgres` and `rabbitmq`, ensuring infrastructure is ready before app containers start.
+All backend services declare `depends_on` with `condition: service_healthy` for both `postgres` and `rabbitmq`.
+These conditions ensure that the infrastructure is ready before application containers start.
 
-**RabbitMQ**: `rabbitmq:3.13-management-alpine` with `rabbitmq-diagnostics -q ping` healthcheck and management UI on `localhost:15672`.
+**RabbitMQ**: The service uses `rabbitmq:3.13-management-alpine` and the `rabbitmq-diagnostics -q ping` healthcheck.
+The management interface is available at `localhost:15672`.
 
 **Build Strategy**: Multi-stage builds
 1. **Builder stage**: `node:22-trixie-slim` — Install, compile TypeScript
@@ -424,29 +431,34 @@ app_secrets → generate-envs.sh → user-service/.env
 
 ### Backend Optimizations
 
-- **Connection pooling**: PostgreSQL pool (min: 5, max: 20, idle: 30s)
-- **LRU user-detail cache**: `LRUCache<string, CachedUserDetail>` (max: 500 entries, 60s TTL via `lru-cache` v11) in chat-service avoids N+1 HTTP calls; bounded memory footprint
-- **Batch user lookups**: `fetchUserDetailsBatch()` parallelizes uncached lookups
-- **UNION ALL CTE queries**: `getConversations` uses a `UNION ALL` CTE + `DISTINCT ON` for index-friendly conversation listing
-- **Database indexes**: `AddPerformanceIndexes` migration adds partial unread index, covering indexes on sender/receiver + `createdAt DESC`, and a composite read-status index; `AddTrigramSearchIndexes` adds `pg_trgm` GIN indexes for fast ILIKE user search
-- **`assertQueue` once**: All services assert their RabbitMQ queues once at `connect()` time, not per-publish
-- **Query monitoring**: Logs queries exceeding 1000ms
-- **WebSocket presence**: In-process `UserStatusStore` (`Set<string>`) avoids RPC for online checks; `presenceBulk` event sends one socket message on connect instead of N
-- **Map compaction**: 5-minute interval in `socketHandler` rebuilds live-entry Maps to reclaim V8 internal capacity
-- **Offline-only notifications**: RabbitMQ events only published when recipient is offline
-- **Template caching**: `EmailTemplateService` caches HTML templates and logo data URI in memory (O(1) after first read)
+- **Connection pooling**: PostgreSQL uses a connection pool (min: 5, max: 20, idle: 30s).
+- **LRU user-detail cache**: The chat-service uses `LRUCache<string, CachedUserDetail>` to prevent N+1 HTTP calls and limit memory use.
+  The cache limits are max: 500 entries, 60s TTL via `lru-cache` v11.
+  LRU removes the least recently used entries. TTL is the time before an entry expires.
+- **Batch user lookups**: `fetchUserDetailsBatch()` requests uncached user details in parallel.
+- **UNION ALL CTE queries**: `getConversations` uses a `UNION ALL` CTE + `DISTINCT ON` to list conversations with database indexes.
+  A CTE is a common table expression.
+- **Database indexes**: `AddPerformanceIndexes` adds a partial unread index, covering indexes on sender/receiver + `createdAt DESC`, and a composite read-status index.
+  `AddTrigramSearchIndexes` adds `pg_trgm` GIN indexes for fast ILIKE user search.
+- **`assertQueue` once**: All services assert their RabbitMQ queues once during `connect()`. They do not assert queues for each publication.
+- **Query monitoring**: The services record queries that exceed 1000ms.
+- **WebSocket presence**: The in-process `UserStatusStore` (`Set<string>`) prevents RPC for online checks.
+  On connection, `presenceBulk` sends one socket message instead of N.
+- **Map compaction**: At a 5-minute interval, `socketHandler` rebuilds Maps from active entries to release V8 internal capacity.
+- **Offline-only notifications**: The service publishes RabbitMQ events only when the recipient is offline.
+- **Template caching**: `EmailTemplateService` caches HTML templates and the logo data URI in memory (O(1) after first read).
 
 ### Frontend Optimizations
 
-- **LRU prekey cache**: `LRUCache` (max 100 entries) for prekey bundles; avoids re-fetching per message
-- **Batched Signal decrypt**: Messages decrypted in chunks of 20 (`BATCH_SIZE`) to prevent UI thread starvation
-- **Parallel notification fetch**: `notification.store.ts` uses `Promise.all` for simultaneous notification + unread-count fetch
-- **`presenceBulk` handling**: Single socket event on connect fans out to all registered presence callbacks
-- **IndexedDB message cache**: Decrypted messages stored locally (compound index on `[senderId, receiverId]`) for instant load
-- **Debounced typing**: 300ms debounce on typing indicator events
-- **Auto-scroll optimization**: Only scrolls when user is near bottom
-- **Abort controllers**: All API requests have 10s timeout with cancellation support
-- **Local-first rendering**: Check IndexedDB cache before server fetch
+- **LRU prekey cache**: `LRUCache` stores prekey bundles (max 100 entries). The cache prevents repeated requests for each message.
+- **Batched Signal decrypt**: The frontend decrypts messages in groups of 20 (`BATCH_SIZE`) to keep the interface thread available.
+- **Parallel notification fetch**: `notification.store.ts` uses `Promise.all` to request notifications and the unread count simultaneously.
+- **`presenceBulk` handling**: On connection, one socket event calls all registered presence callbacks.
+- **IndexedDB message cache**: The frontend stores decrypted messages locally for immediate loading. It uses a compound index on `[senderId, receiverId]`.
+- **Debounced typing**: Typing indicator events use a 300ms debounce delay.
+- **Auto-scroll optimization**: The frontend scrolls automatically only when the user is near the bottom.
+- **Abort controllers**: All API requests have a 10s timeout and support cancellation.
+- **Local-first rendering**: The frontend does a check of the IndexedDB cache before it requests data from the server.
 
 ### Nginx Optimizations
 
@@ -556,10 +568,10 @@ pnpm test:e2e  # (requires backend running)
 
 ### Development Workflow
 
-1. Feature branches: `feature/description`
-2. PR into `main` triggers full CI pipeline
-3. All tests must pass + security audit
-4. Docker images auto-built and pushed to GHCR on main
+1. Use feature branch names with the form `feature/description`.
+2. Submit a pull request into `main` to start the full CI pipeline.
+3. All tests and the security audit must pass.
+4. Docker images are automatically built and pushed to GHCR on main.
 
 ### Key Files to Know
 
@@ -574,4 +586,4 @@ pnpm test:e2e  # (requires backend running)
 
 ---
 
-*This document should be updated when significant architectural changes are made.*
+*When significant architectural changes are made, update this document.*
