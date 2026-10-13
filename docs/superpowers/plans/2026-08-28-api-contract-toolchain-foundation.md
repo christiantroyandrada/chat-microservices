@@ -1,10 +1,17 @@
 # API Contract and Toolchain Foundation Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+This historical plan records requirements from 2026-08-28. It does not authorize task execution during documentation conversion.
+The checkboxes record the original plan state. Expected test results are targets, not observed results or release approval.
 
-**Goal:** Establish reproducible frontend tooling and make the generated API layer accurately describe and consume the current backend wire contracts.
+**Historical worker requirement:** Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement each task.
+Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Architecture:** Backend OpenAPI source files define exact response envelopes and request shapes and export deterministic JSON artifacts. The frontend commits versioned copies of those contracts, generates types through a pure deterministic module, and routes existing services through thin generated endpoint helpers while retaining domain normalization in the service layer.
+**Goal:** Establish reproducible frontend tooling.
+The generated API layer must describe and consume the current backend wire contracts accurately.
+
+**Architecture:** Backend OpenAPI source files define the response envelopes and request shapes. They export deterministic JSON artifacts.
+The frontend commits versioned copies of the contracts. A pure deterministic module generates the types.
+Existing services use generated endpoint helpers. Domain normalization remains in the service layer.
 
 **Tech Stack:** Node.js 22, pnpm 9.11.0, TypeScript 5.9, SvelteKit 2, Vitest 3, Jest 30, OpenAPI 3.0, GitHub Actions.
 
@@ -13,15 +20,17 @@
 ## Global Constraints
 
 - Preserve all unrelated uncommitted frontend and backend work.
-- Make separate commits in the frontend and backend repositories; never combine their Git state.
-- DRY: one schema definition per wire concept and one generator implementation.
-- SOLID/Clean Architecture: OpenAPI conversion is a pure module; filesystem and CLI behavior remain adapters.
-- ACID/PostgreSQL: this foundation changes no database schema or transaction behavior.
-- Idempotency: contract generation is deterministic and `--check` performs no writes.
-- Debounce: no debounce belongs in this subproject because generation and HTTP contract calls are discrete commands.
-- Tao of Node: pin runtime/tool versions, validate inputs, propagate failures, avoid hidden global state, and keep entry points thin.
-- Production topology: frontend images must use immutable SHA tags before coordinated contract rollout; the shared Nginx gateway is out of scope for this plan.
-- All production code changes follow red-green-refactor TDD. Generated files are produced only after generator tests fail for the intended missing behavior.
+- Make separate commits in the frontend and backend repositories. Never combine their Git state.
+- DRY requires one schema definition for each wire concept and one generator implementation.
+- SOLID/Clean Architecture requires a pure OpenAPI conversion module. Filesystem and CLI behavior remain in adapters.
+- ACID/PostgreSQL: This foundation changes no database schema or transaction behavior.
+- Idempotency: Contract generation is deterministic, and `--check` does not write files.
+- Debounce: This subproject does not need debounce because generation and HTTP contract calls are separate commands.
+- Tao of Node: Pin runtime and tool versions. Validate inputs. Propagate failures. Avoid hidden global state. Keep entry points thin.
+- Production topology: Before coordinated contract rollout, frontend images must use immutable SHA tags.
+  The shared Nginx gateway is outside this plan's scope.
+- All production code changes must obey red-green-refactor test-driven development (TDD).
+  Produce generated files only after generator tests fail for the intended missing behavior.
 
 ---
 
@@ -41,8 +50,9 @@
 
 **Interfaces:**
 
-- Produces: frontend runtime contract `packageManager: "pnpm@9.11.0"`, Node engine `>=22 <23`, pnpm engine `9.11.0`, direct `@storybook/svelte` development dependency, ignored `storybook-static/`, and no conflict-copy files.
-- Consumes: existing Storybook 10 configuration and the CI Node/pnpm versions.
+- Produces: The frontend runtime contract specifies `packageManager: "pnpm@9.11.0"`, Node engine `>=22 <23`, and pnpm engine `9.11.0`.
+  It also specifies a direct `@storybook/svelte` development dependency, ignored `storybook-static/`, and no conflict-copy files.
+- Consumes: The existing Storybook 10 configuration and the CI Node and pnpm versions.
 
 - [ ] **Step 1: Write the failing toolchain contract test**
 
@@ -100,7 +110,8 @@ shasum "chat-app/backend/chat-service/openapi 2.json" chat-app/backend/chat-serv
 shasum "chat-app/backend/user-service/openapi 2.json" chat-app/backend/user-service/openapi.json
 ```
 
-Expected: each pair has identical SHA-1 output. Stop rather than delete if any pair differs.
+Expected: Each pair has identical SHA-1 output.
+If any pair differs, stop without deletion.
 
 - [ ] **Step 4: Apply the minimal toolchain changes**
 
@@ -119,7 +130,9 @@ Add these fields to `../frontend/package.json`:
 }
 ```
 
-Append `storybook-static/` to `.gitignore`, remove the five verified identical conflict copies, and regenerate the lockfile with the CI-pinned manager:
+Append `storybook-static/` to `.gitignore`.
+Remove the five verified identical conflict copies.
+Regenerate the lockfile with the CI-pinned manager:
 
 ```bash
 CI=true npx --yes pnpm@9.11.0 install --lockfile-only
@@ -141,7 +154,7 @@ git add package.json pnpm-lock.yaml .gitignore tests/unit/toolchain.contract.tes
 git commit -m "chore: pin frontend toolchain and clean artifacts"
 ```
 
-The five conflict copies were untracked, so their verified deletion is intentionally not represented as a Git commit.
+The five conflict copies were untracked. Therefore, their verified deletion does not appear in a Git commit.
 
 ---
 
@@ -156,7 +169,8 @@ The five conflict copies were untracked, so their verified deletion is intention
 **Interfaces:**
 
 - Produces: `RegisterRequest`, `LoginRequest`, `User`, `SearchUser`, `UserResponse`, `UserListResponse`, `StatusResponse`, `SignedPreKey`, `OneTimePreKey`, `PrekeyBundle`, `PublishPrekeyRequest`, `ConsumedPrekey`, `ConsumedPrekeyResponse`, `SignalKeyBackupRequest`, and `SignalKeyBackupResponse` schemas.
-- Consumes: current controller responses from `AuthController` and `PrekeyController`; no runtime behavior changes.
+- Consumes: The schemas describe current responses from `AuthController` and `PrekeyController`.
+  Runtime behavior does not change.
 
 - [ ] **Step 1: Write failing user contract tests**
 
@@ -308,7 +322,9 @@ ConsumedPrekey: {
 },
 ```
 
-Define `signedPreKey` and `preKeys[]` from `user-service/src/types.ts`, make their fields required, and point every successful path response at the matching envelope schema.
+Define `signedPreKey` and `preKeys[]` from `user-service/src/types.ts`.
+Make their fields required.
+Make every successful path response refer to the matching envelope schema.
 
 Replace the inline register/login request bodies with `$ref` values to `RegisterRequest` and `LoginRequest`.
 
@@ -321,7 +337,7 @@ node_modules/.bin/tsc --noEmit -p tsconfig.json
 git diff --check -- src/openapi.ts openapi.json tests/unit/openapi.contract.test.ts
 ```
 
-Expected: test and TypeScript PASS; `openapi.json` changes deterministically.
+Expected: The test and TypeScript checks PASS. Changes to `openapi.json` are deterministic.
 
 - [ ] **Step 5: Commit the user-service contract**
 
@@ -342,8 +358,10 @@ git commit -m "fix(user): align OpenAPI with runtime envelopes"
 
 **Interfaces:**
 
-- Produces: `Pagination`, `MessageResponse`, `MessagesPageResponse`, `ConversationListResponse`, and `MarkReadResponse` schemas using runtime status values `NotDelivered | Delivered | Seen`.
-- Consumes: current `MessageController` JSON responses; message idempotency fields are deferred to the messaging plan.
+- Produces: `Pagination`, `MessageResponse`, `MessagesPageResponse`, `ConversationListResponse`, and `MarkReadResponse` schemas.
+  The schemas use the runtime status values `NotDelivered | Delivered | Seen`.
+- Consumes: The schemas describe the current `MessageController` JSON responses.
+  Message idempotency fields remain deferred to the messaging plan.
 
 - [ ] **Step 1: Write failing chat contract tests**
 
@@ -458,7 +476,7 @@ git commit -m "fix(chat): align OpenAPI with runtime envelopes"
 **Interfaces:**
 
 - Produces: `generateApiTypes({ userSpec, chatSpec, source }) => string`, CLI `gen-api-types.mjs [--check]`, and sync command `sync-api-contracts.mjs --backend-dir ../backend`.
-- Consumes: committed frontend contract JSON, never a sibling repository during CI generation.
+- Consumes: Committed frontend contract JSON. CI generation must not read a sibling repository.
 
 - [ ] **Step 1: Write failing pure-generator tests**
 
@@ -505,7 +523,9 @@ Copy the freshly generated backend JSON files into `../frontend/contracts/` and 
 }
 ```
 
-This initial metadata value identifies the topology-amended design baseline. Step 4 replaces it with the exact post-contract backend commit through `sync-api-contracts.mjs` before generated artifacts are committed.
+This initial metadata value identifies the design baseline after the topology amendment.
+Before the generated artifacts are committed, Step 4 replaces this value through `sync-api-contracts.mjs`.
+The replacement value is the exact backend commit after the contract changes.
 
 Run:
 
@@ -517,7 +537,11 @@ Expected: FAIL because `scripts/lib/openapi-to-types.mjs` does not exist.
 
 - [ ] **Step 3: Extract the pure generator**
 
-Move `schemaToTs`, `objectSchemaToInterface`, and `componentToTs` into `scripts/lib/openapi-to-types.mjs`. Pass the service namespace through every recursive conversion so local `$ref` values become `UserApiFoo` or `ChatApiFoo`; never emit an unqualified component name. Export:
+Move `schemaToTs`, `objectSchemaToInterface`, and `componentToTs` into `scripts/lib/openapi-to-types.mjs`.
+Pass the service namespace through every recursive conversion.
+Local `$ref` values must become `UserApiFoo` or `ChatApiFoo`.
+Never emit an unqualified component name.
+Export this function:
 
 ```js
 export function generateApiTypes({ userSpec, chatSpec, source }) {
@@ -539,7 +563,7 @@ export function generateApiTypes({ userSpec, chatSpec, source }) {
 }
 ```
 
-Preserve required-vs-optional fields, `$ref`, arrays, enums, and nullable values.
+Preserve required and optional fields, `$ref`, arrays, enums, and nullable values.
 
 - [ ] **Step 4: Make generation idempotent and check-only**
 
@@ -570,7 +594,9 @@ Add scripts:
 }
 ```
 
-`sync-api-contracts.mjs` validates that both source files exist, copies them into `contracts/`, reads the backend Git commit through `execFileSync('git', ['-C', backendDir, 'rev-parse', 'HEAD'])`, and writes `source.json`. It rejects unknown arguments and never reads backend environment files.
+`sync-api-contracts.mjs` validates that both source files exist. It copies the files into `contracts/` and writes `source.json`.
+It reads the backend Git commit through `execFileSync('git', ['-C', backendDir, 'rev-parse', 'HEAD'])`.
+It rejects unknown arguments and never reads backend environment files.
 
 Run the sync adapter once before generation so `source.json` records the post-Task-3 backend commit:
 
@@ -587,7 +613,7 @@ node scripts/gen-api-types.mjs --check
 git diff --check -- contracts scripts src/lib/generated/api.types.ts tests/unit/openapi-generator.test.ts package.json
 ```
 
-Expected: PASS. A second normal generation produces no diff; `--check` exits 0 without writing.
+Expected: PASS. A second normal generation produces no diff. `--check` exits 0 without writing files.
 
 - [ ] **Step 6: Commit deterministic generation in the frontend**
 
@@ -614,8 +640,8 @@ git commit -m "feat: generate API types from committed contracts"
 
 **Interfaces:**
 
-- Produces: generated endpoint helpers typed to the unwrapped `ApiClient` result and explicit pagination metadata.
-- Consumes: `ApiClient`, generated component types, and existing domain normalization functions.
+- Produces: Generated endpoint helpers use the unwrapped `ApiClient` result type and explicit pagination metadata.
+- Consumes: `ApiClient`, the generated component types, and the existing domain normalization functions.
 
 - [ ] **Step 1: Write failing endpoint-helper tests**
 
@@ -661,7 +687,9 @@ describe('generated API helpers', () => {
 });
 ```
 
-Also add an `api.client.test.ts` regression using a successful `{ status: 200, message: 'Login successful' }` fetch response. Assert the normalized result keeps `message` but has `data === undefined`; an envelope without a `data` property must not be treated as its own payload.
+Add an `api.client.test.ts` regression for a successful `{ status: 200, message: 'Login successful' }` fetch response.
+Make sure that the normalized result keeps `message` and has `data === undefined`.
+The client must not treat an envelope without a `data` property as its own payload.
 
 - [ ] **Step 2: Run the endpoint-helper test and verify it fails**
 
@@ -686,7 +714,10 @@ export type ApiResponse<T = unknown, TMeta extends object = Record<never, never>
 
 Update `request`, `get`, `post`, `put`, and `delete` with a second generic `TMeta extends object = Record<never, never>`.
 
-Correct the existing envelope fallback at the same boundary: if a JSON object has any envelope key (`status`, `message`, `error`, or `data`), expose only its `data` property as `ApiResponse.data`; preserve the whole object only for a genuinely raw, non-envelope response. This makes cookie-only login/logout responses resolve with `data === undefined` without discarding their message.
+Correct the existing envelope fallback at the same boundary.
+If a JSON object has an envelope key (`status`, `message`, `error`, or `data`), expose only its `data` property as `ApiResponse.data`.
+If the response is raw and has no envelope, preserve the whole object.
+Cookie-only login and logout responses then have `data === undefined` and retain their message.
 
 - [ ] **Step 4: Correct endpoint-helper types**
 
@@ -706,23 +737,30 @@ getConversations(): Promise<ApiResponse<ChatApiConversation[]>>;
 markAsRead(senderId: string): Promise<ApiResponse<{ modifiedCount: number }>>;
 ```
 
-Use URL encoding for every path/query value.
+Use URL encoding for every path and query value.
 
 - [ ] **Step 5: Route auth and chat services through generated helpers**
 
-Replace raw user/chat `apiClient` calls with `userApi` and `chatApi`. Keep these responsibilities in the domain-facing services:
+Replace raw user/chat `apiClient` calls with `userApi` and `chatApi`.
+Keep these responsibilities in the domain services:
 
-- username normalization;
-- `{ id } -> { _id }` user normalization;
-- server message -> frontend message normalization;
-- Signal encryption/decryption;
+- Username normalization.
+- `{ id } -> { _id }` user normalization.
+- Server message -> frontend message normalization.
+- Signal encryption/decryption.
 - IndexedDB storage.
 
-Change `authService.login` to `Promise<void>` and `authService.register` to `Promise<User>`. Normalize the register result `{ id, username, email }` to the frontend `{ _id, username, email }`; search results already use `_id` on the wire. The auth store already ignores the login/register return and fetches `/me`, so no store behavior changes.
+Change `authService.login` to `Promise<void>`.
+Change `authService.register` to `Promise<User>`.
+Normalize the register result `{ id, username, email }` to the frontend shape `{ _id, username, email }`.
+Search results already use `_id` on the wire.
+The auth store already ignores the login and register results and requests `/me`. Store behavior does not change.
 
 - [ ] **Step 6: Update service tests before implementation passes**
 
-Change existing service mocks from `apiClient` to `userApi`/`chatApi`, and assert domain normalization remains unchanged. Add one regression test proving `authService.login()` resolves `undefined` after a successful cookie-only response.
+Change existing service mocks from `apiClient` to `userApi`/`chatApi`.
+Assert that domain normalization remains unchanged.
+Add one regression test to prove that `authService.login()` resolves `undefined` after a successful cookie-only response.
 
 - [ ] **Step 7: Verify focused and full frontend behavior**
 
@@ -732,7 +770,7 @@ node_modules/.bin/vitest --run
 node_modules/.bin/svelte-check --tsconfig ./tsconfig.json
 ```
 
-Expected: focused tests PASS, then 320 existing tests plus new tests PASS, and Svelte check reports zero diagnostics.
+Expected: The focused tests pass. The 320 existing tests and the new tests pass. The Svelte check reports zero diagnostics.
 
 - [ ] **Step 8: Commit typed service adoption**
 
@@ -754,8 +792,8 @@ git commit -m "refactor: consume generated API contracts"
 
 **Interfaces:**
 
-- Produces: backend exported-spec drift checks and frontend generated-type drift checks.
-- Consumes: committed backend `openapi.json` artifacts and committed frontend `contracts/` inputs.
+- Produces: Backend checks detect changes in exported specifications. Frontend checks detect changes in generated types.
+- Consumes: Committed backend `openapi.json` artifacts and committed frontend `contracts/` inputs.
 
 - [ ] **Step 1: Add a failing local CI-contract verification test**
 
@@ -773,7 +811,8 @@ Run from the frontend root:
 node scripts/gen-api-types.mjs --check
 ```
 
-Expected before Tasks 2-5: at least one command reports stale artifacts or missing check support. After Tasks 2-5, both commands exit 0.
+Expected before Tasks 2-5: At least one command reports stale artifacts or missing check support.
+After Tasks 2-5, both commands exit 0.
 
 - [ ] **Step 2: Enforce backend spec drift**
 
@@ -803,7 +842,8 @@ Add before TypeScript/Svelte checks:
   run: pnpm run check:contracts
 ```
 
-Do not fetch the backend repository in frontend CI. Contract updates enter through `pnpm sync:contracts` in a coordinated cross-repository change.
+Do not fetch the backend repository in frontend CI.
+Use `pnpm sync:contracts` to update contracts during a coordinated change in both repositories.
 
 - [ ] **Step 4: Validate workflow syntax and local commands**
 
@@ -843,11 +883,11 @@ git commit -m "ci: reject stale frontend API types"
 
 **Files:**
 
-- Verify only; no production files should change.
+- Verify only. No production files should change.
 
 **Interfaces:**
 
-- Produces: evidence that the first subproject is ready for adversarial review.
+- Produces: Evidence that the first subproject is ready for adversarial review.
 - Consumes: every task above.
 
 - [ ] **Step 1: Verify both Git worktrees contain no unmerged paths**
@@ -859,7 +899,7 @@ git -C ../frontend status --short
 git -C . status --short
 ```
 
-Expected: no conflict markers or unmerged paths; only known unrelated user changes remain.
+Expected: No conflict markers or unmerged paths exist. Only known unrelated user changes remain.
 
 - [ ] **Step 2: Run backend verification**
 
@@ -875,7 +915,8 @@ npm --prefix chat-service run gen:spec
 git diff --exit-code -- user-service/openapi.json chat-service/openapi.json
 ```
 
-Expected: all 157 existing backend tests plus new contract tests PASS; all TypeScript checks exit 0; generated specs are clean.
+Expected: All 157 existing backend tests and the new contract tests pass.
+All TypeScript checks exit 0. Generated specifications have no changes.
 
 - [ ] **Step 3: Run frontend verification**
 
@@ -886,7 +927,8 @@ node_modules/.bin/vitest --run
 npx --yes pnpm@9.11.0 run build
 ```
 
-Expected: all existing 320 frontend tests plus new tests PASS, Svelte check has zero diagnostics, contract check is clean, and the production build exits 0.
+Expected: All 320 existing frontend tests and the new tests pass.
+The Svelte check has zero diagnostics. The contract check has no findings. The production build exits 0.
 
 - [ ] **Step 4: Run production dependency audits without mutating lockfiles**
 
@@ -897,14 +939,15 @@ npm --prefix chat-service audit --omit=dev --audit-level=high
 npm --prefix notification-service audit --omit=dev --audit-level=high
 ```
 
-Expected for this foundation: record the current findings without applying fixes. Critical/high dependency remediation is the next independently reviewed plan.
+For this foundation, record the current findings without corrections.
+Critical/high dependency corrections belong to the next independently reviewed plan.
 
 - [ ] **Step 5: Dispatch adversarial review**
 
 Use three independent lenses on the complete cross-repository diff:
 
-- correctness: runtime envelopes, generated types, and service normalization;
-- failure modes: stale generation, malformed specs, CI isolation, and backward compatibility;
-- structure: DRY/SOLID boundary between schemas, pure generator, endpoint helpers, and domain services.
+- Correctness: Review runtime envelopes, generated types, and service normalization.
+- Failure modes: Review stale generation, malformed specifications, CI isolation, and backward compatibility.
+- Structure: Review the DRY/SOLID boundary between schemas, the pure generator, endpoint helpers, and domain services.
 
 Resolve every blocking/important finding before starting the dependency-hardening plan.

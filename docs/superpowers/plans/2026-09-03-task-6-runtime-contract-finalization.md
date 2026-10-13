@@ -1,36 +1,51 @@
 # Task 6 Runtime Contract Finalization Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+This historical plan records requirements from 2026-09-03. It does not authorize task execution during documentation conversion.
+The checkboxes record the original plan state. Expected results are targets, not observed results or release approval.
 
-**Goal:** Turn the existing Task 6 runtime-contract commits into trustworthy cross-repository evidence under Node 22/pnpm 9.11.0, then produce a release verdict without merging, pushing, or touching production.
+**Historical worker requirement:** Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement each task.
+Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Architecture:** Keep the existing per-service controller-level conformance tests, but repair their test oracle and pagination control so unrelated validation cannot create false positives. Publish the changed backend OpenAPI files into the frontend through the accepted transactional snapshot tool, then verify both repositories in isolated Node 22 containers and the application in a local Colima topology.
+**Goal:** Produce reliable evidence across both repositories for the existing Task 6 runtime contract commits under Node 22/pnpm 9.11.0.
+Then give a release verdict without a merge, push, or production change.
+
+**Architecture:** Keep the existing controller-level conformance tests for each service.
+Correct the test oracle and pagination control so unrelated validation cannot produce false positives.
+The test oracle determines whether a test result is correct.
+
+Publish the changed backend OpenAPI files to the frontend through the accepted transactional snapshot tool.
+Do checks of both repositories in isolated Node 22 containers.
+Do a check of the application in a local Colima topology.
 
 **Tech Stack:** Node.js 22, npm, pnpm 9.11.0, Jest/ts-jest, Vitest, SvelteKit/TypeScript, OpenAPI 3, Docker Compose, Colima.
 
 **Spec:** `docs/superpowers/specs/2026-08-28-chat-reliability-architecture-design.md`
 
-## Current checkpoint
+<a id="current-checkpoint"></a>
+## Historical checkpoint
 
 - Backend worktree: `/private/tmp/chat-app-api-contract.pbzyiq/backend`
 - Frontend worktree: `/private/tmp/chat-app-api-contract.pbzyiq/frontend`
 - Backend Task 6 commit: `c4219c30d20c30f9059cfd3f5c74755efece447a` (`test(api): prove runtime contract conformance`)
 - Frontend Task 6 commit: `d4edadadbaeff924e49fa1c0d8ea76d63e306f46` (`test(api): verify generated response contracts`)
-- Backend focused verification already observed: user-service 46 tests passed; chat runtime/OpenAPI 17 tests passed.
-- Frontend focused verification already observed: 27 tests passed.
-- Existing frontend `check:contracts` passes only against stale local copies. This is not cross-repository proof: frontend `contracts/source.json` still identifies backend `cc47bef`, while backend OpenAPI changed at `c4219c3`.
-- The previous implementor did not create `task-6-report.md` and did not complete the supported-runtime, audit, or Colima gates.
+- Backend focused verification recorded these results: user-service 46 tests passed. Chat runtime/OpenAPI 17 tests passed.
+- Frontend focused verification recorded this result: 27 tests passed.
+- Existing frontend `check:contracts` passes only against stale local copies. This result does not prove cross-repository consistency.
+  Frontend `contracts/source.json` still identifies backend `cc47bef`. Backend OpenAPI changed at `c4219c3`.
+- The previous implementor did not create `task-6-report.md`. The supported-runtime, audit, and Colima gates remained incomplete.
 
 ## Global Constraints
 
-- Work only in the two isolated worktrees above. The default checkouts contain user work and must remain untouched.
+- Work only in the two isolated worktrees above. The default checkouts contain user work. Do not change them.
 - Do not rewrite, amend, or squash the two checkpoint commits. Add bounded correction commits.
-- Use red-green TDD for every behavior/test-oracle correction. Record the exact command, failure, and success.
+- Use red-green test-driven development (TDD) for every behavior or test-oracle correction.
+  Record the exact command, failure, and success.
 - Never merge, push, deploy, contact or mutate the VPS, use Firebase, delete a volume, or modify any path containing the literal suffix ` 2`.
 - Do not change dependencies while finalizing Task 6. Audits are evidence for the next dependency-hardening plan.
-- Backend OpenAPI JSON, frontend contract copies, generated files, source provenance, and the snapshot manifest are committed deterministic artifacts.
+- Backend OpenAPI JSON, frontend contract copies, generated files, source provenance, and the snapshot manifest must remain deterministic committed artifacts.
 - Do not claim a Linux/Node 22/Colima check unless that exact command ran successfully.
-- Keep comments only when they explain a non-obvious invariant or constraint; remove comments that narrate adjacent code.
+- Keep comments only when they explain a non-obvious invariant or constraint.
+  Remove comments that describe adjacent code.
 - Prefer precise `unknown` crossings over new `any` declarations. Do not loosen lint configuration or add disable comments.
 
 ---
@@ -45,7 +60,8 @@
 **Interfaces:**
 
 - Consumes: `fetchConversationValidation`, `validateRequest`, `MessageController.fetchConversation`, and OpenAPI `format`, `required`, `enum`, object, array, string, integer, number, and nullable schema fields.
-- Produces: pagination tests whose failure reason is the pagination field under test and a schema oracle that cannot silently accept malformed UUID/date-time fixtures.
+- Produces: Pagination tests must fail for the pagination field under test.
+  The schema oracle must reject malformed UUID and date-time fixtures.
 
 - [ ] **Step 1: Make the existing false positive fail honestly**
 
@@ -66,7 +82,8 @@ cd /private/tmp/chat-app-api-contract.pbzyiq/backend/chat-service
 npm run test:unit -- --runInBand tests/unit/runtime-contract.test.ts
 ```
 
-Expected RED: the row currently labelled `zero limit` actually passes `offset: 0`; once the receiver UUID is valid, validation proceeds instead of returning the unrelated receiver-ID error, so the row no longer returns 400.
+Expected RED: The row labelled `zero limit` actually passes `offset: 0`.
+If the receiver UUID is valid, validation continues without the unrelated receiver-ID error. The row then does not return 400.
 
 - [ ] **Step 2: Replace the ambiguous pagination table with field-specific query cases**
 
@@ -90,7 +107,9 @@ it.each([
 })
 ```
 
-Add a valid control proving `{ limit: '200', offset: '0' }` calls `next` and does not emit a 400 response. Do not assert that a repository was untouched unless the controller is actually invoked by that harness.
+Add a valid control for `{ limit: '200', offset: '0' }`.
+Prove that it calls `next` and does not emit a 400 response.
+If the harness invokes the controller, confirm that a repository remains untouched.
 
 - [ ] **Step 3: Enforce schema formats used by the tested responses**
 
@@ -109,15 +128,23 @@ case 'string': {
 }
 ```
 
-Use valid v4 UUIDs in every message fixture. Add one small adversarial self-test showing the oracle rejects an invalid UUID fixture; capture RED before adding format handling and GREEN after it.
+Use valid v4 UUIDs in every message fixture.
+Add one small adversarial self-test that proves the oracle rejects an invalid UUID fixture.
+Before format handling, record RED.
+After format handling, record GREEN.
 
 - [ ] **Step 4: Apply comment/type hygiene**
 
-Remove the opening comments that merely say the file contains runtime contract tests. Keep at most one comment explaining why the JSON round-trip is necessary for Express `res.json`/Date serialization. Replace new `any` values with narrow local shapes or `unknown` plus an explicit cast at the controller/Jest boundary. Do not change production controller code.
+Remove opening comments that only say the file contains runtime contract tests.
+Keep at most one comment about the need for the JSON round-trip during Express `res.json`/Date serialization.
+Replace new `any` values with narrow local shapes or `unknown`.
+With `unknown`, add an explicit cast at the controller/Jest boundary.
+Do not change production controller code.
 
 - [ ] **Step 5: Verify and commit**
 
-Run both focused runtime/OpenAPI suites and `git diff --check`. Commit only the owned correction files:
+Run both focused runtime/OpenAPI suites and `git diff --check`.
+Commit only the owned correction files:
 
 ```bash
 git add chat-service/tests/unit/runtime-contract.test.ts user-service/tests/unit/runtime-contract.test.ts
@@ -142,11 +169,13 @@ If the user-service file needs no correction, do not stage it.
 **Interfaces:**
 
 - Consumes: backend `c4219c3` tracked OpenAPI blobs and the transactional snapshot publisher.
-- Produces: one coherent frontend snapshot whose provenance identifies `c4219c3` and whose hashes match the copied bytes.
+- Produces: One coherent frontend snapshot identifies `c4219c3` as its source. Its hashes must match the copied bytes.
 
 - [ ] **Step 1: Capture stale-snapshot RED**
 
-Record the SHA-256 hashes of backend `user-service/openapi.json` and `chat-service/openapi.json` and their frontend copies. Assert they differ and record that `contracts/source.json` names backend `cc47bef`, not `c4219c3`.
+Record the SHA-256 hashes of backend `user-service/openapi.json` and `chat-service/openapi.json` and their frontend copies.
+Assert that they differ.
+Record that `contracts/source.json` names backend `cc47bef`, not `c4219c3`.
 
 - [ ] **Step 2: Run the transactional producer**
 
@@ -157,7 +186,8 @@ pnpm run sync:contracts
 pnpm run gen:api
 ```
 
-Do not copy or edit JSON by hand. The publisher must update the source/manifest last under its existing lock/atomicity rules.
+Do not copy or edit JSON by hand.
+The publisher must update the source/manifest last under its existing lock/atomicity rules.
 
 - [ ] **Step 3: Prove coherent GREEN state**
 
@@ -168,11 +198,14 @@ pnpm run check:contracts
 pnpm run gen:api -- --check
 ```
 
-Compare backend/frontend OpenAPI hashes again; each pair must match. Verify `contracts/source.json` and `contract-snapshot.manifest.json` identify backend `c4219c30d20c30f9059cfd3f5c74755efece447a`. Run the focused frontend API tests and `git diff --check`.
+Compare the backend and frontend OpenAPI hashes again. Each pair must match.
+Make sure that `contracts/source.json` and `contract-snapshot.manifest.json` identify backend `c4219c30d20c30f9059cfd3f5c74755efece447a`.
+Run the focused frontend API tests and `git diff --check`.
 
 - [ ] **Step 4: Commit the snapshot correction**
 
-Stage only files changed by the producer and inspect the exact list before committing:
+Stage only files changed by the producer.
+Before the commit, inspect the exact list:
 
 ```bash
 git commit -m "chore(api): synchronize runtime contract snapshot"
@@ -189,11 +222,11 @@ git commit -m "chore(api): synchronize runtime contract snapshot"
 **Interfaces:**
 
 - Consumes: committed Task 6 backend/frontend ranges.
-- Produces: exact Node 22/pnpm 9.11.0 test/build/audit evidence with no source mutation.
+- Produces: Exact Node 22/pnpm 9.11.0 test, build, and audit evidence without source changes.
 
 - [ ] **Step 1: Use isolated Node 22 containers**
 
-Do not install Linux dependencies into the macOS worktrees. Mount anonymous `node_modules` volumes. Example frontend command:
+Do not install Linux dependencies in the macOS worktrees. Mount anonymous `node_modules` volumes. The frontend example follows:
 
 ```bash
 docker run --rm \
@@ -203,19 +236,33 @@ docker run --rm \
   sh -lc 'corepack enable && corepack prepare pnpm@9.11.0 --activate && pnpm install --frozen-lockfile && pnpm run test:unit -- --run && pnpm run check && pnpm run lint && pnpm run check:contracts && pnpm run gen:api -- --check && pnpm run build'
 ```
 
-For each backend service, use `node:22-bookworm`, an anonymous service `node_modules` volume, `npm ci`, the complete unit suite, and build/typecheck scripts defined in that service package.
+For each backend service, use `node:22-bookworm` and an anonymous `node_modules` volume for the service.
+Run `npm ci` and the complete unit suite.
+Run the build/typecheck scripts defined in that service package.
 
 - [ ] **Step 2: Run immutable publication/release gates**
 
-Run backend contract-artifact tests/verifiers and deployment-workflow tests/verifier. Run the frontend contract-publication tests and deployment-workflow `node:test` suite. Record Linux real-`flock` results separately; a skip is not a pass.
+Run backend contract-artifact tests/verifiers and deployment-workflow tests/verifier.
+Run the frontend contract-publication tests and deployment-workflow `node:test` suite.
+Record the results from real Linux `flock` separately. A skipped check is not a pass.
 
 - [ ] **Step 3: Record production audits without upgrading**
 
-Run `npm audit --omit=dev --json` for user, chat, and notification services and `pnpm audit --prod --json` for frontend. Record package/advisory/severity/count and exit status. Current baseline includes high findings in user/chat/frontend and a critical transitive `websocket-driver` finding in notification-service; any critical/high finding makes the foundation ineligible for release and becomes input to the dependency-hardening plan.
+Run `npm audit --omit=dev --json` for user, chat, and notification services.
+Run `pnpm audit --prod --json` for frontend.
+Record package/advisory/severity/count and exit status.
+
+The historical baseline includes high findings in the user service, chat service, and frontend.
+It also includes a critical transitive `websocket-driver` finding in the notification service.
+Any critical/high finding makes the foundation ineligible for release.
+These findings become input to the dependency-hardening plan.
 
 - [ ] **Step 4: Prove Git integrity**
 
-Run `git diff --check`, inspect every Task 6 commit file list, and prove both isolated worktrees have no unstaged application changes. Do not stage anything from the default checkouts.
+Run `git diff --check`.
+Inspect every Task 6 commit file list.
+Prove that both isolated worktrees have no unstaged application changes.
+Do not stage anything from the default checkouts.
 
 ---
 
@@ -226,23 +273,32 @@ Run `git diff --check`, inspect every Task 6 commit file list, and prove both is
 **Interfaces:**
 
 - Consumes: the committed Dockerfiles/Compose topology and local-only test secrets.
-- Produces: image IDs, bounded health results, public gateway probes, and container ownership evidence without production access.
+- Produces: Image IDs, bounded health results, public gateway probe results, and container ownership evidence without production access.
 
 - [ ] **Step 1: Confirm local-only context**
 
-Run `colima status`, `docker context show`, and `docker info`. Abort if the active context is remote or points at the VPS. Record the context name in the report.
+Run `colima status`, `docker context show`, and `docker info`.
+If the active context is remote or points to the VPS, stop.
+Record the context name in the report.
 
 - [ ] **Step 2: Build the four application images**
 
-Build user, chat, notification, and frontend images from the paired worktrees with local Task 6 tags. Record immutable local image IDs. Do not push.
+Build user, chat, notification, and frontend images from the paired worktrees with local Task 6 tags.
+Record immutable local image IDs.
+Do not push.
 
 - [ ] **Step 3: Start a bounded local topology**
 
-Use only local test credentials. Start PostgreSQL/RabbitMQ/Redis and the four application containers on loopback. Do not mount production volumes or secrets. Wait on health conditions rather than fixed sleeps.
+Use only local test credentials.
+Start PostgreSQL, RabbitMQ, Redis, and the four application containers on loopback.
+Do not mount production volumes or secrets.
+Wait for health conditions instead of fixed delays.
 
 - [ ] **Step 4: Probe and tear down safely**
 
-Probe service health and representative user/chat routes through the local gateway. Record status/body. Stop the Task 6 Compose project without deleting unrelated volumes or images.
+Probe service health and representative user/chat routes through the local gateway.
+Record status/body.
+Stop the Task 6 Compose project. Do not delete unrelated volumes or images.
 
 ---
 
@@ -261,4 +317,7 @@ Return to the architect only: status, commit hashes, one-line verification summa
 
 ## Architect follow-up (not for the implementor)
 
-After Muse stops, the architect will independently inspect the commits, rerun proportional gates, dispatch correctness/failure/structure critics, consolidate one correction wave, and issue the Task 6 release verdict. Critical/high advisories then move into a separate dependency-hardening plan before idempotency/outbox work or final default-branch integration.
+After Muse stops, the architect independently inspects the commits and reruns proportional gates.
+The architect dispatches critics for correctness, failure modes, and structure. The architect then consolidates one correction cycle.
+The architect then issues the Task 6 release verdict.
+Critical/high advisories move into a separate dependency-hardening plan before idempotency/outbox work or final default-branch integration.

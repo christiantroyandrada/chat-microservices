@@ -1,10 +1,25 @@
 # API Contract Release Blockers Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+This historical plan records requirements from 2026-08-30. It does not authorize task execution during documentation conversion.
+The checkboxes record the original plan state. Expected results are targets, not observed results or release approval.
 
-**Goal:** Close the residual API-contract foundation defects so both repositories typecheck, contract artifacts cannot drift silently, and deployments use immutable, independently owned releases.
+**Historical worker requirement:** Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement each task.
+Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Architecture:** Keep OpenAPI as the transport-contract source, but generate a small operation manifest alongside component types and require endpoint adapters to consume that manifest. Treat contract publication as a transaction: validate first, stage a complete snapshot, atomically rename outputs, and publish the hash manifest last. Treat the VPS as a shared release target protected by one host-side lock while each repository updates only the services it owns.
+**Goal:** Correct the remaining defects in the API contract foundation.
+Type checks must pass in both repositories. The system must detect changes to contract artifacts.
+Deployments must use immutable releases. Each repository must control only its services.
+
+**Architecture:** OpenAPI remains the source for the transport contract.
+Generate an operation manifest with the component types.
+Endpoint adapters must use the manifest.
+
+Treat contract publication as a transaction.
+First, validate the content and prepare a complete snapshot.
+Then rename the outputs atomically. Publish the hash manifest last.
+
+Use one lock on the host to protect the shared VPS release target.
+Each repository must update only its services.
 
 **Tech Stack:** Node.js 22, pnpm 9.11.0, SvelteKit/TypeScript/Vitest, Express/Jest/TypeORM/PostgreSQL, OpenAPI 3, GitHub Actions, Docker Compose/Colima.
 
@@ -12,12 +27,15 @@
 
 ## Global Constraints
 
-- Work only in the paired isolated worktrees; preserve all unrelated dirty and untracked files byte-for-byte and unstaged.
-- Use test-driven development: observe each focused test fail for the intended reason before implementation, then run it green.
+- Use only the paired isolated worktrees.
+  Keep all unrelated changed and untracked files byte-for-byte and unstaged.
+- Use test-driven development.
+  Before implementation, confirm that each focused test fails for the intended reason.
+  After implementation, run the test and record a passing result.
 - Do not merge, push, deploy, mutate the VPS, delete volumes, or remove the pre-existing ` 2` duplicate files in this plan.
-- OpenAPI JSON, frontend copies, generated component types, and generated operation metadata are committed deterministic artifacts.
+- OpenAPI JSON, frontend copies, generated component types, and generated operation metadata must remain deterministic committed artifacts.
 - Unsupported or malformed contract input fails before any committed artifact is overwritten.
-- Frontend and backend deployments share one host-side lock and update only repository-owned services.
+- Frontend and backend deployments must share one host lock. Each deployment must update only its repository's services.
 - Dependency upgrades, durable messaging idempotency/outbox, RabbitMQ reliability, transactional prekey consumption, and broader architecture refactors remain separate plans.
 
 ---
@@ -41,23 +59,41 @@
 
 **Interfaces:**
 - Consumes: `ApiClient.getRaw<T>()`, backend `MessageStatus`, `Conversation` OpenAPI schema.
-- Produces: a strict-typechecking raw response API; `ServerMessage.status: 'NotDelivered' | 'Delivered' | 'Seen'`; numeric unread counts; bounded pagination; synchronized generated artifacts.
+- Produces: The raw response API passes strict type checks.
+  `ServerMessage.status: 'NotDelivered' | 'Delivered' | 'Seen'` defines message status.
+  Unread counts are numeric. Pagination has limits. Generated artifacts are synchronized.
 
 - [ ] **Step 1: Add failing regression tests**
 
-  Add tests proving `getRaw<string>()` cannot return `undefined`, all three message statuses normalize correctly, `offset` rejects non-finite/unsafe values, and the exported conversation schema requires `id`, `name`, `avatar`, `lastMessage`, `unreadCount`, and `lastMessageTime`.
+  Add tests for these requirements:
+  - `getRaw<string>()` cannot return `undefined`.
+  - All three message statuses normalize correctly.
+  - `offset` rejects non-finite/unsafe values.
+  - The exported conversation schema requires `id`, `name`, `avatar`, `lastMessage`, `unreadCount`, and `lastMessageTime`.
 
 - [ ] **Step 2: Run focused red checks**
 
-  Run frontend API/chat tests plus strict TypeScript checking and backend chat validation/controller/contract tests. Expected: failures at the current `api.ts` return, missing `ServerMessage.status`, unsafe pagination, or stale artifact assertions.
+  Run the frontend API and chat tests and the strict TypeScript checks.
+  Run the backend chat validation, controller, and contract tests.
+  Expected: The tests fail for the `api.ts` return, missing `ServerMessage.status`, unsafe pagination, or stale artifacts.
 
 - [ ] **Step 3: Implement the minimal corrections**
 
-  Make the raw success branch return a defined `T` or throw a contract-boundary error; declare the wire status on `ServerMessage`; use one finite safe-integer pagination parser shared by validation/controller; retain SQL `COUNT(*)::int`; regenerate backend JSON, sync frontend contracts, and regenerate frontend types.
+  Make the raw success branch return a defined `T` or throw a contract boundary error.
+  Declare the wire status on `ServerMessage`.
+  Use one finite safe-integer pagination parser for validation and the controller.
+  Retain SQL `COUNT(*)::int`.
+
+  Regenerate the backend JSON.
+  Synchronize the frontend contracts.
+  Regenerate the frontend types.
 
 - [ ] **Step 4: Run focused and drift checks**
 
-  Run the focused tests, `tsc --noEmit`, backend spec generation with tracked-artifact checks, and frontend `check:contracts`. Expected: all pass and regeneration produces no diff.
+  Run the focused tests and `tsc --noEmit`.
+  Generate the backend specifications and do checks of the tracked artifacts.
+  Run frontend `check:contracts`.
+  Expected: All checks pass. Regeneration produces no diff.
 
 - [ ] **Step 5: Commit separately by repository**
 
@@ -81,19 +117,30 @@
 
 - [ ] **Step 1: Add a failing backend-to-client response matrix**
 
-  Cover successful envelopes, status/message-only success, raw JSON, raw text, inherited envelope-like keys, malformed successful JSON, malformed failed JSON, missing `data`, and missing user/conversation identifiers. Use fixtures declared with `satisfies` generated wire types wherever the fixture is valid.
+  Cover these response cases:
+  - Successful envelopes and status/message-only success.
+  - Raw JSON and raw text.
+  - Inherited envelope-like keys.
+  - Malformed successful JSON and malformed failed JSON.
+  - Missing `data` and missing user/conversation identifiers.
+  If a fixture is valid, declare it with `satisfies` and the generated wire types.
 
 - [ ] **Step 2: Run the matrix red**
 
-  Expected: generated helpers do not pass explicit modes and auth/chat normalizers still construct empty domain entities.
+  Expected: The generated helpers omit explicit modes, and the auth and chat normalizers still construct empty domain entities.
 
 - [ ] **Step 3: Add explicit request metadata and boundary validators**
 
-  Require every generated/typed endpoint call to pass its declared response mode. Successful envelope endpoints must reject malformed JSON or missing required payloads; raw endpoints preserve successful JSON/text. Replace `Partial<T>` plus empty-string repair with narrow assertion functions that throw `ContractBoundaryError` naming the endpoint and missing field.
+  Require every generated or typed endpoint call to pass its declared response mode.
+  Successful envelope endpoints must reject malformed JSON and missing required payloads.
+  Raw endpoints must preserve successful JSON and text.
+  Replace `Partial<T>` and empty-string repair with narrow assertion functions.
+  These functions must throw `ContractBoundaryError` with the endpoint name and missing field.
 
 - [ ] **Step 4: Run focused tests and strict checks**
 
-  Run the response matrix, domain service suites, ESLint/TypeScript/Svelte checks. Expected: all pass.
+  Run the response matrix and domain service suites.
+  Run the ESLint, TypeScript, and Svelte checks. Expected: All pass.
 
 - [ ] **Step 5: Commit**
 
@@ -117,11 +164,17 @@
 
 **Interfaces:**
 - Consumes: stable unique OpenAPI `operationId` values and local component `$ref` targets.
-- Produces: `apiOperations` metadata keyed by operation ID with method, path, request/parameter refs, response ref, and response mode; endpoint helpers consume this metadata rather than repeating transport strings.
+- Produces: `apiOperations` metadata keyed by operation ID. Each entry has a method, path, request and parameter refs, response ref, and response mode.
+  Endpoint helpers must use this metadata instead of repeated transport strings.
 
 - [ ] **Step 1: Add adversarial generator tests**
 
-  Add failing cases for duplicate/missing operation IDs, unresolved local refs, non-array or unknown `required` members, `oneOf`/`allOf`/`anyOf`, unknown schema types, unsupported remote refs, and component names beginning with a digit. Assert failure occurs before output files change.
+  Add failing cases for these inputs:
+  - Duplicate/missing operation IDs and unresolved local refs.
+  - Non-array or unknown `required` members.
+  - `oneOf`/`allOf`/`anyOf` and unknown schema types.
+  - Unsupported remote refs and component names that start with a digit.
+  Assert that failure occurs before output files change.
 
 - [ ] **Step 2: Add failing helper-drift tests**
 
@@ -129,15 +182,19 @@
 
 - [ ] **Step 3: Implement fail-closed validation and operation generation**
 
-  Validate OpenAPI version, service identity, components, paths, operations, refs, schema keywords, and required arrays before rendering. Prefix unsafe TypeScript identifiers deterministically. Generate readonly operation metadata and refactor adapters to consume method/path/mode from it.
+  Before rendering, validate the OpenAPI version, service identity, components, paths, operations, refs, schema keywords, and required arrays.
+  Prefix unsafe TypeScript identifiers deterministically.
+  Generate readonly operation metadata.
+  Refactor adapters to use method/path/mode from the metadata.
 
 - [ ] **Step 4: Add stable operation IDs and regenerate all artifacts**
 
-  Assign descriptive IDs such as `user.login`, `user.publishPrekey`, `chat.listMessages`, and `chat.listConversations`; update backend tests, JSON, frontend copies, component types, and operation metadata.
+  Assign descriptive IDs such as `user.login`, `user.publishPrekey`, `chat.listMessages`, and `chat.listConversations`.
+  Update backend tests, JSON, frontend copies, component types, and operation metadata.
 
 - [ ] **Step 5: Run generator, helper, type, and drift suites**
 
-  Expected: adversarial inputs fail without writes; valid regeneration is deterministic and clean.
+  Expected: Adversarial inputs fail without writes. Valid regeneration is deterministic and has no changes.
 
 - [ ] **Step 6: Commit separately by repository**
 
@@ -161,23 +218,39 @@
 
 **Interfaces:**
 - Consumes: fully validated rendered strings and exact backend Git blobs or clean tracked files.
-- Produces: one cross-process lock, same-directory temporary files, content hashes, atomic renames, manifest-last publication, cleanup on failure, and CI verification that tracked artifacts exist and remain tracked.
+- Produces: one lock across processes, temporary files in the same directory, content hashes, and atomic renames.
+  The publisher writes the manifest last and cleans up after failure. CI verifies that tracked artifacts exist and remain tracked.
 
 - [ ] **Step 1: Add failure-injection tests**
 
-  Simulate validation failure, lock contention, a write failure before rename, and a failure between artifact staging and manifest publication. Assert the prior complete snapshot remains byte-identical, no partial manifest is published, and temporary files/locks are cleaned only by their owner.
+  Simulate these failures:
+  - Validation failure and lock contention.
+  - A write failure before rename.
+  - A failure between artifact staging and manifest publication.
+  Assert that the prior complete snapshot remains byte-identical.
+  Assert that no partial manifest is published.
+  Assert that only their owner removes temporary files/locks.
 
 - [ ] **Step 2: Add provenance and deleted-artifact CI tests**
 
-  Prove dirty working-tree contracts are rejected (or exact `git show HEAD:path` blobs are used), manifest hashes match bytes, and deleting a tracked OpenAPI JSON cannot be hidden by regeneration into an untracked file.
+  Prove that dirty working-tree contracts are rejected or exact `git show HEAD:path` blobs are used.
+  Prove that manifest hashes match bytes.
+  Prove that regeneration into an untracked file cannot hide deletion of a tracked OpenAPI JSON file.
 
 - [ ] **Step 3: Implement the atomic publisher**
 
-  Acquire a lock with exclusive creation, render/validate everything in memory, write/fsync same-directory temporary files, rename artifacts, and rename a hash/provenance manifest last. Never overwrite the prior snapshot before all staging succeeds.
+  Acquire a lock with exclusive creation.
+  Render/validate all content in memory.
+  Write/fsync temporary files in the same directory.
+  Rename artifacts.
+  Rename the hash/provenance manifest last.
+  Never overwrite the prior snapshot before all staging succeeds.
 
 - [ ] **Step 4: Wire backend exporters and CI**
 
-  Make exporters use atomic replacement. Add `git ls-files --error-unmatch`, existence checks, generator execution, `git status --porcelain --untracked-files=all -- <artifacts>`, and hash verification. Extract a reusable workflow only if both callers keep identical permissions/toolchain inputs.
+  Make exporters use atomic replacement.
+  Add `git ls-files --error-unmatch`, existence checks, generator execution, `git status --porcelain --untracked-files=all -- <artifacts>`, and hash verification.
+  Only if both callers keep identical permissions/toolchain inputs, extract a reusable workflow.
 
 - [ ] **Step 5: Run failure tests and both repository drift gates**
 
@@ -198,30 +271,50 @@
 - Modify: `backend/docker-compose.yml` if service-specific image variables are not already supported.
 
 **Interfaces:**
-- Consumes: immutable `ghcr.io/<owner>/chat-frontend:<git-sha>` and backend service SHA tags; VPS path `/opt/chat-app`.
-- Produces: one host lock path shared by both repositories, repository-owned service lists, and an atomic release-state file containing current and previous immutable image references for rollback.
+- Consumes: immutable `ghcr.io/<owner>/chat-frontend:<git-sha>` and backend service SHA tags. The VPS path is `/opt/chat-app`.
+- Produces: one host lock path shared by both repositories and separate service lists for each repository.
+  An atomic release-state file records current and previous immutable image references for rollback.
 
 - [ ] **Step 1: Add static failing workflow tests**
 
-  Parse the workflow YAML and embedded deploy scripts. Assert no production deployment consumes `latest`; backend commands cannot pull/create/restart `frontend`; frontend commands cannot alter backend services; both acquire the same `flock` target; release state records current/previous immutable refs before service replacement.
+  Parse the workflow YAML and embedded deploy scripts.
+  Assert these requirements:
+  - No production deployment uses `latest`.
+  - Backend commands cannot pull/create/restart `frontend`.
+  - Frontend commands cannot alter backend services.
+  - Both acquire the same `flock` target.
+  - Before service replacement, release state records current/previous immutable refs.
 
 - [ ] **Step 2: Publish immutable frontend identity**
 
-  Build/push the commit-SHA tag, resolve and record its digest, and pass that immutable reference to deployment. A convenience `latest` tag may exist for humans but must never be a deployment input or rollback source.
+  Build/push the commit-SHA tag.
+  Resolve its digest.
+  Record the digest.
+  Pass that immutable reference to deployment.
+  A convenience `latest` tag may exist for people. It must never be a deployment input or rollback source.
 
 - [ ] **Step 3: Add shared locking, ownership, and rollback state**
 
-  Acquire one host-side lock before reading or writing Compose/release state. Backend deploys only `user`, `chat`, `notification`, migrations, and owned dependencies explicitly approved by the workflow; frontend deploys only `frontend`. Write the new release-state file by temp+rename and retain the previous immutable refs before health checks.
+  Before you read or write Compose or release state, acquire one lock on the host.
+  Backend deploys only `user`, `chat`, `notification`, migrations, and owned dependencies explicitly approved by the workflow.
+  Frontend deploys only `frontend`.
+  Write the new release-state file through a temporary file and a rename.
+  Before health checks, retain the previous immutable refs.
 
 - [ ] **Step 4: Exercise deployment scripts locally without a VPS mutation**
 
-  Run YAML parsing/static tests and a fake `docker compose`/filesystem harness that proves service ownership, lock contention, successful state transition, and rollback to the exact previous immutable reference.
+  Run YAML parsing/static tests.
+  Run a fake `docker compose`/filesystem harness.
+  Prove service ownership and lock contention.
+  Prove a successful state transition and rollback to the exact previous immutable reference.
 
 - [ ] **Step 5: Commit separately by repository**
 
   Commit backend as `fix(deploy): serialize owned immutable releases` and frontend as `fix(deploy): release immutable frontend images`.
 
 ### Task 6: Prove runtime contract conformance and verify the foundation
+
+This historical recovery checkpoint records the state on 2026-09-03:
 
 > **Recovery checkpoint (2026-09-03):** Backend `c4219c3` and frontend `d4edada`
 > contain the first runtime-contract test slice. They are not yet accepted: the
@@ -242,28 +335,46 @@
 
 **Interfaces:**
 - Consumes: exported OpenAPI schemas, representative controller responses, generated operation metadata, explicit response modes, and immutable deployment workflow tests.
-- Produces: evidence that representative runtime responses conform to status/body schemas and the complete foundation passes in the supported toolchain.
+- Produces: evidence that representative runtime responses conform to status and body schemas.
+  The complete foundation must pass in the supported toolchain.
 
 - [ ] **Step 1: Add representative runtime conformance tests**
 
-  Exercise signal-backup 404, prekey publish success, conversations with numeric unread counts, bounded pagination failures, status/message-only responses, and message status values. Validate HTTP status and response bodies against the exported operation/schema contract using a focused existing validator or a small test-only resolver.
+  Exercise the signal-backup 404 response and successful prekey publication.
+  Exercise conversations with numeric unread counts, bounded pagination failures, status and message-only responses, and message status values.
+  Use a focused existing validator or a small test-only resolver.
+  Validate HTTP status and response bodies against the exported operation/schema contract.
 
 - [ ] **Step 2: Run backend and frontend full verification**
 
-  Run all backend unit suites and TypeScript checks; regenerate and verify contracts; run frontend full Vitest, strict TypeScript/Svelte checks, lint, `check:contracts`, and production build under Node 22/pnpm 9.11.0.
+  Run all backend unit suites and TypeScript checks.
+  Regenerate contracts.
+  Verify contracts.
+  Under Node 22/pnpm 9.11.0, run the full frontend Vitest suite.
+  Run strict TypeScript and Svelte checks, lint, `check:contracts`, and the production build.
 
 - [ ] **Step 3: Run security and Git integrity checks**
 
-  Run production audits and record exact remaining advisories without broadening this plan; run `git diff --check`, committed-range checks, and prove only preserved unrelated files remain unstaged.
+  Run production audits.
+  Record exact remaining advisories without expansion of this plan.
+  Run `git diff --check` and committed-range checks.
+  Prove that only preserved unrelated files remain unstaged.
 
 - [ ] **Step 4: Rebuild and smoke-test with Colima**
 
-  Rebuild all four immutable images, serve the frontend on loopback, run bounded backend startup/environment validation, and execute any safe local integration topology available without production secrets or remote mutations.
+  Rebuild all four immutable images.
+  Serve the frontend on loopback.
+  Run bounded backend startup/environment validation.
+  Run any available safe local integration topology without production secrets or remote changes.
 
 - [ ] **Step 5: Dispatch three adversarial critics and one scoped correction review**
 
-  Review correctness, failure modes, and structure independently against this plan and the full paired diff. Consolidate findings into one fix wave, then one scoped re-review.
+  Review correctness, failure modes, and structure independently against this plan and the complete paired diff.
+  Consolidate findings into one correction cycle.
+  Then do one scoped review of the corrections.
 
 - [ ] **Step 6: Record the release verdict**
 
-  Update the SDD ledger/report with commands, outputs, immutable image IDs, audit counts, limitations, and whether the foundation is eligible to proceed to the dependency/idempotency phases. Do not merge or push in this task.
+  Update the SDD ledger/report with commands, outputs, immutable image IDs, audit counts, and limitations.
+  State whether the foundation is eligible to proceed to the dependency/idempotency phases.
+  Do not merge or push in this task.

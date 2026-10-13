@@ -1,8 +1,9 @@
 # Server Health & Security Cron Jobs
 
-This directory contains automated cron job scripts for maintaining server health and security.
+This directory contains automatic cron job scripts for server health and security. Cron starts scheduled tasks at specified times.
 
-## 📋 Cron Job Schedule
+<a id="-cron-job-schedule"></a>
+## Cron Job Schedule
 
 | Script | Schedule | Description |
 |--------|----------|-------------|
@@ -18,11 +19,12 @@ This directory contains automated cron job scripts for maintaining server health
 | `docker-cleanup.sh` | Weekly (Sunday 3 AM) | Removes unused Docker images, containers, build cache |
 | `update-image-digests.sh` | Manual / CI | Updates SHA digests in Dockerfiles for security patches |
 
-## 🔧 Installation
+<a id="-installation"></a>
+## Installation
 
 The cron jobs are installed on the VPS at `/opt/chat-app/scripts/cron/`.
 
-To manually install or update the crontab:
+To install or update the crontab manually, use these commands:
 
 ```bash
 ssh ubuntu@YOUR_SERVER_IP -p YOUR_SSH_PORT
@@ -34,9 +36,10 @@ crontab -l
 crontab -e
 ```
 
-## 📁 Log Files
+<a id="-log-files"></a>
+## Log Files
 
-All cron job logs are stored in `/var/log/chat-app/`:
+The scripts store all cron job logs in `/var/log/chat-app/`:
 
 - `health-check.log` - Health check results
 - `security-audit.log` - Security audit results
@@ -51,32 +54,35 @@ All cron job logs are stored in `/var/log/chat-app/`:
 - `intrusion-detect.log` - Intrusion detection logs
 - `metrics/` - System metrics JSON files (daily)
 
-## 🔒 Security Features
+<a id="-security-features"></a>
+## Security Features
 
 ### UFW Firewall
-- Default: Deny incoming, Allow outgoing
-- Allowed ports: YOUR_SSH_PORT (SSH), 80 (HTTP), 443 (HTTPS)
+- The default rules deny incoming traffic and permit outgoing traffic.
+- The permitted ports are YOUR_SSH_PORT (SSH), 80 (HTTP), and 443 (HTTPS).
 
 ### Fail2Ban
-- Protects SSH on port YOUR_SSH_PORT
-- Bans IPs after 5 failed attempts for 1 hour
+- Fail2Ban protects SSH on port YOUR_SSH_PORT.
+- After 5 failed attempts, Fail2Ban blocks the IP address for 1 hour.
 
 ### Unattended Upgrades
-- Automatic security patches enabled
-- Daily package list updates
-- Weekly auto-cleanup of old packages
+- Automatic security patches are enabled.
+- The system updates package lists daily.
+- The system automatically removes old packages weekly.
 
-## 📊 Status Check
+<a id="-status-check"></a>
+## Status Check
 
-Run the status script to see current server health:
+Run the status script to see the current server health:
 
 ```bash
 ssh ubuntu@YOUR_SERVER_IP -p YOUR_SSH_PORT '/opt/chat-app/scripts/cron/status.sh'
 ```
 
-## 🗄️ Backups
+<a id="️-backups"></a>
+## Backups
 
-Database backups are stored at `/opt/chat-app/backups/postgres/`:
+The backup script stores database backups at `/opt/chat-app/backups/postgres/`:
 - Filename format: `chat_db_backup_YYYY-MM-DD_HH-MM-SS.sql.gz`
 - Retention: 7 days
 - Latest backup symlink: `latest.sql.gz`
@@ -92,9 +98,10 @@ cd /opt/chat-app/backups/postgres
 gunzip -c latest.sql.gz | docker exec -i chat-microservices-postgres-1 psql -U postgres chat_db
 ```
 
-## ⚠️ Alerts
+<a id="️-alerts"></a>
+## Alerts
 
-Security and health alerts are written to:
+The scripts write security and health alerts to these files:
 - `/var/log/chat-app/alerts.log` - General alerts
 - `/var/log/chat-app/security-alerts.log` - Security-specific alerts
 
@@ -103,13 +110,15 @@ Monitor for alerts:
 ssh ubuntu@YOUR_SERVER_IP -p YOUR_SSH_PORT 'tail -f /var/log/chat-app/alerts.log'
 ```
 
-## 🛠️ Maintenance
+<a id="️-maintenance"></a>
+## Maintenance
 
 ### Docker Image Security
 
-The following scripts help maintain secure, up-to-date container images:
+The scripts that follow help keep container images secure and current:
 
-#### Check for Base Image Updates
+<a id="check-for-base-image-updates"></a>
+#### Base Image Update Check
 ```bash
 # Check if base images have security updates available
 /opt/chat-app/scripts/cron/docker-rebuild.sh

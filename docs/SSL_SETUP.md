@@ -1,12 +1,12 @@
 # SSL/HTTPS Setup Guide
 
-This guide explains how to set up HTTPS with Let's Encrypt for your chat application.
+This guide gives instructions to configure HTTPS with Let's Encrypt for the chat application.
 
 ## Prerequisites
 
-1. **Domain pointing to your server**: Your domain (e.g., `yourdomain.com`) must have an A record pointing to your VPS IP address
-2. **Port 80 and 443 open**: Both ports must be accessible from the internet
-3. **Docker running on VPS**: The application should already be deployed
+1. **Domain pointing to your server**: The domain must have an A record that points to the VPS IP address. For example, use `yourdomain.com`.
+2. **Port 80 and 443 open**: Both ports must be accessible from the internet.
+3. **Docker running on VPS**: The application should already be deployed.
 
 ## Quick Setup
 
@@ -19,7 +19,7 @@ cd /opt/chat-app/chat-microservices
 
 ### Step 2: Configure your domain and email
 
-Edit the script or set environment variables:
+Edit the script or set the environment variables:
 
 ```bash
 export DOMAIN="yourdomain.com"
@@ -38,24 +38,28 @@ STAGING=0 ./scripts/init-letsencrypt.sh
 
 ### Step 4: Set up automatic renewal
 
-Add a cron job to renew certificates automatically:
+Add a cron job for automatic certificate renewal:
 
 ```bash
 sudo crontab -e
 ```
 
-Add this line (renews at 3 AM daily):
+Add this line:
+
+The job renews certificates at 3 AM daily.
 ```
 0 3 * * * /opt/chat-app/chat-microservices/scripts/renew-certs.sh >> /var/log/certbot-renew.log 2>&1
 ```
 
 ## What the Setup Does
 
-1. Creates `certbot/` directory for certificates
-2. Temporarily modifies nginx config to handle ACME challenges
-3. Runs certbot to obtain certificates
-4. Switches nginx to SSL-enabled configuration
-5. Restarts nginx with HTTPS support
+The setup script does these actions:
+
+1. It creates the `certbot/` directory for certificates.
+2. It temporarily changes the nginx configuration to process ACME challenges, which verify domain control.
+3. It runs certbot to obtain certificates.
+4. It changes nginx to a configuration with SSL enabled.
+5. It restarts nginx with HTTPS support.
 
 ## File Structure After Setup
 
@@ -80,7 +84,7 @@ chat-microservices/
 
 ## Testing HTTPS
 
-After setup:
+After setup, do a test of HTTPS:
 
 ```bash
 # Test from anywhere
@@ -94,15 +98,16 @@ curl -k https://localhost/health
 
 ### Certificate not obtained
 
-1. Check that port 80 is open and accessible
-2. Verify DNS is pointing to your server: `dig yourdomain.com`
-3. Check certbot logs: `cat certbot/logs/letsencrypt.log`
+1. Verify that port 80 is open and accessible.
+2. Verify that DNS points to the server: `dig yourdomain.com`.
+3. Do a check of the certbot logs: `cat certbot/logs/letsencrypt.log`.
 
-### Nginx won't start with SSL
+<a id="nginx-wont-start-with-ssl"></a>
+### Nginx does not start with SSL
 
-1. Verify certificates exist: `ls -la certbot/conf/live/yourdomain.com/`
-2. Check nginx config: `docker compose exec nginx nginx -t`
-3. Check nginx logs: `docker compose logs nginx`
+1. Verify that certificates exist: `ls -la certbot/conf/live/yourdomain.com/`.
+2. Do a check of the nginx configuration: `docker compose exec nginx nginx -t`.
+3. Do a check of the nginx logs: `docker compose logs nginx`.
 
 ### Rate limits
 
@@ -110,7 +115,7 @@ Let's Encrypt has rate limits:
 - 50 certificates per registered domain per week
 - 5 duplicate certificates per week
 
-Use `STAGING=1` for testing to avoid hitting limits.
+Use `STAGING=1` for testing to prevent limit errors.
 
 ## Manual Certificate Renewal
 
@@ -121,7 +126,7 @@ cd /opt/chat-app/chat-microservices
 
 ## Reverting to HTTP-only
 
-If you need to disable HTTPS:
+If you need to disable HTTPS, do these steps:
 
 1. Copy the original nginx.conf back:
    ```bash
@@ -135,7 +140,9 @@ If you need to disable HTTPS:
 
 ## Security Notes
 
-- Certificates are valid for 90 days
-- The renewal script checks daily and renews when < 30 days remain
-- HSTS is commented out by default - enable after confirming SSL works
-- Modern TLS 1.2/1.3 protocols only
+- Certificates are valid for 90 days.
+- The renewal script does a daily check. When < 30 days remain, it renews certificates.
+- HSTS is commented out by default. HSTS instructs browsers to use HTTPS.
+- Only TLS 1.2/1.3 protocols are used.
+
+After you confirm that SSL operates correctly, enable HSTS.

@@ -1,17 +1,19 @@
 # Deployment Guide
 
-This guide explains how to deploy the chat application stack using the new **image-based CI/CD pipeline**.
+This guide gives instructions to deploy the chat application stack with the **image-based CI/CD pipeline**.
 
-## 🚀 New Architecture (December 2024)
+<a id="-new-architecture-december-2024"></a>
+## New Architecture (December 2024)
 
-The deployment has been completely redesigned for security and efficiency:
+This section records the deployment redesign from December 2024. The redesign improves security and efficiency.
+This historical description does not give release approval.
 
 ### Key Changes
-- ✅ **No git clone/pull on VPS** - Images are pre-built in GitHub Actions
-- ✅ **GitHub Container Registry (GHCR)** - All images stored in GHCR
-- ✅ **No source code on server** - Only docker-compose.yml and data volumes
-- ✅ **Automatic security cleanup** - Source files removed after deployment
-- ✅ **Secret masking** - All sensitive values masked in CI logs
+- **No git clone/pull on VPS**: GitHub Actions builds images before deployment.
+- **GitHub Container Registry (GHCR)**: GHCR stores all images.
+- **No source code on server**: The server contains only docker-compose.yml and data volumes.
+- **Automatic security cleanup**: The pipeline removes source files after deployment.
+- **Secret masking**: CI logs conceal all sensitive values.
 
 ### Deployment Flow
 ```
@@ -61,13 +63,13 @@ The deployment uses a Docker Compose stack with:
 | `INFISCAL_CLIENT_SECRET` | Infisical client secret |
 | `INFISCAL_PROJECT_SLUG` | Infisical project slug |
 
-**Note**: `GITHUB_TOKEN` is automatically provided by GitHub Actions for GHCR authentication.
+GitHub Actions automatically provides `GITHUB_TOKEN` for GHCR authentication.
 
 See [GITHUB_SECRETS.md](./GITHUB_SECRETS.md) for detailed setup.
 
 ### Infisical Secrets (Required)
 
-Store these in your Infisical project (prod environment):
+Store these secrets in the prod environment of your Infisical project:
 
 | Secret | Required | Default |
 |--------|----------|---------|
@@ -114,34 +116,36 @@ sudo chown deploy:deploy /opt/chat-app
 
 ### Step 3: First Deployment
 
-Push to `main` branch to trigger the first deployment. The CI/CD will:
-1. Build all Docker images
-2. Push to GHCR
-3. SSH to VPS and create docker-compose.yml
-4. Pull images and start services
+Push to the `main` branch to start the first deployment.
+
+The CI/CD pipeline does these actions:
+1. It builds all Docker images.
+2. It pushes the images to GHCR.
+3. It connects to the VPS through SSH and creates docker-compose.yml.
+4. It pulls images and starts services.
 
 ## Deployment Process
 
 ### Automatic Deployment (Recommended)
 
-Simply push to the `main` (backend) or `master` (frontend) branch:
+Push to the `main` (backend) or `master` (frontend) branch:
 
 ```bash
 git push origin main
 ```
 
-GitHub Actions will:
-1. ✅ Run tests and security audits
-2. ✅ Build Docker images in CI
-3. ✅ Push images to GHCR
-4. ✅ SSH to VPS and pull images
-5. ✅ Start/restart services
-6. ✅ Verify health checks
-7. ✅ Clean up source files
+GitHub Actions does these actions:
+1. It runs tests and security audits.
+2. It builds Docker images in CI.
+3. It pushes images to GHCR.
+4. It connects to the VPS through SSH and pulls images.
+5. It starts or restarts services.
+6. It verifies health checks.
+7. It removes source files.
 
 ### Manual Deployment (Emergency)
 
-If you need to manually deploy:
+If you need a manual deployment, use these commands:
 
 ```bash
 ssh deploy@YOUR_VPS -p YOUR_PORT
@@ -159,7 +163,8 @@ docker compose up -d --force-recreate
 
 ## Monitoring
 
-### Check Service Status
+<a id="check-service-status"></a>
+### Service Status
 
 ```bash
 cd /opt/chat-app/chat-microservices
@@ -209,18 +214,21 @@ pgAdmin is accessible via the nginx reverse proxy at:
 https://your-domain.com/pgadmin/
 ```
 
-Login with the credentials configured in your Infisical secrets:
+Log in with the credentials configured in your Infisical secrets:
 - **Email**: Value of `PGADMIN_EMAIL`
 - **Password**: Value of `ADMIN_PASSWORD`
 
-To connect to the PostgreSQL database in pgAdmin:
+To connect to the PostgreSQL database in pgAdmin, use these values:
 - **Host**: `postgres` (Docker service name)
 - **Port**: `5432`
 - **Username**: Value of `ADMIN_USERNAME`
 - **Password**: Value of `ADMIN_PASSWORD`
 - **Database**: `chat_db`
 
-**Security Note**: pgAdmin exposes database admin functionality. Ensure strong passwords and consider additional network restrictions for production environments.
+pgAdmin gives access to database administration functions.
+
+Use strong passwords.
+Consider additional network restrictions for production environments.
 
 ## Troubleshooting
 
@@ -235,7 +243,8 @@ echo "YOUR_GHCR_TOKEN" | docker login ghcr.io -u YOUR_USERNAME --password-stdin
 docker compose pull
 ```
 
-### Service Won't Start
+<a id="service-wont-start"></a>
+### Service Does Not Start
 
 ```bash
 # Check logs for specific service
@@ -260,32 +269,35 @@ docker compose exec user env | grep DATABASE_URL
 
 ### Frontend Not Accessible
 
-1. Check nginx is running: `docker compose ps nginx`
-2. Check frontend is healthy: `docker compose ps frontend`
-3. Check nginx logs: `docker compose logs nginx --tail=50`
-4. Verify frontend image tag in docker-compose.yml
+1. Verify that nginx operates: `docker compose ps nginx`.
+2. Verify that the frontend is healthy: `docker compose ps frontend`.
+3. Do a check of nginx logs: `docker compose logs nginx --tail=50`.
+4. Verify the frontend image tag in docker-compose.yml.
 
 ## Security Considerations
 
-### What's Protected
+<a id="whats-protected"></a>
+### Protected Items
 
-1. **No source code on VPS** - Only docker-compose.yml remains
-2. **Secret masking in CI** - All passwords/tokens masked in logs
-3. **Secure credential passing** - Here-strings instead of echo pipes
-4. **Automatic cleanup** - .git, source directories removed after deploy
-5. **GHCR authentication** - Token-based, not username/password
+1. **No source code on VPS**: Only docker-compose.yml remains.
+2. **Secret masking in CI**: Logs conceal all passwords and tokens.
+3. **Secure credential passing**: The pipeline uses here-strings instead of echo pipes.
+4. **Automatic cleanup**: The pipeline removes .git and source directories after deployment.
+5. **GHCR authentication**: Authentication uses tokens, not usernames and passwords.
 
 ### Best Practices
 
-1. **GITHUB_TOKEN is auto-rotated** - No manual rotation needed
-2. **Use strong VPS_SUDO_PASSWORD**
-3. **Enable UFW/firewall** - Only expose ports 80, 443, and SSH
-4. **Configure SSL** with Let's Encrypt
-5. **Monitor** for unauthorized access
+GITHUB_TOKEN rotates automatically. Manual rotation is unnecessary.
+
+1. Use a strong VPS_SUDO_PASSWORD.
+2. Enable UFW/firewall.
+3. Expose only ports 80, 443, and SSH.
+4. Configure SSL with Let's Encrypt.
+5. Monitor for unauthorized access.
 
 ## Rollback
 
-To rollback to a previous version:
+To return to a previous version, use these commands:
 
 ```bash
 ssh deploy@YOUR_VPS -p YOUR_PORT
@@ -316,19 +328,19 @@ docker compose up -d --force-recreate
 
 ## Database Migrations
 
-All services use TypeORM migrations that run automatically on startup:
+All services use TypeORM migrations. The migrations run automatically at startup:
 
-- **Idempotent migrations**: Use `hasTable()` checks to skip if tables already exist
-- **Production safety**: Migrations tracked in `typeorm_migrations` table
-- **Development mode**: Uses `synchronize: true` for auto-sync during development
-- **Migration files**: Located in `*/src/database/migrations/`
+- **Idempotent migrations**: Migrations use `hasTable()` to skip tables that already exist. Repeated execution does not create duplicate tables.
+- **Production safety**: The `typeorm_migrations` table tracks migrations.
+- **Development mode**: The services use `synchronize: true` to synchronize the schema automatically during development.
+- **Migration files**: The files are in `*/src/database/migrations/`.
 
 Migrations run in this order:
-1. `user-service`: Creates `users` and `prekeys` tables
-2. `chat-service`: Creates `messages` table with status enum
-3. `notification-service`: Creates `notifications` table with type enum
+1. `user-service` creates the `users` and `prekeys` tables.
+2. `chat-service` creates the `messages` table with a status enum.
+3. `notification-service` creates the `notifications` table with a type enum.
 
-To manually check migration status:
+To do a check of migration status manually, use these commands:
 ```bash
 docker compose exec user sh -c "ls -la /app/build/database/migrations/"
 docker compose logs user | grep -i migration
