@@ -43,14 +43,15 @@ function validate(command: SubmitMessageCommand): ValidatedCommand {
   if (typeof command.encryptedEnvelope !== 'string') {
     throw new APIError(400, 'Invalid message content')
   }
-  const encryptedEnvelope = command.encryptedEnvelope.trim()
-  if (!encryptedEnvelope || encryptedEnvelope.length > 5000) {
+  const encryptedEnvelope = command.encryptedEnvelope
+  const trimmedEnvelope = encryptedEnvelope.trim()
+  if (!trimmedEnvelope || encryptedEnvelope.length > 5000) {
     throw new APIError(400, 'Message must be between 1 and 5000 characters')
   }
 
   let envelope: unknown
   try {
-    envelope = JSON.parse(encryptedEnvelope)
+    envelope = JSON.parse(trimmedEnvelope)
   } catch {
     throw new APIError(400, 'Messages must be end-to-end encrypted (invalid envelope)')
   }

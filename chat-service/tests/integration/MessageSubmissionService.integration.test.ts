@@ -117,6 +117,30 @@ describe('MessageSubmissionService live PostgreSQL transaction', () => {
     expect(await counts()).toEqual({ messages: 1, events: 1 })
   })
 
+  it('preserves original envelope bytes for exact replay and conflicts on boundary-whitespace changes', async () => {
+    const exactEnvelope = ` \n${envelope}\t `
+    const submitted = command({ encryptedEnvelope: exactEnvelope })
+
+    const first = await service.submit(submitted)
+    const replay = await service.submit(submitted)
+
+    expect(first.message.message).toBe(exactEnvelope)
+    expect(replay).toMatchObject({ replayed: true, message: { id: first.message.id, message: exactEnvelope } })
+    const [event] = await AppDataSource.query('SELECT "payload" FROM "outbox_events"')
+    expect(event.payload.envelope).toBe(exactEnvelope)
+    await expect(service.submit({ ...submitted, encryptedEnvelope: `${exactEnvelope} ` }))
+      .rejects.toMatchObject({ statusCode: 409 })
+    expect(await counts()).toEqual({ messages: 1, events: 1 })
+  })
+
+  it('rejects an oversized original envelope whose trimmed view is valid without writing', async () => {
+    const oversized = `${' '.repeat(5001 - envelope.length)}${envelope}`
+
+    await expect(service.submit(command({ encryptedEnvelope: oversized })))
+      .rejects.toMatchObject({ statusCode: 400 })
+    expect(await counts()).toEqual({ messages: 0, events: 0 })
+  })
+
   it('serializes concurrent same-key submissions to one message and one event', async () => {
     const submitted = command()
 
