@@ -30,6 +30,8 @@ export const AppDataSource = new DataSource({
     min: 5,  // Minimum number of connections in pool
     idleTimeoutMillis: 30000, // Close idle connections after 30s
     connectionTimeoutMillis: 2000, // Fail fast on connection issues
+    statement_timeout: 5000,
+    query_timeout: 5000,
   },
   maxQueryExecutionTime: 1000, // Log queries taking longer than 1s
 })

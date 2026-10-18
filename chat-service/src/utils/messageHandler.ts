@@ -22,7 +22,7 @@ async function resolveReceiver (receiverId: string): Promise<UserDetails | null>
 export async function enrichMessageReceivedPayload(
   payload: MessageReceivedEventPayload,
 ): Promise<NotificationPayload> {
-  const [recipientOnline, receiver] = await Promise.all([
+  const [presenceResult, receiverResult] = await Promise.allSettled([
     getPresenceStore().isOnline(payload.userId),
     new Promise<UserDetails>((resolve, reject) => {
       rabbitMQService.getUserDetails(payload.userId, user => {
@@ -31,9 +31,11 @@ export async function enrichMessageReceivedPayload(
       }).catch(reject)
     }),
   ])
+  if (receiverResult.status === 'rejected') throw receiverResult.reason
+  if (presenceResult.status === 'rejected') throw presenceResult.reason
 
   // Contact/presence are retry-time advisory data; canonical receipt fields remain immutable.
-  return { ...payload, recipientOnline, userEmail: receiver.email }
+  return { ...payload, recipientOnline: presenceResult.value, userEmail: receiverResult.value.email }
 }
 
 export interface IncomingMessageNotification {

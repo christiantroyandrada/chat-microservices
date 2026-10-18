@@ -50,6 +50,7 @@ export class RabbitMQService {
   constructor(private readonly brokerUrl: string | undefined = config.msgBrokerURL) {}
 
   async connect(): Promise<void> {
+    if (this.disconnecting) await this.disconnecting
     if (this.healthy) return
     if (this.connecting) return this.connecting
 
@@ -73,20 +74,54 @@ export class RabbitMQService {
       throw new Error('Missing MESSAGE_BROKER_URL')
     }
 
-    const connection = await amqp.connect(this.brokerUrl, { timeout: CONNECT_TIMEOUT_MS })
+    const abortController = new AbortController()
+    const connectDeadline = setTimeout(() => {
+      abortController.abort(new Error('RabbitMQ connection timed out'))
+    }, CONNECT_TIMEOUT_MS)
+    connectDeadline.unref?.()
+    let connection: ChannelModel
+    try {
+      connection = await amqp.connect(this.brokerUrl, {
+        timeout: CONNECT_TIMEOUT_MS,
+        signal: abortController.signal,
+      })
+    } finally {
+      clearTimeout(connectDeadline)
+    }
     let rpcChannel: Channel | undefined
     let publisherChannel: ConfirmChannel | undefined
+    let setupFailure: Error | undefined
+    const setupFailed = (error?: unknown) => {
+      setupFailure ??= error instanceof Error
+        ? error
+        : new Error('RabbitMQ connection closed during setup')
+      this.destroySocket(connection)
+    }
+    const removeSetupListeners = () => {
+      connection.off('error', setupFailed)
+      connection.off('close', setupFailed)
+      rpcChannel?.off('error', setupFailed)
+      rpcChannel?.off('close', setupFailed)
+      publisherChannel?.off('error', setupFailed)
+      publisherChannel?.off('close', setupFailed)
+    }
+    connection.on('error', setupFailed)
+    connection.on('close', setupFailed)
     try {
       rpcChannel = await this.withDeadline(
         connection.createChannel(),
         () => this.destroySocket(connection),
         'RabbitMQ RPC channel setup timed out',
       )
+      rpcChannel.on('error', setupFailed)
+      rpcChannel.on('close', setupFailed)
       publisherChannel = await this.withDeadline(
         connection.createConfirmChannel(),
         () => this.destroySocket(connection),
         'RabbitMQ publisher channel setup timed out',
       )
+      publisherChannel.on('error', setupFailed)
+      publisherChannel.on('close', setupFailed)
       await this.withDeadline(
         Promise.all([
           rpcChannel.assertQueue(this.requestQueue),
@@ -106,6 +141,7 @@ export class RabbitMQService {
         () => this.destroySocket(connection),
         'RabbitMQ reply consumer setup timed out',
       )
+      if (setupFailure) throw setupFailure
     } catch (error) {
       this.destroySocket(connection)
       await this.closeOwned(rpcChannel, publisherChannel, connection)
@@ -129,6 +165,7 @@ export class RabbitMQService {
     rpcChannel.on('close', () => this.transportFailed(connection))
     publisherChannel.on('error', () => this.transportFailed(connection))
     publisherChannel.on('close', () => this.transportFailed(connection))
+    removeSetupListeners()
   }
 
   private handleRpcResponse(message: import('amqplib').ConsumeMessage | null): void {

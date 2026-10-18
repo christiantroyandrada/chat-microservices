@@ -11,6 +11,7 @@ const BATCH_SIZE = 10
 const LEASE_TIMEOUT_MS = 30_000
 const POLL_INTERVAL_MS = 500
 const MAX_BACKOFF_MS = 60_000
+const DATABASE_OPERATION_TIMEOUT_MS = 5000
 
 type ClaimedEvent = {
   id: string
@@ -70,11 +71,13 @@ export class OutboxWorker {
 
   private async processBatch(): Promise<void> {
     const events = await this.claimBatch()
-    await Promise.all(events.map(event => this.processEvent(event)))
+    const results = await Promise.allSettled(events.map(event => this.processEvent(event)))
+    const failed = results.find((result): result is PromiseRejectedResult => result.status === 'rejected')
+    if (failed) throw failed.reason
   }
 
   private async claimBatch(): Promise<ClaimedEvent[]> {
-    return this.dataSource.transaction(async manager => {
+    return this.transaction(async manager => {
       await manager.query("SET LOCAL statement_timeout = '5000ms'")
       const rows = await manager.query(`
         SELECT "id", "payload", "attempts"
@@ -153,10 +156,49 @@ export class OutboxWorker {
   }
 
   private async updateCurrentLease(sql: string, parameters: unknown[]): Promise<void> {
-    await this.dataSource.transaction(async (manager: EntityManager) => {
+    await this.transaction(async (manager: EntityManager) => {
       await manager.query("SET LOCAL statement_timeout = '5000ms'")
       await manager.query(sql, parameters)
     })
+  }
+
+  private async transaction<T>(work: (manager: EntityManager) => Promise<T>): Promise<T> {
+    const runner = this.dataSource.createQueryRunner()
+    let client: { end(): Promise<void> } | undefined
+    let timeout: NodeJS.Timeout | undefined
+    let timedOut: Error | undefined
+    let forcedClose: Promise<void> | undefined
+    let workError: unknown
+    try {
+      client = await runner.connect() as { end(): Promise<void> }
+      timeout = setTimeout(() => {
+        timedOut = new Error('Outbox database operation timed out')
+        try {
+          forcedClose = client?.end().catch(() => undefined)
+        } catch {
+          forcedClose = Promise.resolve()
+        }
+      }, DATABASE_OPERATION_TIMEOUT_MS)
+      timeout.unref?.()
+      await runner.startTransaction()
+      let result: T
+      try {
+        result = await work(runner.manager)
+      } catch (error) {
+        workError = error
+        throw error
+      }
+      await runner.commitTransaction()
+      return result
+    } catch (error) {
+      const failure = workError ?? timedOut ?? error
+      if (runner.isTransactionActive) await runner.rollbackTransaction().catch(() => undefined)
+      throw failure
+    } finally {
+      if (timeout) clearTimeout(timeout)
+      if (forcedClose) await forcedClose
+      await runner.release().catch(() => undefined)
+    }
   }
 }
 

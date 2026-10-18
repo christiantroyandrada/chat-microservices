@@ -92,6 +92,7 @@ function createClient(url: string, role: string): Redis {
     autoResubscribe: role !== 'sub',
     lazyConnect: true,
     enableReadyCheck: true,
+    commandTimeout: 5000,
     // Don't log credentials — only use for debugging connection issues
     showFriendlyErrorStack: process.env.NODE_ENV !== 'production',
   })

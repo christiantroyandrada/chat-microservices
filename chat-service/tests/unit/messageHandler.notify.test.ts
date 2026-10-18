@@ -10,6 +10,7 @@ jest.mock('../../src/services/RabbitMQService', () => ({
 }))
 
 import { enrichMessageReceivedPayload, handleMessageReceived } from '../../src/utils/messageHandler'
+import * as logger from '../../src/utils/logger'
 
 const event = {
   type: 'MESSAGE_RECEIVED' as const,
@@ -59,6 +60,26 @@ describe('enrichMessageReceivedPayload', () => {
       userEmail: 'new@example.com',
       recipientOnline: false,
     })
+  })
+
+  it('joins a blocked presence read before exposing an RPC failure', async () => {
+    let releasePresence!: () => void
+    isOnline.mockImplementationOnce(() => new Promise<boolean>(resolve => {
+      releasePresence = () => resolve(false)
+    }))
+    getUserDetails.mockImplementationOnce(async (_id: string, callback: any) => callback(null))
+    let settled = false
+    const enriching = enrichMessageReceivedPayload(event)
+      .catch(error => error)
+      .finally(() => { settled = true })
+
+    for (let attempt = 0; attempt < 10; attempt++) await Promise.resolve()
+    const settledBeforePresence = settled
+    releasePresence()
+    const failure = await enriching
+
+    expect(settledBeforePresence).toBe(false)
+    expect(failure).toEqual(new Error('Recipient lookup failed'))
   })
 })
 
@@ -119,10 +140,15 @@ describe('handleMessageReceived — offline notification with receiver email', (
   })
 
   it('still persists a notification when the broker rejects the lookup', async () => {
+    const warning = jest.spyOn(logger, 'logWarn').mockImplementation(() => undefined)
     isOnline.mockResolvedValue(false)
     getUserDetails.mockRejectedValue(new Error('channel closed'))
     await handleMessageReceived({ senderName: 'Alice', senderEmail: 'alice@example.com', receiverId: 'r1', messageContent: '[Encrypted message]', isEncrypted: true })
     expect(notifyReceiver).toHaveBeenCalledTimes(1)
     expect(notifyReceiver.mock.calls[0][0].receiverEmail).toBeUndefined()
+    expect(warning).toHaveBeenCalledWith(
+      '[chat-service] receiver lookup failed; notifying without email',
+      expect.any(Error),
+    )
   })
 })

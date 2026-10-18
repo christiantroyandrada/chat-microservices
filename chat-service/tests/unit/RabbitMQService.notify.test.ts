@@ -8,6 +8,7 @@ jest.mock('../../src/config/config', () => ({
 
 import amqp from 'amqplib'
 import { RabbitMQService } from '../../src/services/RabbitMQService'
+import * as logger from '../../src/utils/logger'
 
 class FakeChannel extends EventEmitter {
   assertQueue = jest.fn(async (queue: string) => ({ queue: queue || 'amq.private-chat' }))
@@ -197,6 +198,7 @@ describe('RabbitMQService lifecycle and RPC', () => {
 
   it('contains a callback exception raised by the RPC deadline', async () => {
     jest.useFakeTimers()
+    const warning = jest.spyOn(logger, 'logWarn').mockImplementation(() => undefined)
     const connection = new FakeConnection()
     jest.mocked(amqp.connect).mockResolvedValue(connection as any)
     const service = new RabbitMQService('amqps://broker.invalid')
@@ -204,7 +206,80 @@ describe('RabbitMQService lifecycle and RPC', () => {
     await service.getUserDetails('user-9', () => { throw new Error('callback failed') })
 
     expect(() => jest.advanceTimersByTime(5000)).not.toThrow()
+    expect(warning).toHaveBeenCalledWith('[chat-service] RabbitMQ request callback failed after timeout')
     expect(jest.getTimerCount()).toBe(0)
+  })
+
+  it('handles channel errors during setup before a later setup operation rejects', async () => {
+    jest.useFakeTimers()
+    const disconnectLog = jest.spyOn(logger, 'logInfo').mockImplementation(() => undefined)
+    const connection = new FakeConnection()
+    let rejectSetup!: (error: Error) => void
+    connection.publisher.assertQueue.mockImplementationOnce(() => new Promise((_resolve, reject) => {
+      rejectSetup = reject
+    }))
+    jest.mocked(amqp.connect).mockResolvedValue(connection as any)
+    const service = new RabbitMQService('amqps://broker.invalid')
+    const connecting = service.connect()
+    const rejected = expect(connecting).rejects.toThrow('queue setup failed')
+
+    for (let attempt = 0; attempt < 10 && !rejectSetup; attempt++) await Promise.resolve()
+    expect(rejectSetup).toBeDefined()
+    expect(() => connection.publisher.emit('error', new Error('setup protocol failed'))).not.toThrow()
+    rejectSetup(new Error('queue setup failed'))
+
+    await rejected
+    expect(connection.destroy).toHaveBeenCalled()
+    await service.disconnect()
+    expect(disconnectLog).toHaveBeenCalledWith('[chat-service] RabbitMQ disconnect complete')
+  })
+
+  it('does not become healthy when setup emits an error before pending setup resolves', async () => {
+    const disconnectLog = jest.spyOn(logger, 'logInfo').mockImplementation(() => undefined)
+    const connection = new FakeConnection()
+    let resolveSetup!: (value: { queue: string }) => void
+    connection.publisher.assertQueue.mockImplementationOnce(() => new Promise(resolve => {
+      resolveSetup = resolve
+    }))
+    jest.mocked(amqp.connect).mockResolvedValue(connection as any)
+    const service = new RabbitMQService('amqps://broker.invalid')
+    const connecting = service.connect()
+
+    for (let attempt = 0; attempt < 10 && !resolveSetup; attempt++) await Promise.resolve()
+    expect(resolveSetup).toBeDefined()
+    expect(() => connection.publisher.emit('error', new Error('setup protocol failed'))).not.toThrow()
+    resolveSetup({ queue: 'NOTIFICATIONS' })
+
+    await expect(connecting).rejects.toThrow('setup protocol failed')
+    expect(service.isHealthy()).toBe(false)
+    await service.disconnect()
+    expect(disconnectLog).toHaveBeenCalledWith('[chat-service] RabbitMQ disconnect complete')
+  })
+
+  it('keeps setup error listeners active while failed resources close', async () => {
+    const disconnectLog = jest.spyOn(logger, 'logInfo').mockImplementation(() => undefined)
+    const connection = new FakeConnection()
+    let closeStarted!: () => void
+    const closing = new Promise<void>(resolve => { closeStarted = resolve })
+    let releaseClose!: () => void
+    connection.rpc.close.mockImplementationOnce(() => new Promise<undefined>(resolve => {
+      releaseClose = () => resolve(undefined)
+      closeStarted()
+    }))
+    connection.publisher.assertQueue.mockRejectedValueOnce(new Error('queue setup failed'))
+    jest.mocked(amqp.connect).mockResolvedValue(connection as any)
+    const service = new RabbitMQService('amqps://broker.invalid')
+    const connecting = service.connect()
+    const rejected = expect(connecting).rejects.toThrow('queue setup failed')
+
+    await closing
+    expect(() => connection.rpc.emit('error', new Error('close protocol failed'))).not.toThrow()
+    releaseClose()
+
+    await rejected
+    expect(() => connection.rpc.emit('error', new Error('late close protocol failed'))).not.toThrow()
+    await service.disconnect()
+    expect(disconnectLog).toHaveBeenCalledWith('[chat-service] RabbitMQ disconnect complete')
   })
 
   it('recovers after initial connection failure without a retry-count ceiling', async () => {
@@ -221,6 +296,29 @@ describe('RabbitMQService lifecycle and RPC', () => {
 
     expect(amqp.connect).toHaveBeenCalledTimes(2)
     expect(service.isHealthy()).toBe(true)
+  })
+
+  it('aborts the native connecting socket after the overall connection deadline', async () => {
+    jest.useFakeTimers()
+    const disconnectLog = jest.spyOn(logger, 'logInfo').mockImplementation(() => undefined)
+    let signal: AbortSignal | undefined
+    let rejectConnect!: (error: Error) => void
+    jest.mocked(amqp.connect).mockImplementation((_url, options: any) => new Promise((_resolve, reject) => {
+      signal = options.signal
+      rejectConnect = reject
+      signal?.addEventListener('abort', () => reject(signal?.reason))
+    }))
+    const service = new RabbitMQService('amqps://broker.invalid')
+    const connecting = service.connect().catch(error => error)
+
+    await jest.advanceTimersByTimeAsync(2000)
+    const abortedAtDeadline = signal?.aborted ?? false
+    rejectConnect(new Error('test cleanup'))
+    await connecting
+    await service.disconnect()
+
+    expect(abortedAtDeadline).toBe(true)
+    expect(disconnectLog).toHaveBeenCalledWith('[chat-service] RabbitMQ disconnect complete')
   })
 
   it('keeps reconnecting after an outage longer than the old ten-attempt ceiling', async () => {
@@ -289,5 +387,34 @@ describe('RabbitMQService lifecycle and RPC', () => {
     expect(connection.close).toHaveBeenCalledTimes(1)
     expect(service.isHealthy()).toBe(false)
     expect(amqp.connect).toHaveBeenCalledTimes(1)
+  })
+
+  it('waits for an active disconnect before starting another connection', async () => {
+    const first = new FakeConnection()
+    const second = new FakeConnection()
+    let releaseClose!: () => void
+    first.close.mockImplementationOnce(() => new Promise<undefined>(resolve => {
+      releaseClose = () => resolve(undefined)
+    }))
+    jest.mocked(amqp.connect).mockResolvedValueOnce(first as any).mockResolvedValueOnce(second as any)
+    const disconnectLog = jest.spyOn(logger, 'logInfo').mockImplementation(() => undefined)
+    const service = new RabbitMQService('amqps://broker.invalid')
+    await service.connect()
+
+    const disconnecting = service.disconnect()
+    for (let attempt = 0; attempt < 10 && !releaseClose; attempt++) await Promise.resolve()
+    expect(releaseClose).toBeDefined()
+    const reconnecting = service.connect()
+    await Promise.resolve()
+
+    expect(amqp.connect).toHaveBeenCalledTimes(1)
+    releaseClose()
+    await disconnecting
+    await reconnecting
+
+    expect(amqp.connect).toHaveBeenCalledTimes(2)
+    expect(service.isHealthy()).toBe(true)
+    expect(disconnectLog).toHaveBeenCalledWith('[chat-service] RabbitMQ disconnect complete')
+    await service.disconnect()
   })
 })

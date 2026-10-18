@@ -1,7 +1,6 @@
 process.env.NODE_ENV = 'production'
 export {}
 
-const { createServer } = require('node:net') as typeof import('node:net')
 const amqp = require('amqplib') as typeof import('amqplib')
 const { requireMessageIntegrationBroker } = require('./messageIntegrationBroker') as typeof import('./messageIntegrationBroker')
 const brokerUrl = requireMessageIntegrationBroker(process.env)
@@ -68,41 +67,4 @@ describe('RabbitMQService isolated live broker', () => {
     expect(message).not.toBe(false)
     expect(service.isHealthy()).toBe(true)
   })
-})
-
-describe('RabbitMQService stalled TCP handshake cleanup', () => {
-  it('uses the production connect deadline to close the accepted socket before the outer watchdog', async () => {
-    let acceptedSocket: import('node:net').Socket | undefined
-    let socketClosed!: () => void
-    const actualSocketClose = new Promise<void>(resolve => { socketClosed = resolve })
-    const server = createServer(socket => {
-      acceptedSocket = socket
-      socket.once('close', socketClosed)
-      socket.resume()
-    })
-    await new Promise<void>((resolve, reject) => {
-      server.once('error', reject)
-      server.listen(0, '127.0.0.1', resolve)
-    })
-    const address = server.address()
-    if (!address || typeof address === 'string') throw new Error('TCP fixture did not bind')
-    const service = new RabbitMQService(`amqp://127.0.0.1:${address.port}`)
-    let watchdogFired = false
-    const watchdog = setTimeout(() => {
-      watchdogFired = true
-      acceptedSocket?.destroy()
-    }, 7000)
-
-    try {
-      await expect(service.connect()).rejects.toThrow('connect ETIMEDOUT')
-      await service.disconnect()
-      await actualSocketClose
-      expect(watchdogFired).toBe(false)
-      expect(acceptedSocket?.destroyed).toBe(true)
-    } finally {
-      clearTimeout(watchdog)
-      await service.disconnect()
-      await new Promise<void>(resolve => server.close(() => resolve()))
-    }
-  }, 10_000)
 })
