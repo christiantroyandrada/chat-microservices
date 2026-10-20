@@ -2,7 +2,7 @@
 
 ## Reference and scope
 
-Use ASD-STE100 Issue 9 for project documentation.
+Use ASD-STE100 Issue 9 for AI-facing specifications, subagent briefs, and technical reports.
 Use this project vocabulary with the writing rules.
 This document does not replace the official dictionary.
 
@@ -13,7 +13,13 @@ The project terms below are proposed terms, not approval from ASD.
 Read the [official ASD description](https://www.asd-ste100.org/about_STE.html).
 Obtain the [official standard](https://www.asd-ste100.org/STE_downloads.html) for a complete vocabulary review.
 
-These rules apply to authored project documents and hardening notes.
+Use Humanize for human-facing guides, README files, release notes, and contributor communication.
+Use plain language that fits the reader.
+Do not change technical requirements to simplify the prose.
+Keep commands, identifiers, and evidence exact.
+If a document serves both audiences, identify each section's audience.
+
+The STE writing rules below apply to AI-facing content and hardening notes.
 They do not change application behavior or release requirements.
 
 ## Writing rules
@@ -55,9 +61,9 @@ Do not remove a requirement to reduce sentence length.
 Put complex conditions in a list.
 Keep each condition and its result together.
 
-Use Humanize to remove unnecessary prose.
+In AI-facing content, use Humanize only to remove unnecessary prose.
 Do not add casual language or vary technical terms to change the writing style.
-The ASD-STE100 rules have priority over conversational style.
+In AI-facing content, the ASD-STE100 rules have priority over conversational style.
 
 ## Project vocabulary
 
