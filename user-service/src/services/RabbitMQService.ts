@@ -1,133 +1,150 @@
-import amqp, { Channel, ChannelModel } from 'amqplib'
+import amqp, { Channel, ChannelModel, ConsumeMessage } from 'amqplib'
 import config from '../config/config'
 import { User, AppDataSource } from '../database'
-import { APIError } from '../utils'
 import { logInfo, logError, logWarn } from '../utils/logger'
 
-const MAX_RECONNECT_ATTEMPTS = 10
 const INITIAL_RECONNECT_DELAY_MS = 1000
+const MAX_RECONNECT_DELAY_MS = 30_000
+const SETUP_TIMEOUT_MS = 10_000
 
 class RabbitMQService {
-  private readonly requestQueue = "USER_DETAILS_REQUEST"
-  private readonly responseQueue = "USER_DETAILS_RESPONSE"
-  private channel!: Channel
-  private connection!: ChannelModel
-  private reconnectAttempts = 0
-  private isReconnecting = false
+  private readonly requestQueue = 'USER_DETAILS_REQUEST'
+  private readonly responseQueue = 'USER_DETAILS_RESPONSE'
+  private channel: Channel | undefined
+  private connection: ChannelModel | undefined
+  private connectPromise: Promise<void> | undefined
+  private retryTimer: ReturnType<typeof setTimeout> | undefined
+  private retryAttempt = 0
+  private shuttingDown = false
 
-  async connect () {
+  async connect (): Promise<void> {
+    if (this.shuttingDown) throw new Error('RabbitMQ service is shutting down')
+    if (this.isHealthy()) return
+    if (this.connectPromise) return this.connectPromise
+    if (this.retryTimer) { clearTimeout(this.retryTimer); this.retryTimer = undefined }
+    this.connectPromise = this.setupConnection().finally(() => { this.connectPromise = undefined })
+    return this.connectPromise
+  }
+
+  private async setupConnection (): Promise<void> {
     const brokerUrl = config.msgBrokerURL
-    if (!brokerUrl) {
-      logError('[user-service] MESSAGE_BROKER_URL is not configured')
-      throw new Error('Missing MESSAGE_BROKER_URL')
-    }
-
-    this.connection = await amqp.connect(brokerUrl)
-    this.channel = await this.connection.createChannel()
-    this.reconnectAttempts = 0
-
-    // Handle connection errors and closures for automatic reconnection
-    this.connection.on('error', (err) => {
-      logError('[user-service] RabbitMQ connection error:', err)
-    })
-    this.connection.on('close', () => {
-      logWarn('[user-service] RabbitMQ connection closed. Attempting reconnect...')
-      this.scheduleReconnect()
-    })
-
-    await this.channel.assertQueue(this.requestQueue)
-    await this.channel.assertQueue(this.responseQueue)
-    // Assert notification queue once at connect — avoids redundant RPC per publish
-    const notifQueue = process.env.NOTIFICATIONS_QUEUE || 'NOTIFICATIONS'
-    await this.channel.assertQueue(notifQueue, { durable: true })
-
-    this.listenForRequests()
-  }
-
-  private scheduleReconnect () {
-    if (this.isReconnecting) return
-    if (this.reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
-      logError(`[user-service] RabbitMQ reconnect failed after ${MAX_RECONNECT_ATTEMPTS} attempts. Giving up.`)
-      return
-    }
-    this.isReconnecting = true
-    const delay = INITIAL_RECONNECT_DELAY_MS * Math.pow(2, this.reconnectAttempts)
-    this.reconnectAttempts++
-    logInfo(`[user-service] RabbitMQ reconnect attempt ${this.reconnectAttempts} in ${delay}ms...`)
-    setTimeout(async () => {
-      try {
-        await this.connect()
-        logInfo('[user-service] RabbitMQ reconnected successfully')
-      } catch (err) {
-        logError('[user-service] RabbitMQ reconnect failed:', err)
-      } finally {
-        this.isReconnecting = false
-      }
-    }, delay)
-  }
-
-  private async listenForRequests () {
-    this.channel.consume(this.requestQueue, async (msg) => {
-        if (msg !== null) {
-          try {
-            const { userId } = JSON.parse(msg.content.toString())
-            const userRepo = AppDataSource.getRepository(User)
-            const userDetails = await userRepo.findOne({ 
-              where: { id: userId },
-              select: ['id', 'username', 'email', 'createdAt', 'updatedAt']
-            })
-            
-            // Reply with user details
-            this.channel.sendToQueue(
-              msg.properties.replyTo,
-              Buffer.from(JSON.stringify(userDetails)),
-              { correlationId: msg.properties.correlationId }
-            )
-          } catch (parseError) {
-            logError('[user-service] RabbitMQ message parse error:', parseError)
-            // Send error response
-            this.channel.sendToQueue(
-              msg.properties.replyTo,
-              Buffer.from(JSON.stringify({ error: 'Invalid message format' })),
-              { correlationId: msg.properties.correlationId }
-            )
-          } finally {
-            this.channel.ack(msg)
-          }
+    if (!brokerUrl) throw new Error('Missing MESSAGE_BROKER_URL')
+    const connection = await amqp.connect(brokerUrl)
+    let channel: Channel | undefined
+    let timeout: ReturnType<typeof setTimeout> | undefined
+    const deadline = new Promise<never>((_, reject) => { timeout = setTimeout(() => reject(new Error('RabbitMQ setup timed out')), SETUP_TIMEOUT_MS) })
+    try {
+      this.connection = connection
+      connection.on('error', (err) => logError('[user-service] RabbitMQ connection error:', err))
+      connection.on('close', () => {
+        if (this.connection === connection) {
+          this.connection = undefined
+          this.channel = undefined
+          if (!this.shuttingDown) this.scheduleReconnect()
         }
       })
+      channel = await Promise.race([connection.createChannel(), deadline])
+      channel.on('error', (err) => { if (this.channel === channel) logError('[user-service] RabbitMQ channel error:', err) })
+      channel.on('close', () => {
+        if (this.channel === channel) {
+          this.channel = undefined
+          this.connection = undefined
+          if (!this.shuttingDown) this.scheduleReconnect()
+        }
+      })
+      await Promise.race([
+        (async () => {
+          await channel!.assertQueue(this.requestQueue)
+          await channel!.assertQueue(this.responseQueue)
+          await channel!.assertQueue(process.env.NOTIFICATIONS_QUEUE || 'NOTIFICATIONS', { durable: true })
+          await this.listenForRequests(channel!)
+        })(),
+        deadline
+      ])
+      if (this.shuttingDown) throw new Error('RabbitMQ service is shutting down')
+      this.connection = connection
+      this.channel = channel
+      this.retryAttempt = 0
+      logInfo('[user-service] RabbitMQ connected')
+    } catch (error) {
+      if (this.connection === connection) this.connection = undefined
+      if (this.channel === channel) this.channel = undefined
+      await this.closeResources(channel, connection)
+      this.scheduleReconnect()
+      throw error
+    } finally {
+      if (timeout) clearTimeout(timeout)
+    }
   }
 
-    /**
-     * Publish a notification payload to the shared notifications queue.
-     * Used by other services (e.g. auth) to notify the notification-service.
-     */
-    async publishNotification (payload: Record<string, unknown>) {
-      try {
-        if (!this.channel) throw new Error('RabbitMQ channel is not initialized')
-        // Queue was asserted once during connect() — no need to re-assert per publish
-        const q = process.env.NOTIFICATIONS_QUEUE || 'NOTIFICATIONS'
-        this.channel.sendToQueue(q, Buffer.from(JSON.stringify(payload)))
-        return true
-      } catch (err) {
-        logError('[user-service] publishNotification failed:', err)
-        return false
-      }
-    }
+  private scheduleReconnect (): void {
+    if (this.shuttingDown || this.retryTimer || this.connectPromise) return
+    const delay = Math.min(INITIAL_RECONNECT_DELAY_MS * (2 ** this.retryAttempt), MAX_RECONNECT_DELAY_MS)
+    this.retryAttempt += 1
+    this.retryTimer = setTimeout(() => {
+      this.retryTimer = undefined
+      this.connect().catch((error) => logError('[user-service] RabbitMQ reconnect failed:', error))
+    }, delay)
+    this.retryTimer.unref?.()
+    logWarn(`[user-service] RabbitMQ reconnect scheduled in ${delay}ms`)
+  }
 
-    isHealthy (): boolean {
-      return !!this.channel && !!this.connection
-    }
+  private async listenForRequests (channel: Channel): Promise<void> {
+    await channel.consume(this.requestQueue, (msg) => {
+      if (msg) void this.handleRequest(channel, msg).catch((error) => logError('[user-service] RabbitMQ request handling failed:', error))
+    })
+  }
 
-    async disconnect (): Promise<void> {
-      try {
-        if (this.channel) await this.channel.close()
-        if (this.connection) await this.connection.close()
-        logInfo('[user-service] RabbitMQ connection closed gracefully')
-      } catch (err) {
-        logError('[user-service] Error closing RabbitMQ connection:', err)
-      }
+  private async handleRequest (channel: Channel, msg: ConsumeMessage): Promise<void> {
+    try {
+      const { userId } = JSON.parse(msg.content.toString())
+      const userDetails = await AppDataSource.getRepository(User).findOne({
+        where: { id: userId },
+        select: ['id', 'username', 'email', 'createdAt', 'updatedAt']
+      })
+      await this.sendResponse(channel, msg, userDetails)
+    } catch (error) {
+      logError('[user-service] RabbitMQ message handling failed:', error)
+      await this.sendResponse(channel, msg, { error: 'Invalid message format' })
+    } finally {
+      try { channel.ack(msg) } catch (error) { logError('[user-service] RabbitMQ ACK failed:', error) }
     }
+  }
+
+  private async sendResponse (channel: Channel, msg: ConsumeMessage, body: unknown): Promise<void> {
+    try {
+      channel.sendToQueue(msg.properties.replyTo, Buffer.from(JSON.stringify(body)), { correlationId: msg.properties.correlationId })
+    } catch (error) { logError('[user-service] RabbitMQ response failed:', error) }
+  }
+
+  async publishNotification (payload: Record<string, unknown>): Promise<boolean> {
+    try {
+      if (!this.channel) throw new Error('RabbitMQ channel is not initialized')
+      return this.channel.sendToQueue(process.env.NOTIFICATIONS_QUEUE || 'NOTIFICATIONS', Buffer.from(JSON.stringify(payload)))
+    } catch (error) {
+      logError('[user-service] publishNotification failed:', error)
+      return false
+    }
+  }
+
+  isHealthy (): boolean { return !!this.channel && !!this.connection }
+
+  async disconnect (): Promise<void> {
+    this.shuttingDown = true
+    if (this.retryTimer) { clearTimeout(this.retryTimer); this.retryTimer = undefined }
+    if (this.connectPromise) { try { await this.connectPromise } catch {} }
+    const channel = this.channel
+    const connection = this.connection
+    this.channel = undefined
+    this.connection = undefined
+    await this.closeResources(channel, connection)
+    logInfo('[user-service] RabbitMQ connection closed gracefully')
+  }
+
+  private async closeResources (channel?: Channel, connection?: ChannelModel): Promise<void> {
+    try { await channel?.close() } catch (error) { logError('[user-service] Error closing RabbitMQ channel:', error) }
+    try { await connection?.close() } catch (error) { logError('[user-service] Error closing RabbitMQ connection:', error) }
+  }
 }
 
 export const rabbitMQService = new RabbitMQService()

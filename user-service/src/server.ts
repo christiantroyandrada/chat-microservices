@@ -133,8 +133,8 @@ const startServer = async () => {
       logInfo(`User Service is running on port ${config.PORT}`)
     })
     
-    // Initialize RabbitMQ
-    await initRabbitMQClient()
+    // RabbitMQ owns recovery, so HTTP remains available while the broker is offline.
+    initRabbitMQClient()
   } catch (error) {
     logError('[user-service] Failed to start server:', error)
     process.exit(1)
@@ -142,57 +142,37 @@ const startServer = async () => {
 }
 
 const initRabbitMQClient = async () => {
-  const maxRetries = 5
-  for (let attempt = 1; attempt <= maxRetries; attempt++) {
-    try {
-      await rabbitMQService.connect()
-      logInfo('[user-service] RabbitMQ client initialized. now listening...')
-      return
-    } catch (e) {
-      if (attempt < maxRetries) {
-        const delay = 2000 * attempt
-        logWarn(`[user-service] RabbitMQ connection attempt ${attempt}/${maxRetries} failed, retrying in ${delay}ms...`)
-        await new Promise(r => setTimeout(r, delay))
-      } else {
-        logError(`[user-service] Failed to initialize RabbitMQ client after all retries: ${e}`)
-      }
-    }
-  }
+  try { await rabbitMQService.connect(); logInfo('[user-service] RabbitMQ client initialized. now listening...') }
+  catch (error) { logError('[user-service] RabbitMQ initial connection failed; recovery is scheduled:', error) }
 }
 
 // Start the server
 startServer()
 
-const gracefulShutdown = async (signal: string) => {
+let shutdownPromise: Promise<void> | undefined
+const gracefulShutdown = (signal: string): Promise<void> => {
+  if (shutdownPromise) return shutdownPromise
+  shutdownPromise = (async () => {
   logInfo(`[user-service] ${signal} received. Starting graceful shutdown...`)
+  let failed = false
+  try { if (server) await new Promise<void>((resolve) => server.close(() => resolve())) } catch (error) { failed = true; logError('[user-service] HTTP shutdown failed:', error) }
+  try { await rabbitMQService.disconnect() } catch (error) { failed = true; logError('[user-service] RabbitMQ shutdown failed:', error) }
   try {
-    // 1. Stop accepting new HTTP connections
-    if (server) {
-      await new Promise<void>((resolve) => server.close(() => resolve()))
-      logInfo('[user-service] HTTP server closed')
-    }
-    // 2. Close RabbitMQ
-    await rabbitMQService.disconnect()
-    // 3. Close database
     const { AppDataSource } = await import('./database/connection')
-    if (AppDataSource.isInitialized) {
-      await AppDataSource.destroy()
-      logInfo('[user-service] Database connection closed')
-    }
-    logInfo('[user-service] Graceful shutdown complete')
-    process.exit(0)
-  } catch (err) {
-    logError('[user-service] Error during graceful shutdown:', err)
-    process.exit(1)
-  }
+    if (AppDataSource.isInitialized) await AppDataSource.destroy()
+  } catch (error) { failed = true; logError('[user-service] Database shutdown failed:', error) }
+  logInfo('[user-service] Graceful shutdown complete')
+  process.exit(failed ? 1 : 0)
+  })()
+  return shutdownPromise
 }
 
 const unexpectedErrorHandler = (error: unknown) => {
   logError('[user-service]: Uncaught Exception', error)
-  gracefulShutdown('UNCAUGHT_EXCEPTION').catch(() => process.exit(1))
+  void gracefulShutdown('UNCAUGHT_EXCEPTION').catch((shutdownError) => logError('[user-service] Shutdown failed:', shutdownError))
 }
 
-process.on('SIGTERM', () => gracefulShutdown('SIGTERM'))
-process.on('SIGINT', () => gracefulShutdown('SIGINT'))
+process.on('SIGTERM', () => { void gracefulShutdown('SIGTERM').catch((error) => logError('[user-service] Shutdown failed:', error)) })
+process.on('SIGINT', () => { void gracefulShutdown('SIGINT').catch((error) => logError('[user-service] Shutdown failed:', error)) })
 process.on('uncaughtException', unexpectedErrorHandler)
 process.on('unhandledRejection', unexpectedErrorHandler)
