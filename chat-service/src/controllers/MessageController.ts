@@ -4,7 +4,9 @@ import type { ConversationRow, UserDetails } from '../types'
 import { AuthenticatedRequest } from '../middleware'
 import { parseConversationPagination } from '../middleware/validation/messageValidation'
 import { Message, AppDataSource } from '../database'
-import { APIError, handleMessageReceived } from '../utils'
+import { APIError } from '../utils'
+import { MessageSubmissionService } from '../services/MessageSubmissionService'
+import { canonicalUserId } from '../utils/messageIdentity'
 import { logWarn, logError } from '../utils/logger'
 import { MessageStatus } from '../database/models/MessageModel'
 import { chatMessagesSentTotal, chatMessagesReadTotal } from '../utils/metrics'
@@ -17,6 +19,7 @@ const userDetailCache = new LRUCache<string, CachedUserDetail>({
   max: 500,
   ttl: USER_CACHE_TTL_MS,
 });
+const messageSubmission = new MessageSubmissionService()
 
 /** Clear the user detail cache — exposed for testing */
 export const clearUserDetailCache = () => userDetailCache.clear();
@@ -81,7 +84,7 @@ const sendMessage = async (
   next: NextFunction,
 ) => {
   try {
-    const { receiverId, message } = req.body;
+    const { receiverId, message, clientMessageId } = req.body;
     const { _id, email, username } = req.user;
 
     validateReceiver(_id, receiverId);
@@ -109,10 +112,7 @@ const sendMessage = async (
     try {
       parsedEnvelope = JSON.parse(trimmedMessage);
     } catch (e) {
-      // Log the parsing error for diagnostics and then surface a user-friendly API error.
-      // This counts as handling the exception (avoids swallowing it) and provides
-      // useful context for debugging without exposing internals to clients.
-      logWarn("Failed to parse encrypted message envelope", e);
+      logWarn("Failed to parse encrypted message envelope");
       throw new APIError(
         400,
         "Messages must be end-to-end encrypted (invalid envelope)",
@@ -130,28 +130,15 @@ const sendMessage = async (
       throw new APIError(400, "Messages must be end-to-end encrypted");
     }
 
-    const messageRepo = AppDataSource.getRepository(Message);
-    const newMessage = await messageRepo.save({
+    const { message: newMessage, replayed } = await messageSubmission.submit({
       senderId: _id,
       receiverId,
-      message: trimmedMessage,
-      isEncrypted: true,
-      status: MessageStatus.NotDelivered,
-    });
-
-    // Notify receiver but avoid sending plaintext. Indicate an encrypted message
-    // and include the envelope so the notification service can forward ciphertext
-    // to the client if desired (still no server-side decryption).
-    await handleMessageReceived({
+      encryptedEnvelope: message,
+      clientMessageId,
       senderName: username,
       senderEmail: email,
-      receiverId,
-      messageContent: "[Encrypted message]",
-      isEncrypted: true,
-      envelope: trimmedMessage,
     });
-
-    chatMessagesSentTotal.inc({ channel: "rest" });
+    if (!replayed) chatMessagesSentTotal.inc({ channel: "rest" });
 
     return res.json({
       status: 200,
@@ -167,7 +154,7 @@ const validateReceiver = (senderId: string, receiverId: string) => {
   if (!receiverId) {
     throw new APIError(404, "Receiver ID is required");
   }
-  if (senderId === receiverId) {
+  if (canonicalUserId(senderId) === canonicalUserId(receiverId)) {
     throw new APIError(400, "Sender and receiver cannot be the same user");
   }
 };
@@ -178,8 +165,8 @@ const fetchConversation = async (
   next: NextFunction,
 ) => {
   try {
-    const { receiverId } = req.params;
-    const { _id: senderId } = req.user;
+    const receiverId = typeof req.params.receiverId === 'string' ? canonicalUserId(req.params.receiverId) : req.params.receiverId;
+    const senderId = canonicalUserId(req.user._id);
 
     // Keep controller parsing aligned with route validation so bypassed middleware
     // cannot pass Infinity or unsafe values into TypeORM's skip/take methods.
@@ -222,7 +209,7 @@ const getConversations = async (
   next: NextFunction,
 ) => {
   try {
-    const { _id: userId } = req.user;
+    const userId = canonicalUserId(req.user._id);
 
     const messageRepo = AppDataSource.getRepository(Message);
 
@@ -323,12 +310,13 @@ const markAsRead = async (
   next: NextFunction,
 ) => {
   try {
-    const { senderId } = req.params;
-    const { _id: receiverId } = req.user;
+    const { senderId: requestedSenderId } = req.params;
+    const receiverId = canonicalUserId(req.user._id);
 
-    if (!senderId) {
+    if (!requestedSenderId) {
       throw new APIError(400, "Sender ID is required");
     }
+    const senderId = typeof requestedSenderId === 'string' ? canonicalUserId(requestedSenderId) : requestedSenderId;
 
     const messageRepo = AppDataSource.getRepository(Message);
 

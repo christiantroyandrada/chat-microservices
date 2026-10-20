@@ -1,7 +1,9 @@
 import { Socket, Server as SocketIOServer } from 'socket.io'
 import { Message, AppDataSource } from '../database'
 import { MessageStatus } from '../database/models/MessageModel'
-import { handleMessageReceived } from '../utils'
+import { APIError } from '../utils/apiError'
+import { canonicalUserId, UUID } from '../utils/messageIdentity'
+import { MessageSubmissionService } from '../services/MessageSubmissionService'
 import { logDebug, logInfo, logWarn, logError } from '../utils/logger'
 import type { IPresenceStore } from '../services/PresenceStore'
 import { chatMessagesSentTotal, chatPresenceChangesTotal } from '../utils/metrics'
@@ -10,17 +12,8 @@ import { chatMessagesSentTotal, chatPresenceChangesTotal } from '../utils/metric
 // Typing timeouts are ephemeral, auto-correcting signals.  A timeout firing on
 // the originating node issues an io.to(receiverId).emit() that the Redis adapter
 // forwards to all nodes — so there is no correctness issue keeping this local.
-let typingTimeouts = new Map<string, NodeJS.Timeout>()
-
-// V8 never shrinks Map capacity after deletions.  Compact every 5 minutes so
-// freed entries are actually reclaimed by the GC.
-const COMPACT_INTERVAL_MS = 5 * 60 * 1000
-setInterval(() => {
-  const fresh = new Map<string, NodeJS.Timeout>()
-  typingTimeouts.forEach((t, uid) => fresh.set(uid, t))
-  typingTimeouts = fresh
-  logDebug('[chat-service] Compacted typingTimeouts:', typingTimeouts.size)
-}, COMPACT_INTERVAL_MS)
+const typingTimeouts = new Map<string, NodeJS.Timeout>()
+const messageSubmission = new MessageSubmissionService()
 
 // ── Socket handler registration ───────────────────────────────────────────────
 
@@ -36,7 +29,8 @@ export function registerSocketHandlers(
   socket: Socket,
   presenceStore: IPresenceStore,
 ): void {
-  const userId = socket.data.user?.id as string | undefined
+  const claimedId = socket.data.user?.id
+  const userId = typeof claimedId === 'string' ? canonicalUserId(claimedId) : undefined
 
   if (userId) {
     // Fire-and-forget: errors are caught internally
@@ -50,11 +44,21 @@ export function registerSocketHandlers(
     logWarn('[chat-service] No userId found for socket:', socket.id)
   }
 
-  socket.on('disconnect', () => handleDisconnect(io, socket, userId, presenceStore))
-  socket.on('typing', (data: { receiverId: string; isTyping: boolean }) => {
-    if (userId) handleTyping(io, userId, data)
+  socket.on('disconnect', () => {
+    handleDisconnect(io, socket, userId, presenceStore).catch(() =>
+      logError('[chat-service] Socket disconnect failed'),
+    )
   })
-  socket.on('sendMessage', (data, ack?) => handleSendMessage(io, socket, userId, data, ack))
+  socket.on('typing', (data: { receiverId: string; isTyping: boolean }) => {
+    if (userId && typeof data?.receiverId === 'string' && typeof data.isTyping === 'boolean') {
+      handleTyping(io, userId, data)
+    }
+  })
+  socket.on('sendMessage', (data, ack?) => {
+    handleSendMessage(io, socket, userId, data, ack).catch(() =>
+      logError('[chat-service] Socket send response failed'),
+    )
+  })
   socket.on('messageDelivered', (data: { messageId: string }) =>
     handleMessageDelivered(io, userId, data).catch(err =>
       logError('[chat-service] messageDelivered error:', err),
@@ -131,7 +135,8 @@ function handleTyping(
   userId: string,
   data: { receiverId: string; isTyping: boolean },
 ): void {
-  const { receiverId, isTyping } = data
+  const { isTyping } = data
+  const receiverId = canonicalUserId(data.receiverId)
   logDebug('[chat-service] Typing event:', { userId, receiverId, isTyping })
 
   if (typingTimeouts.has(userId)) {
@@ -147,6 +152,7 @@ function handleTyping(
       io.to(receiverId).emit('typing', { userId, isTyping: false })
       typingTimeouts.delete(userId)
     }, 3000)
+    timeout.unref?.()
 
     typingTimeouts.set(userId, timeout)
   } else {
@@ -156,22 +162,6 @@ function handleTyping(
 
 // ── Message sending ───────────────────────────────────────────────────────────
 
-function validateMessage(
-  message: unknown,
-  ack?: (res: { ok: boolean; id?: string; error?: string }) => void,
-): string | null {
-  if (!message || typeof message !== 'string') {
-    ack?.({ ok: false, error: 'Invalid message content' })
-    return null
-  }
-  const trimmed = message.trim()
-  if (trimmed.length === 0 || trimmed.length > 5000) {
-    ack?.({ ok: false, error: 'Message must be between 1 and 5000 characters' })
-    return null
-  }
-  return trimmed
-}
-
 export async function retrieveOrSaveMessage(params: {
   _id?: string
   trimmed: string
@@ -179,12 +169,19 @@ export async function retrieveOrSaveMessage(params: {
   receiverId: string
   messageRepo: ReturnType<typeof AppDataSource.getRepository<Message>>
   username?: string
+  clientMessageId?: string
   socket: Socket
   ack?: (res: { ok: boolean; id?: string; error?: string }) => void
 }): Promise<Message | null> {
-  const { _id, trimmed, senderId, receiverId, messageRepo, username, socket, ack } = params
+  const { _id, trimmed, messageRepo, username, socket, ack, clientMessageId } = params
+  const senderId = canonicalUserId(params.senderId)
+  const receiverId = canonicalUserId(params.receiverId)
 
-  if (_id) {
+  if (_id !== undefined) {
+    if (typeof _id !== 'string' || !UUID.test(_id)) {
+      ack?.({ ok: false, error: 'Message not found' })
+      return null
+    }
     const existing = await messageRepo.findOne({ where: { id: _id } })
     if (!existing) {
       ack?.({ ok: false, error: 'Message not found' })
@@ -195,7 +192,6 @@ export async function retrieveOrSaveMessage(params: {
     // user could supply any message id and have an arbitrary stored message
     // re-delivered/replayed. Return the same opaque error so existence isn't leaked.
     if (existing.senderId !== senderId || existing.receiverId !== receiverId) {
-      logWarn('[chat-service] Rejected _id reuse for non-owned message', { _id, senderId })
       ack?.({ ok: false, error: 'Message not found' })
       return null
     }
@@ -203,47 +199,26 @@ export async function retrieveOrSaveMessage(params: {
       ack?.({ ok: false, error: 'Server policy: plaintext messages are not allowed' })
       return null
     }
+    if (clientMessageId !== undefined && (typeof clientMessageId !== 'string' || !UUID.test(clientMessageId))) {
+      throw new APIError(400, 'Client message ID must be a valid UUID')
+    }
+    if (existing.clientMessageId != null || clientMessageId !== undefined) {
+      if (existing.clientMessageId !== clientMessageId?.toLowerCase() || existing.message !== trimmed) {
+        throw new APIError(409, 'Client message ID already belongs to a different message')
+      }
+    }
     return existing
   }
-
-  // Parse encrypted envelope
-  let parsed: unknown = null
-  try {
-    parsed = JSON.parse(trimmed)
-  } catch (e) {
-    logWarn('[chat-service] Failed to parse encrypted envelope (ws):', e)
-    ack?.({ ok: false, error: 'Messages must be end-to-end encrypted (invalid envelope)' })
-    return null
-  }
-
-  const env = parsed as { __encrypted?: boolean; body?: unknown } | null
-  if (env?.__encrypted !== true || typeof env?.body !== 'string') {
-    ack?.({ ok: false, error: 'Messages must be end-to-end encrypted' })
-    return null
-  }
-
-  const saved = await messageRepo.save({
+  const { message, replayed } = await messageSubmission.submit({
     senderId,
     receiverId,
-    message: trimmed,
-    isEncrypted: true,
-    status: MessageStatus.NotDelivered,
+    encryptedEnvelope: trimmed,
+    clientMessageId,
+    senderName: username || '',
+    senderEmail: socket.data.user?.email || '',
   })
-
-  try {
-    await handleMessageReceived({
-      senderName: username || '',
-      senderEmail: socket.data.user?.email || '',
-      receiverId,
-      messageContent: '[Encrypted message]',
-      isEncrypted: true,
-      envelope: trimmed,
-    })
-  } catch (err) {
-    logWarn('[chat-service] notifyReceiver failed:', err)
-  }
-
-  return saved
+  if (!replayed) chatMessagesSentTotal.inc({ channel: 'websocket' })
+  return message
 }
 
 /**
@@ -256,14 +231,17 @@ export async function handleMessageDelivered(
   userId: string | undefined,
   data: { messageId: string },
 ): Promise<void> {
-  if (!userId || !data?.messageId) return
+  if (!userId || typeof data?.messageId !== 'string' || !UUID.test(data.messageId)) return
+  userId = canonicalUserId(userId)
   const messageRepo = AppDataSource.getRepository(Message)
   const existing = await messageRepo.findOne({ where: { id: data.messageId } })
   if (!existing || existing.receiverId !== userId) return
 
   if (existing.status === MessageStatus.NotDelivered) {
-    existing.status = MessageStatus.Delivered
-    await messageRepo.save(existing)
+    await messageRepo.update(
+      { id: existing.id, receiverId: userId, status: MessageStatus.NotDelivered },
+      { status: MessageStatus.Delivered },
+    )
   }
   io.to(existing.senderId).emit('messageDelivered', { messageId: data.messageId, by: userId })
 }
@@ -279,16 +257,18 @@ export async function handleMarkRead(
   data: { senderId: string },
 ): Promise<void> {
   if (!userId || !data?.senderId) return
+  userId = canonicalUserId(userId)
+  const senderId = canonicalUserId(data.senderId)
   const messageRepo = AppDataSource.getRepository(Message)
   await messageRepo
     .createQueryBuilder()
     .update(Message)
     .set({ status: MessageStatus.Seen })
-    .where('senderId = :senderId', { senderId: data.senderId })
+    .where('senderId = :senderId', { senderId })
     .andWhere('receiverId = :receiverId', { receiverId: userId })
     .andWhere('status != :status', { status: MessageStatus.Seen })
     .execute()
-  io.to(data.senderId).emit('messageRead', { by: userId })
+  io.to(senderId).emit('messageRead', { by: userId })
 }
 
 function formatMessageForClient(msg: Message, username?: string) {
@@ -304,8 +284,11 @@ function formatMessageForClient(msg: Message, username?: string) {
     timestamp: msg.createdAt,
     createdAt: msg.createdAt,
     updatedAt: msg.updatedAt,
-    read: false,
-    isRead: false,
+    status: msg.status,
+    isEncrypted: msg.isEncrypted,
+    clientMessageId: msg.clientMessageId,
+    read: msg.status === MessageStatus.Seen,
+    isRead: msg.status === MessageStatus.Seen,
   }
 }
 
@@ -313,36 +296,47 @@ async function handleSendMessage(
   io: SocketIOServer,
   socket: Socket,
   userId: string | undefined,
-  data: { senderId: string; receiverId: string; message: string; _id?: string },
+  data: { senderId: string; receiverId: string; message: string; _id?: string; clientMessageId?: string },
   ack?: (res: { ok: boolean; id?: string; error?: string }) => void,
 ): Promise<void> {
+  let acknowledged = false
+  const respond = (result: { ok: boolean; id?: string; error?: string }) => {
+    if (acknowledged) return
+    acknowledged = true
+    if (!result.ok) logWarn('[chat-service] Socket send request rejected')
+    if (typeof ack === 'function') {
+      try { ack(result) } catch { logError('[chat-service] Socket acknowledgement failed') }
+    } else if (!result.ok) {
+      socket.emit('server:error', { message: result.error })
+    }
+  }
   try {
-    const { senderId, receiverId, message, _id } = data
+    const { message, _id, clientMessageId } = data
+    const senderId = typeof data.senderId === 'string' ? canonicalUserId(data.senderId) : undefined
+    const receiverId = typeof data.receiverId === 'string' ? canonicalUserId(data.receiverId) : undefined
     const { username } = socket.data.user || { username: undefined }
 
-    if (senderId !== userId) {
-      ack?.({ ok: false, error: 'Unauthorized: cannot send as another user' })
+    if (!senderId || senderId !== userId) {
+      respond({ ok: false, error: 'Unauthorized: cannot send as another user' })
       return
     }
 
-    const trimmedMessage = validateMessage(message, ack)
-    if (!trimmedMessage) return
-
     if (!receiverId || senderId === receiverId) {
-      ack?.({ ok: false, error: 'Invalid receiver' })
+      respond({ ok: false, error: 'Invalid receiver' })
       return
     }
 
     const messageRepo = AppDataSource.getRepository(Message)
     const msg = await retrieveOrSaveMessage({
       _id,
-      trimmed: trimmedMessage,
+      trimmed: message,
+      clientMessageId,
       senderId,
       receiverId,
       messageRepo,
       username,
       socket,
-      ack,
+      ack: respond,
     })
     if (!msg) return
 
@@ -354,13 +348,10 @@ async function handleSendMessage(
       clearTimeout(typingTimeouts.get(userId))
       typingTimeouts.delete(userId)
     }
-    io.to(receiverId).emit('typing', { userId, isTyping: false })
-    io.to(receiverId).emit('receiveMessage', formattedMsg)
-    chatMessagesSentTotal.inc({ channel: 'websocket' })
-    ack?.({ ok: true, id: msg.id })
+    io.to(msg.receiverId).emit('typing', { userId, isTyping: false })
+    io.to(msg.receiverId).emit('receiveMessage', formattedMsg)
+    respond({ ok: true, id: msg.id })
   } catch (err) {
-    logError('[chat-service] socket sendMessage error:', err)
-    ack?.({ ok: false, error: 'Failed to send message' })
-    socket.emit('server:error', { message: 'Failed to send message' })
+    respond({ ok: false, error: err instanceof APIError ? err.message : 'Failed to send message' })
   }
 }

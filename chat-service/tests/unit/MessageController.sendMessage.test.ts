@@ -22,9 +22,10 @@ jest.mock('../../src/utils', () => ({
 import MessageController from '../../src/controllers/MessageController'
 import { AppDataSource } from '../../src/database'
 import { handleMessageReceived } from '../../src/utils'
+import { MessageSubmissionService } from '../../src/services/MessageSubmissionService'
 
 describe('MessageController.sendMessage', () => {
-  afterEach(() => jest.clearAllMocks())
+  afterEach(() => { jest.clearAllMocks(); jest.restoreAllMocks() })
 
   it('succeeds when an encrypted envelope is provided', async () => {
     const mockReq: any = {
@@ -36,6 +37,7 @@ describe('MessageController.sendMessage', () => {
     }
 
     const savedMessage = { id: 'm1', senderId: 'sender1', receiverId: 'receiver1' }
+    const submit = jest.spyOn(MessageSubmissionService.prototype, 'submit').mockResolvedValue({ message: savedMessage as any, replayed: false })
     const repo: any = { save: jest.fn().mockResolvedValue(savedMessage) }
     ;(AppDataSource.getRepository as jest.Mock).mockReturnValue(repo)
 
@@ -43,15 +45,16 @@ describe('MessageController.sendMessage', () => {
 
     await MessageController.sendMessage(mockReq, mockRes, jest.fn())
 
-    expect(repo.save).toHaveBeenCalled()
-    expect(handleMessageReceived).toHaveBeenCalledWith({
+    expect(submit).toHaveBeenCalledWith({
+      senderId: 'sender1',
       senderName: 'alice',
       senderEmail: 'a@example.com',
       receiverId: 'receiver1',
-      messageContent: '[Encrypted message]',
-      isEncrypted: true,
-      envelope: mockReq.body.message,
+      encryptedEnvelope: mockReq.body.message,
+      clientMessageId: undefined,
     })
+    expect(repo.save).not.toHaveBeenCalled()
+    expect(handleMessageReceived).not.toHaveBeenCalled()
     expect(mockRes.json).toHaveBeenCalledWith(expect.objectContaining({ status: 200 }))
   })
 

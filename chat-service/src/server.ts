@@ -1,11 +1,14 @@
 import { Server } from 'node:http'
+import type { Server as SocketIOServer } from 'socket.io'
 import app, { setRedisHealthProvider } from './app'
 import { connectDB } from './database'
 import config from './config/config'
 import { rabbitMQService } from './services/RabbitMQService'
+import { outboxWorker } from './services/OutboxWorker'
 import { createSocketServer } from './websocket'
 import { createRedisContext, RedisContext } from './services/RedisService'
-import { getPresenceStore, setPresenceStore, LocalPresenceStore } from './services/PresenceStore'
+import { getPresenceStore, setPresenceStore } from './services/PresenceStore'
+import { AppDataSource } from './database/connection'
 
 import { logInfo, logWarn, logError } from './utils/logger'
 
@@ -16,26 +19,27 @@ const validateEnv = () => {
   
   if (missing.length > 0) {
     logError(`[chat-service] FATAL: Missing required environment variables: ${missing.join(', ')}`)
-    process.exit(1)
+    throw new Error('Required environment variables are missing')
   }
   
   // Reject weak JWT secrets in production; warn in development
   if (process.env.JWT_SECRET === '{{YOUR_SECRET_KEY}}' || process.env.JWT_SECRET === 'CHANGEME') {
     if (process.env.NODE_ENV === 'production') {
       logError('[chat-service] FATAL: Using default/weak JWT_SECRET in production!')
-      process.exit(1)
+      throw new Error('Invalid production JWT secret')
     }
     logWarn('[chat-service] WARNING: Using default JWT_SECRET. Change this in production!')
   }
 }
 
-validateEnv()
-
-let server: Server
+let server: Server | undefined
+let io: SocketIOServer | undefined
 let redisContext: RedisContext | undefined
-let compactInterval: ReturnType<typeof setInterval> | undefined
+let starting: Promise<Server> | undefined
+let shutdown: Promise<void> | undefined
 
-const start = async () => {
+export const start = (): Promise<Server> => starting ??= (async () => {
+  validateEnv()
   // Connect to database (as the non-superuser runtime role chat_svc)
   await connectDB()
 
@@ -54,71 +58,61 @@ const start = async () => {
     }
   } else {
     logWarn('[chat-service] REDIS_URL not set — running in single-node mode (no horizontal scaling)')
-    // Compact the LocalPresenceStore every 5 min to reclaim memory from V8 Map backing store
-    compactInterval = setInterval(() => (getPresenceStore() as LocalPresenceStore).compact(), 5 * 60 * 1000)
   }
 
-  // ensure the RPC/notification client is connected before handling messages
-  const maxRetries = 5
-  for (let attempt = 1; attempt <= maxRetries; attempt++) {
-    try {
-      await rabbitMQService.connect()
-      logInfo('[chat-service] RabbitMQ client connected')
-      break
-    } catch (err) {
-      if (attempt < maxRetries) {
-        const delay = 2000 * attempt
-        logWarn(`[chat-service] RabbitMQ connection attempt ${attempt}/${maxRetries} failed, retrying in ${delay}ms...`)
-        await new Promise(r => setTimeout(r, delay))
-      } else {
-        logError('[chat-service] Failed to connect RabbitMQ after all retries:', err)
-      }
-    }
-  }
+  // RabbitMQService owns reconnects; durable sends do not wait for the broker.
+  rabbitMQService.connect().catch(() => logWarn('[chat-service] RabbitMQ unavailable; reconnect scheduled'))
+  outboxWorker.start()
 
   server = app.listen(config.PORT, () => {
     logInfo(`[chat-service]: Server is running at port ${config.PORT}`)
   })
 
   // Initialize Socket.IO with authentication and event handlers
-  createSocketServer(server, getPresenceStore(), redisContext)
-}
+  io = createSocketServer(server, getPresenceStore(), redisContext)
+  return server
+})()
 
-start().catch(err => {
-  logError('[chat-service] Failed to start:', err)
-  process.exit(1)
-})
-
-const gracefulShutdown = async (signal: string) => {
+export const gracefulShutdown = (signal: string): Promise<void> => shutdown ??= (async () => {
   logInfo(`[chat-service] ${signal} received. Starting graceful shutdown...`)
-  try {
-    if (compactInterval) clearInterval(compactInterval)
-    if (server) {
-      await new Promise<void>((resolve) => server.close(() => resolve()))
-      logInfo('[chat-service] HTTP server closed')
+  await starting?.catch(() => undefined)
+  const attempt = async (name: string, cleanup: () => Promise<unknown>) => {
+    try { await cleanup() } catch {
+      process.exitCode = 1
+      logError(`[chat-service] ${name} cleanup failed`)
     }
-    await getPresenceStore().shutdown()
-    await redisContext?.shutdown()
-    await rabbitMQService.disconnect()
-    const { AppDataSource } = await import('./database/connection')
-    if (AppDataSource.isInitialized) {
-      await AppDataSource.destroy()
-      logInfo('[chat-service] Database connection closed')
-    }
-    logInfo('[chat-service] Graceful shutdown complete')
-    process.exit(0)
-  } catch (err) {
-    logError('[chat-service] Error during graceful shutdown:', err)
-    process.exit(1)
   }
-}
+  await attempt('Socket.IO', async () => { await io?.close() })
+  if (server?.listening || (!io && server)) {
+    await attempt('HTTP', async () => {
+      const closed = new Promise<void>((resolve, reject) => server!.close(error => error ? reject(error) : resolve()))
+      server!.closeAllConnections()
+      await closed
+    })
+  }
+  await attempt('Outbox worker', () => outboxWorker.stop())
+  await attempt('RabbitMQ', () => rabbitMQService.disconnect())
+  await attempt('Presence', () => getPresenceStore().shutdown())
+  await attempt('Redis', async () => { await redisContext?.shutdown() })
+  await attempt('Database', async () => { if (AppDataSource.isInitialized) await AppDataSource.destroy() })
+  logInfo('[chat-service] Graceful shutdown complete')
+})()
 
 const unexpectedErrorHandler = (error: unknown) => {
   logError('[chat-service]: Uncaught Exception', error)
-  gracefulShutdown('UNCAUGHT_EXCEPTION').catch(() => process.exit(1))
+  process.exitCode = 1
+  gracefulShutdown('UNCAUGHT_EXCEPTION').catch(() => { process.exitCode = 1 })
 }
 
-process.on('SIGTERM', () => gracefulShutdown('SIGTERM'))
-process.on('SIGINT', () => gracefulShutdown('SIGINT'))
+process.on('SIGTERM', () => { gracefulShutdown('SIGTERM').catch(() => { process.exitCode = 1 }) })
+process.on('SIGINT', () => { gracefulShutdown('SIGINT').catch(() => { process.exitCode = 1 }) })
 process.on('uncaughtException', unexpectedErrorHandler)
 process.on('unhandledRejection', unexpectedErrorHandler)
+
+if (require.main === module) {
+  start().catch(() => {
+    logError('[chat-service] Failed to start')
+    process.exitCode = 1
+    gracefulShutdown('STARTUP_FAILURE').catch(() => { process.exitCode = 1 })
+  })
+}

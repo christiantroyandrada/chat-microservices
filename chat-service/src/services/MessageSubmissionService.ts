@@ -5,6 +5,7 @@ import { Message, MessageStatus } from '../database/models/MessageModel'
 import { OutboxEvent } from '../database/models/OutboxEventModel'
 import type { MessageReceivedEventPayload } from '../types'
 import { APIError } from '../utils/apiError'
+import { canonicalUserId } from '../utils/messageIdentity'
 
 export interface SubmitMessageCommand {
   senderId: string
@@ -34,8 +35,8 @@ function validate(command: SubmitMessageCommand): ValidatedCommand {
     typeof command.senderEmail !== 'string'
   ) throw new APIError(400, 'Invalid message sender or receiver')
 
-  const senderId = command.senderId.trim()
-  const receiverId = command.receiverId.trim()
+  const senderId = canonicalUserId(command.senderId.trim())
+  const receiverId = canonicalUserId(command.receiverId.trim())
   if (!senderId || !receiverId || senderId === receiverId) {
     throw new APIError(400, 'Invalid message sender or receiver')
   }

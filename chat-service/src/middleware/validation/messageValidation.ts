@@ -51,7 +51,13 @@ export const sendMessageValidation: ValidationChain[] = [
     .isString()
     .withMessage('Message must be a string')
     .isLength({ max: 5000 })
-    .withMessage('Message exceeds maximum length of 5000 characters')
+    .withMessage('Message exceeds maximum length of 5000 characters'),
+  body('clientMessageId')
+    .optional()
+    .isString()
+    .bail()
+    .isUUID()
+    .withMessage('Client message ID must be a valid UUID')
 ]
 
 export const fetchConversationValidation: ValidationChain[] = [

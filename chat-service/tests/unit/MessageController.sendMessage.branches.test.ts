@@ -82,13 +82,15 @@ describe('MessageController sendMessage branches', () => {
     expect(error.message).toContain('Message exceeds maximum length')
   })
 
-  it('succeeds for a valid envelope and calls save and notify', async () => {
+  it('succeeds for a durable submission without direct notification', async () => {
   const saved = { id: 'm1', senderId: 'u1', receiverId: 'u2' }
   const handleMessageReceived = jest.fn().mockResolvedValue(undefined)
   jest.doMock('../../src/utils', () => ({ APIError: class APIError extends Error { constructor(public statusCode:number, public message:string){ super(message) } }, handleMessageReceived }))
   const { controller, repo } = requireControllerWithMock('../../src/controllers/MessageController', { saveResult: saved })
   const mod = controller
   const MC = mod.default || mod
+  const { MessageSubmissionService } = require('../../src/services/MessageSubmissionService')
+  const submit = jest.spyOn(MessageSubmissionService.prototype, 'submit').mockResolvedValue({ message: saved, replayed: false })
 
     const envelope = JSON.stringify({ __encrypted: true, body: 'cipher' })
     const req: any = { user: { _id: 'u1', username: 'u1', email: 'u1@example.com' }, body: { receiverId: 'u2', message: envelope } }
@@ -96,8 +98,9 @@ describe('MessageController sendMessage branches', () => {
 
     await MC.sendMessage(req, res, jest.fn())
 
-    expect(repo.save).toHaveBeenCalled()
-    expect(handleMessageReceived).toHaveBeenCalled()
+    expect(submit).toHaveBeenCalledWith(expect.objectContaining({ encryptedEnvelope: envelope }))
+    expect(repo.save).not.toHaveBeenCalled()
+    expect(handleMessageReceived).not.toHaveBeenCalled()
     const called = res.json.mock.calls[0][0]
     expect(called.status).toBe(200)
     expect(called.data).toEqual(saved)

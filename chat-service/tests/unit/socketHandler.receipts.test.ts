@@ -15,12 +15,10 @@ let handleMessageDelivered: typeof import('../../src/websocket/socketHandler').h
 let handleMarkRead: typeof import('../../src/websocket/socketHandler').handleMarkRead
 
 beforeAll(() => {
-  jest.useFakeTimers()
   const mod = require('../../src/websocket/socketHandler')
   handleMessageDelivered = mod.handleMessageDelivered
   handleMarkRead = mod.handleMarkRead
 })
-afterAll(() => jest.useRealTimers())
 
 function makeIo() {
   const emit = jest.fn()
@@ -32,27 +30,27 @@ describe('handleMessageDelivered', () => {
   beforeEach(() => getRepository.mockReset())
 
   it('marks NotDelivered → Delivered and notifies the sender', async () => {
-    const msg = { id: 'm1', senderId: 'alice', receiverId: 'bob', status: MessageStatus.NotDelivered }
-    const save = jest.fn().mockResolvedValue(msg)
-    getRepository.mockReturnValue({ findOne: jest.fn().mockResolvedValue(msg), save })
+    const msg = { id: '11111111-1111-4111-8111-111111111111', senderId: 'alice', receiverId: 'bob', status: MessageStatus.NotDelivered }
+    const update = jest.fn().mockResolvedValue({ affected: 1 })
+    getRepository.mockReturnValue({ findOne: jest.fn().mockResolvedValue(msg), update })
     const { io, emit } = makeIo()
 
-    await handleMessageDelivered(io, 'bob', { messageId: 'm1' })
+    await handleMessageDelivered(io, 'bob', { messageId: msg.id })
 
-    expect(save).toHaveBeenCalledWith(expect.objectContaining({ status: MessageStatus.Delivered }))
+    expect(update).toHaveBeenCalledWith({ id: msg.id, receiverId: 'bob', status: MessageStatus.NotDelivered }, { status: MessageStatus.Delivered })
     expect(io.to).toHaveBeenCalledWith('alice')
-    expect(emit).toHaveBeenCalledWith('messageDelivered', { messageId: 'm1', by: 'bob' })
+    expect(emit).toHaveBeenCalledWith('messageDelivered', { messageId: msg.id, by: 'bob' })
   })
 
   it('ignores a delivery mark from someone who is not the receiver', async () => {
-    const msg = { id: 'm1', senderId: 'alice', receiverId: 'bob', status: MessageStatus.NotDelivered }
-    const save = jest.fn()
-    getRepository.mockReturnValue({ findOne: jest.fn().mockResolvedValue(msg), save })
+    const msg = { id: '11111111-1111-4111-8111-111111111111', senderId: 'alice', receiverId: 'bob', status: MessageStatus.NotDelivered }
+    const update = jest.fn()
+    getRepository.mockReturnValue({ findOne: jest.fn().mockResolvedValue(msg), update })
     const { io } = makeIo()
 
-    await handleMessageDelivered(io, 'mallory', { messageId: 'm1' })
+    await handleMessageDelivered(io, 'mallory', { messageId: msg.id })
 
-    expect(save).not.toHaveBeenCalled()
+    expect(update).not.toHaveBeenCalled()
     expect(io.to).not.toHaveBeenCalled()
   })
 })

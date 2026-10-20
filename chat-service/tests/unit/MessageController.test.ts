@@ -1,364 +1,79 @@
 import MessageController from '../../src/controllers/MessageController'
 jest.mock('../../src/services/RabbitMQService', () => ({ rabbitMQService: { getUserDetails: jest.fn() } }))
 import { AppDataSource } from '../../src/database'
+import { Message } from '../../src/database/models/MessageModel'
 import { validationResult } from 'express-validator'
 import { fetchConversationValidation } from '../../src/middleware/validation/messageValidation'
+
+afterEach(() => jest.restoreAllMocks())
 
 describe('MessageController.fetchConversation', () => {
   it('returns messages for conversation', async () => {
     const req: any = { params: { receiverId: 'user2' }, user: { _id: 'user1' }, query: {} }
     const res: any = { json: jest.fn(), status: jest.fn().mockReturnThis() }
-
     const queryBuilder = {
-      where: jest.fn().mockReturnThis(),
-      orderBy: jest.fn().mockReturnThis(),
-      skip: jest.fn().mockReturnThis(),
-      take: jest.fn().mockReturnThis(),
-      getManyAndCount: jest.fn().mockResolvedValue([[{ id: 'm1' }], 1])
+      where: jest.fn().mockReturnThis(), orderBy: jest.fn().mockReturnThis(),
+      skip: jest.fn().mockReturnThis(), take: jest.fn().mockReturnThis(),
+      getManyAndCount: jest.fn().mockResolvedValue([[{ id: 'm1' }], 1]),
     }
-
-    const messageRepo: any = {
-      createQueryBuilder: jest.fn().mockReturnValue(queryBuilder)
-    }
-
-    jest.spyOn(AppDataSource, 'getRepository').mockReturnValue(messageRepo as any)
-
+    jest.spyOn(AppDataSource, 'getRepository').mockReturnValue({ createQueryBuilder: () => queryBuilder } as any)
     await MessageController.fetchConversation(req, res, jest.fn())
-
-    expect(res.json).toHaveBeenCalled()
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ data: [{ id: 'm1' }], pagination: { total: 1, limit: 50, offset: 0, hasMore: false } }))
   })
 
   it.each([
-    ['limit', '0'],
-    ['limit', '201'],
-    ['limit', '1.5'],
-    ['limit', '-1'],
-    ['offset', '-1'],
-    ['offset', '1.5'],
-    ['offset', '9007199254740992'],
-    ['offset', '999999999999999999999999999999999999999999999999999999999999']
+    ['limit', '0'], ['limit', '201'], ['limit', '1.5'], ['limit', '-1'],
+    ['offset', '-1'], ['offset', '1.5'], ['offset', '9007199254740992'],
+    ['offset', '999999999999999999999999999999999999999999999999999999999999'],
   ])('rejects invalid %s query value %s before pagination reaches the controller', async (key, value) => {
-    const req: any = {
-      params: { receiverId: '00000000-0000-4000-8000-000000000002' },
-      query: { [key]: value }
-    }
-
-    await Promise.all(fetchConversationValidation.map((chain) => chain.run(req)))
-
+    const req: any = { params: { receiverId: '00000000-0000-4000-8000-000000000002' }, query: { [key]: value } }
+    await Promise.all(fetchConversationValidation.map(chain => chain.run(req)))
     expect(validationResult(req).array()).not.toHaveLength(0)
   })
 
   it('rejects an unsafe offset in the controller even when middleware is bypassed', async () => {
-    const req: any = {
-      params: { receiverId: 'user2' },
-      user: { _id: 'user1' },
-      query: { limit: '1', offset: '999999999999999999999999999999999999999999999999999999999999' }
-    }
-    const res: any = { json: jest.fn(), status: jest.fn().mockReturnThis() }
+    const req: any = { params: { receiverId: 'user2' }, user: { _id: 'user1' }, query: { limit: '1', offset: '999999999999999999999999999999999999999999999999999999999999' } }
     const next = jest.fn()
     const messageRepo = { createQueryBuilder: jest.fn() }
-
     jest.spyOn(AppDataSource, 'getRepository').mockReturnValue(messageRepo as any)
-
-    await MessageController.fetchConversation(req, res, next)
-
+    await MessageController.fetchConversation(req, { json: jest.fn() } as any, next)
     expect(messageRepo.createQueryBuilder).not.toHaveBeenCalled()
     expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 400 }))
   })
 })
-/**
- * Unit tests for MessageController
- */
 
-import { Request, Response } from 'express';
-import { AuthenticatedRequest } from '../../src/middleware';
-import { mockUser, mockReceiver, mockMessage, mockMessages } from '../fixtures/messages';
+describe('MessageController.sendMessage durable command', () => {
+  const envelope = ' \n{"__encrypted":true,"body":"ciphertext"}\t '
+  let messages: any[]
+  let events: any[]
+  beforeEach(() => {
+    messages = []
+    events = []
+    const repository = {
+      create: (value: any) => ({ id: '10000000-0000-4000-8000-000000000001', ...value }),
+      save: async (value: any) => { messages.push(value); return value },
+    }
+    const manager = { getRepository: (entity: unknown) => entity === Message ? repository : { insert: async (value: any) => { events.push(value) } } }
+    jest.spyOn(AppDataSource, 'transaction').mockImplementation(async (...args: any[]) => args[args.length - 1](manager))
+  })
 
-// Mock dependencies
-jest.mock('../../src/database', () => ({
-	Message: {},
-	AppDataSource: {
-		getRepository: jest.fn()
-	}
-}));
+  it('invokes the handler and stores the response message and its durable encrypted event', async () => {
+    const res: any = { json: jest.fn() }
+    const next = jest.fn()
+    await MessageController.sendMessage({ user: { _id: 'sender', username: 'Sender', email: 'sender@example.test' }, body: { receiverId: 'receiver', message: envelope } } as any, res, next)
+    expect(next).not.toHaveBeenCalled()
+    expect(messages).toHaveLength(1)
+    expect(messages[0]).toMatchObject({ senderId: 'sender', receiverId: 'receiver', message: envelope, status: 'NotDelivered', isEncrypted: true })
+    expect(events).toHaveLength(1)
+    expect(events[0].payload).toMatchObject({ eventId: events[0].id, userId: 'receiver', envelope, message: '[Encrypted message]' })
+    expect(res.json).toHaveBeenCalledWith({ status: 200, message: 'Message sent successfully', data: messages[0] })
+  })
 
-jest.mock('../../src/utils', () => ({
-	APIError: class APIError extends Error {
-		constructor(public statusCode: number, message: string) {
-			super(message);
-		}
-	},
-	handleMessageReceived: jest.fn().mockResolvedValue(undefined)
-}));
-
-describe('MessageController', () => {
-	let mockRequest: Partial<AuthenticatedRequest>;
-	let mockResponse: Partial<Response>;
-	let mockRepository: any;
-
-	beforeEach(() => {
-		// Setup mock request
-		mockRequest = {
-			user: mockUser,
-			body: {},
-			params: {}
-		};
-
-		// Setup mock response
-		mockResponse = {
-			json: jest.fn().mockReturnThis(),
-			status: jest.fn().mockReturnThis()
-		};
-
-		// Setup mock repository
-		mockRepository = {
-			save: jest.fn(),
-			find: jest.fn(),
-			findOne: jest.fn(),
-			createQueryBuilder: jest.fn()
-		};
-
-		const { AppDataSource } = require('../../src/database');
-		AppDataSource.getRepository.mockReturnValue(mockRepository);
-	});
-
-	afterEach(() => {
-		jest.clearAllMocks();
-	});
-
-	describe('sendMessage', () => {
-		it('should send an encrypted message successfully', async () => {
-			const encryptedContent = JSON.stringify({
-				__encrypted: true,
-				type: 3,
-				body: 'base64EncodedMessage=='
-			});
-
-			mockRequest.body = {
-				receiverId: mockReceiver._id,
-				message: encryptedContent
-			};
-
-			mockRepository.save.mockResolvedValue(mockMessage);
-
-			// Import controller function dynamically to use mocked dependencies
-			// Note: In actual implementation, you'd import and call the controller function here
-
-			// Assertions
-			expect(mockRepository.save).toBeDefined();
-		});
-
-		it('should reject unencrypted messages', async () => {
-			mockRequest.body = {
-				receiverId: mockReceiver._id,
-				message: 'plain text message'
-			};
-
-			// Should throw APIError with 400 status
-			// Test implementation depends on controller structure
-		});
-
-		it('should reject empty messages', async () => {
-			mockRequest.body = {
-				receiverId: mockReceiver._id,
-				message: '   '
-			};
-
-			// Should throw APIError with 400 status
-		});
-
-		it('should reject messages exceeding length limit', async () => {
-			const longMessage = JSON.stringify({
-				__encrypted: true,
-				type: 3,
-				body: 'a'.repeat(5001)
-			});
-
-			mockRequest.body = {
-				receiverId: mockReceiver._id,
-				message: longMessage
-			};
-
-			// Should throw APIError with 400 status
-		});
-
-		it('should validate receiver ID', async () => {
-			mockRequest.body = {
-				receiverId: mockUser._id, // Same as sender
-				message: JSON.stringify({
-					__encrypted: true,
-					type: 3,
-					body: 'base64=='
-				})
-			};
-
-			// Should throw validation error
-		});
-	});
-
-	describe('getMessages', () => {
-		it('should retrieve messages between two users', async () => {
-			mockRequest.params = {
-				userId: mockReceiver._id
-			};
-			mockRequest.query = {
-				limit: '50',
-				offset: '0'
-			};
-
-			mockRepository.find.mockResolvedValue(mockMessages);
-
-			// Test implementation
-			expect(mockRepository.find).toBeDefined();
-		});
-
-		it('should apply pagination parameters', async () => {
-			mockRequest.params = {
-				userId: mockReceiver._id
-			};
-			mockRequest.query = {
-				limit: '20',
-				offset: '10'
-			};
-
-			mockRepository.find.mockResolvedValue([]);
-
-			// Should call repository with correct pagination
-		});
-
-		it('should handle no messages found', async () => {
-			mockRequest.params = {
-				userId: mockReceiver._id
-			};
-
-			mockRepository.find.mockResolvedValue([]);
-
-			// Should return empty array
-		});
-	});
-
-	describe('markAsRead', () => {
-		it('should mark messages as read', async () => {
-			mockRequest.params = {
-				senderId: mockReceiver._id
-			};
-
-			const mockQueryBuilder = {
-				update: jest.fn().mockReturnThis(),
-				set: jest.fn().mockReturnThis(),
-				where: jest.fn().mockReturnThis(),
-				andWhere: jest.fn().mockReturnThis(),
-				execute: jest.fn().mockResolvedValue({ affected: 2 })
-			};
-
-			mockRepository.createQueryBuilder.mockReturnValue(mockQueryBuilder);
-
-			// Test implementation
-			expect(mockRepository.createQueryBuilder).toBeDefined();
-		});
-
-		it('should handle no unread messages', async () => {
-			mockRequest.params = {
-				senderId: mockReceiver._id
-			};
-
-			const mockQueryBuilder = {
-				update: jest.fn().mockReturnThis(),
-				set: jest.fn().mockReturnThis(),
-				where: jest.fn().mockReturnThis(),
-				andWhere: jest.fn().mockReturnThis(),
-				execute: jest.fn().mockResolvedValue({ affected: 0 })
-			};
-
-			mockRepository.createQueryBuilder.mockReturnValue(mockQueryBuilder);
-
-			// Should return success with 0 updated
-		});
-	});
-
-	describe('getConversations', () => {
-		it('should retrieve all conversations for a user', async () => {
-			const mockConversations = [
-				{
-					userId: mockReceiver._id,
-					username: mockReceiver.username,
-					lastMessage: '[Encrypted message]',
-					lastMessageTime: new Date(),
-					unreadCount: 2
-				}
-			];
-
-			const mockQueryBuilder = {
-				select: jest.fn().mockReturnThis(),
-				addSelect: jest.fn().mockReturnThis(),
-				leftJoin: jest.fn().mockReturnThis(),
-				where: jest.fn().mockReturnThis(),
-				orWhere: jest.fn().mockReturnThis(),
-				groupBy: jest.fn().mockReturnThis(),
-				addGroupBy: jest.fn().mockReturnThis(),
-				orderBy: jest.fn().mockReturnThis(),
-				getRawMany: jest.fn().mockResolvedValue(mockConversations)
-			};
-
-			mockRepository.createQueryBuilder.mockReturnValue(mockQueryBuilder);
-
-			// Test implementation
-			expect(mockRepository.createQueryBuilder).toBeDefined();
-		});
-
-		it('should handle user with no conversations', async () => {
-			const mockQueryBuilder = {
-				select: jest.fn().mockReturnThis(),
-				addSelect: jest.fn().mockReturnThis(),
-				leftJoin: jest.fn().mockReturnThis(),
-				where: jest.fn().mockReturnThis(),
-				orWhere: jest.fn().mockReturnThis(),
-				groupBy: jest.fn().mockReturnThis(),
-				addGroupBy: jest.fn().mockReturnThis(),
-				orderBy: jest.fn().mockReturnThis(),
-				getRawMany: jest.fn().mockResolvedValue([])
-			};
-
-			mockRepository.createQueryBuilder.mockReturnValue(mockQueryBuilder);
-
-			// Should return empty array
-		});
-	});
-
-	describe('searchUsers', () => {
-		it('should search users by name or email', async () => {
-			mockRequest.query = {
-				q: 'test'
-			};
-
-			// Mock user service response
-			global.fetch = jest.fn().mockResolvedValue({
-				ok: true,
-				json: async () => ({
-					data: [mockUser, mockReceiver]
-				})
-			}) as jest.Mock;
-
-			// Test implementation
-			expect(global.fetch).toBeDefined();
-		});
-
-		it('should handle empty search query', async () => {
-			mockRequest.query = {
-				q: ''
-			};
-
-			// Should return validation error
-		});
-
-		it('should handle user service errors', async () => {
-			mockRequest.query = {
-				q: 'test'
-			};
-
-			global.fetch = jest.fn().mockRejectedValue(new Error('Service unavailable')) as jest.Mock;
-
-			// Should handle error gracefully
-		});
-	});
-});
+  it.each(['plaintext', '   ', 'x'.repeat(5001)])('rejects invalid content without persistence', async message => {
+    const next = jest.fn()
+    await MessageController.sendMessage({ user: { _id: 'sender', username: 'Sender', email: 'sender@example.test' }, body: { receiverId: 'receiver', message } } as any, { json: jest.fn() } as any, next)
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 400 }))
+    expect(messages).toEqual([])
+    expect(events).toEqual([])
+  })
+})

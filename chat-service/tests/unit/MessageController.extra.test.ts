@@ -6,6 +6,7 @@ import MessageController from '../../src/controllers/MessageController'
 import { AppDataSource } from '../../src/database/connection'
 import { Message } from '../../src/database'
 import * as utils from '../../src/utils'
+import { MessageSubmissionService } from '../../src/services/MessageSubmissionService'
 
 describe('MessageController (extra)', () => {
   const originalFetch = global.fetch
@@ -13,6 +14,7 @@ describe('MessageController (extra)', () => {
   beforeEach(() => {
     jest.resetAllMocks()
   })
+  afterEach(() => jest.restoreAllMocks())
 
   afterAll(() => {
     global.fetch = originalFetch
@@ -40,12 +42,13 @@ describe('MessageController (extra)', () => {
   expect(next.mock.calls[0][0].message).toMatch(/end-to-end encrypted/i)
   })
 
-  test('sendMessage - success path stores message and notifies', async () => {
+  test('sendMessage returns the durable submission result without direct storage or notification', async () => {
     const saved = { id: 1, senderId: 's1', receiverId: 'r1', message: '{"__encrypted":true,"body":"c"}' }
     const repo: any = { save: jest.fn().mockResolvedValue(saved) }
     jest.spyOn(AppDataSource, 'getRepository').mockReturnValue(repo as any)
 
     const handleSpy = jest.spyOn(utils, 'handleMessageReceived').mockResolvedValue(undefined as any)
+    const submit = jest.spyOn(MessageSubmissionService.prototype, 'submit').mockResolvedValue({ message: saved as any, replayed: false })
 
     // create a valid envelope
     const envelope = JSON.stringify({ __encrypted: true, body: 'c' })
@@ -55,8 +58,9 @@ describe('MessageController (extra)', () => {
   const outRaw = await MessageController.sendMessage(req, res, jest.fn())
   const out: any = outRaw as any
 
-  expect(repo.save).toHaveBeenCalled()
-  expect(handleSpy).toHaveBeenCalled()
+  expect(submit).toHaveBeenCalledWith({ senderId: 's1', receiverId: 'r1', encryptedEnvelope: envelope, clientMessageId: undefined, senderName: 'u', senderEmail: 'a@b.com' })
+  expect(repo.save).not.toHaveBeenCalled()
+  expect(handleSpy).not.toHaveBeenCalled()
   expect(out.status).toBe(200)
   expect(out.data).toEqual(saved)
   })

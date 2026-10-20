@@ -50,8 +50,10 @@ const spec = {
         required: ['receiverId', 'message'],
         properties: {
           receiverId: { type: 'string' as const, format: 'uuid' },
+          clientMessageId: { type: 'string' as const, format: 'uuid', description: 'Optional stable send key. Reuse requires the same recipient and exact encrypted envelope.' },
           message: {
             type: 'string' as const,
+            maxLength: 5000,
             description: 'Signal-protocol encrypted envelope (JSON string, max 5000 chars)',
           },
         },
@@ -63,6 +65,7 @@ const spec = {
           id:          { type: 'string' as const, format: 'uuid' },
           senderId:    { type: 'string' as const, format: 'uuid' },
           receiverId:  { type: 'string' as const, format: 'uuid' },
+          clientMessageId: { type: 'string' as const, format: 'uuid', nullable: true },
           message:     { type: 'string' as const, description: 'Encrypted envelope JSON string' },
           isEncrypted: { type: 'boolean' as const },
           status:      { type: 'string' as const, enum: ['NotDelivered', 'Delivered', 'Seen'] },
@@ -172,6 +175,7 @@ const spec = {
           '200': { description: 'Message sent', content: { 'application/json': { schema: { $ref: '#/components/schemas/MessageResponse' } } } },
           '400': { description: 'Validation error', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
           '401': { description: 'Authentication required' },
+          '409': { description: 'Client message ID conflicts with the stored recipient or encrypted envelope', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
         },
       },
     },
@@ -253,13 +257,13 @@ const spec = {
     events: {
       'sendMessage': {
         direction: 'client → server',
-        payload: '{ senderId, receiverId, message, _id? }',
+        payload: '{ senderId, receiverId, message, _id?, clientMessageId? }',
         ack: '{ ok: boolean, id?: string, error?: string }',
         description: 'Send an E2EE message via WebSocket. Server validates, persists, and broadcasts to receiver room.',
       },
       'receiveMessage': {
         direction: 'server → client',
-        payload: '{ _id, id, senderId, senderUsername, receiverId, content, message, timestamp, createdAt, read }',
+        payload: '{ _id, id, senderId, senderUsername, receiverId, content, message, timestamp, createdAt, updatedAt, status, isEncrypted, clientMessageId, read, isRead }',
         description: 'Delivered to the receiver when a new message arrives.',
       },
       'typing': {

@@ -42,11 +42,14 @@ describe('chat-service OpenAPI contract', () => {
     expect(request.required).toEqual(['receiverId', 'message'])
     expect(request.properties).toEqual({
       receiverId: { type: 'string', format: 'uuid' },
+      clientMessageId: { type: 'string', format: 'uuid', description: 'Optional stable send key. Reuse requires the same recipient and exact encrypted envelope.' },
       message: {
         type: 'string',
+        maxLength: 5000,
         description: 'Signal-protocol encrypted envelope (JSON string, max 5000 chars)'
       }
     })
+    expect(spec.paths['/send'].post.responses['409'].content['application/json'].schema).toEqual({ $ref: '#/components/schemas/Error' })
   })
 
 

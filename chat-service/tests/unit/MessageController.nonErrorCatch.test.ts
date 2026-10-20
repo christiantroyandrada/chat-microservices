@@ -16,11 +16,13 @@ jest.mock('../../src/utils', () => ({
 
 import MessageController from '../../src/controllers/MessageController'
 import { AppDataSource } from '../../src/database'
+import { MessageSubmissionService } from '../../src/services/MessageSubmissionService'
 
 describe('MessageController non-Error catch branches', () => {
-  afterEach(() => jest.clearAllMocks())
+  afterEach(() => { jest.clearAllMocks(); jest.restoreAllMocks() })
 
-  it('sendMessage handles non-Error rejection from repo.save', async () => {
+  it('sendMessage delegates a non-Error submission rejection', async () => {
+    jest.spyOn(MessageSubmissionService.prototype, 'submit').mockRejectedValue('string-error')
     const mockReq: any = {
       user: { _id: 'sender1', username: 'alice', email: 'a@example.com' },
       body: { receiverId: 'receiver1', message: JSON.stringify({ __encrypted: true, body: 'x' }) }

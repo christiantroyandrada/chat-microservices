@@ -282,7 +282,7 @@ grant_service_tables() {
     -c "ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE ALL ON TABLES FROM user_svc, chat_svc, notif_svc;" \
     -c "ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE ALL ON SEQUENCES FROM user_svc, chat_svc, notif_svc;" \
     -c "GRANT SELECT, INSERT, UPDATE, DELETE ON users, prekeys TO user_svc;" \
-    -c "GRANT SELECT, INSERT, UPDATE, DELETE ON messages TO chat_svc;" \
+    -c "GRANT SELECT, INSERT, UPDATE, DELETE ON messages, outbox_events TO chat_svc;" \
     -c "GRANT SELECT, INSERT, UPDATE, DELETE ON notifications TO notif_svc;" || return 1
 }
 

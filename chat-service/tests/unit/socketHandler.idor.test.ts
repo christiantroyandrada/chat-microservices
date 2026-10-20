@@ -13,12 +13,8 @@ jest.mock('../../src/utils/metrics', () => ({
 let retrieveOrSaveMessage: typeof import('../../src/websocket/socketHandler').retrieveOrSaveMessage
 
 beforeAll(() => {
-  // Fake timers so the module-level compaction setInterval doesn't leak a handle.
-  jest.useFakeTimers()
   retrieveOrSaveMessage = require('../../src/websocket/socketHandler').retrieveOrSaveMessage
 })
-
-afterAll(() => jest.useRealTimers())
 
 const CALLER = 'alice'
 const RECEIVER = 'bob'
@@ -27,7 +23,7 @@ function makeRepo(existing: any) {
   return { findOne: jest.fn().mockResolvedValue(existing) } as any
 }
 const baseParams = (repo: any, ack: any) => ({
-  _id: 'msg-123',
+  _id: '11111111-1111-4111-8111-111111111111',
   trimmed: '{"__encrypted":true,"body":"x"}',
   senderId: CALLER,
   receiverId: RECEIVER,
@@ -38,7 +34,7 @@ const baseParams = (repo: any, ack: any) => ({
 
 describe('retrieveOrSaveMessage — _id reuse ownership guard (IDOR)', () => {
   it('rejects reusing a message owned by a different sender', async () => {
-    const foreign = { id: 'msg-123', senderId: 'mallory', receiverId: RECEIVER, isEncrypted: true }
+    const foreign = { id: '11111111-1111-4111-8111-111111111111', senderId: 'mallory', receiverId: RECEIVER, isEncrypted: true }
     const repo = makeRepo(foreign)
     const ack = jest.fn()
 
@@ -49,7 +45,7 @@ describe('retrieveOrSaveMessage — _id reuse ownership guard (IDOR)', () => {
   })
 
   it('rejects reusing a message addressed to a different receiver', async () => {
-    const foreign = { id: 'msg-123', senderId: CALLER, receiverId: 'carol', isEncrypted: true }
+    const foreign = { id: '11111111-1111-4111-8111-111111111111', senderId: CALLER, receiverId: 'carol', isEncrypted: true }
     const repo = makeRepo(foreign)
     const ack = jest.fn()
 
@@ -60,7 +56,7 @@ describe('retrieveOrSaveMessage — _id reuse ownership guard (IDOR)', () => {
   })
 
   it('allows the original sender to reuse their own message (idempotent resend)', async () => {
-    const own = { id: 'msg-123', senderId: CALLER, receiverId: RECEIVER, isEncrypted: true }
+    const own = { id: '11111111-1111-4111-8111-111111111111', senderId: CALLER, receiverId: RECEIVER, isEncrypted: true }
     const repo = makeRepo(own)
     const ack = jest.fn()
 
