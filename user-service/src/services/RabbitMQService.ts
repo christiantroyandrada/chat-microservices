@@ -16,13 +16,22 @@ class RabbitMQService {
   private retryTimer: ReturnType<typeof setTimeout> | undefined
   private retryAttempt = 0
   private shuttingDown = false
+  private disconnectPromise: Promise<void> | undefined
 
   async connect (): Promise<void> {
-    if (this.shuttingDown) throw new Error('RabbitMQ service is shutting down')
+    if (this.disconnectPromise) await this.disconnectPromise
+    this.shuttingDown = false
     if (this.isHealthy()) return
     if (this.connectPromise) return this.connectPromise
     if (this.retryTimer) { clearTimeout(this.retryTimer); this.retryTimer = undefined }
-    this.connectPromise = this.setupConnection().finally(() => { this.connectPromise = undefined })
+    this.connectPromise = this.setupConnection()
+      .then(() => undefined)
+      .catch((error) => {
+        this.connectPromise = undefined
+        this.scheduleReconnect()
+        throw error
+      })
+      .finally(() => { this.connectPromise = undefined })
     return this.connectPromise
   }
 
@@ -120,7 +129,8 @@ class RabbitMQService {
   async publishNotification (payload: Record<string, unknown>): Promise<boolean> {
     try {
       if (!this.channel) throw new Error('RabbitMQ channel is not initialized')
-      return this.channel.sendToQueue(process.env.NOTIFICATIONS_QUEUE || 'NOTIFICATIONS', Buffer.from(JSON.stringify(payload)))
+      this.channel.sendToQueue(process.env.NOTIFICATIONS_QUEUE || 'NOTIFICATIONS', Buffer.from(JSON.stringify(payload)))
+      return true
     } catch (error) {
       logError('[user-service] publishNotification failed:', error)
       return false
@@ -130,6 +140,12 @@ class RabbitMQService {
   isHealthy (): boolean { return !!this.channel && !!this.connection }
 
   async disconnect (): Promise<void> {
+    if (this.disconnectPromise) return this.disconnectPromise
+    this.disconnectPromise = this.disconnectInternal()
+    try { await this.disconnectPromise } finally { this.disconnectPromise = undefined }
+  }
+
+  private async disconnectInternal (): Promise<void> {
     this.shuttingDown = true
     if (this.retryTimer) { clearTimeout(this.retryTimer); this.retryTimer = undefined }
     if (this.connectPromise) { try { await this.connectPromise } catch {} }
