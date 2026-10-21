@@ -23,7 +23,7 @@ const validateEnv = () => {
   
   if (missing.length > 0) {
     logError(`[user-service] FATAL: Missing required environment variables: ${missing.join(', ')}`)
-    process.exit(1)
+    throw new Error('Required environment variables are missing')
   }
   
   // Fail hard on default/weak secrets in production
@@ -34,7 +34,7 @@ const validateEnv = () => {
   if (isProduction && (jwtSecret.length < 32 || weakSecrets.has(jwtSecret))) {
     logError('[user-service] FATAL: Running in production with weak/default JWT_SECRET. Aborting.')
     logError('[user-service] JWT_SECRET must be at least 32 characters and not a default value.')
-    process.exit(1)
+    throw new Error('Invalid production JWT secret')
   }
   
   if (!isProduction && weakSecrets.has(jwtSecret)) {
@@ -42,10 +42,9 @@ const validateEnv = () => {
   }
 }
 
-validateEnv()
-
 const app: Express = express()
-let server: Server
+let server: Server | undefined
+let starting: Promise<void> | undefined
 
 app.disable('x-powered-by')
 app.set('trust proxy', 1)
@@ -120,55 +119,48 @@ app.use(errorMiddleware)
 app.use(errorHandler)
 
 // Initialize database and run migrations, then start server
-const startServer = async () => {
-  try {
-    // Connect to database (as the non-superuser runtime role user_svc)
-    await connectDB()
+export const start = (): Promise<void> => starting ??= (async () => {
+  validateEnv()
+  // Connect to database (as the non-superuser runtime role user_svc)
+  await connectDB()
 
-    // NOTE: migrations are applied by the dedicated `user-migrate` step (as
-    // admin) before this service starts — the runtime role has no DDL rights.
+  // NOTE: migrations are applied by the dedicated `user-migrate` step (as
+  // admin) before this service starts — the runtime role has no DDL rights.
 
-    // Start HTTP server
-    server = app.listen(config.PORT, () => {
-      logInfo(`User Service is running on port ${config.PORT}`)
-    })
+  // Start HTTP server
+  server = app.listen(config.PORT, () => {
+    logInfo(`User Service is running on port ${config.PORT}`)
+  })
     
-    // RabbitMQ owns recovery, so HTTP remains available while the broker is offline.
-    initRabbitMQClient()
-  } catch (error) {
-    logError('[user-service] Failed to start server:', error)
-    process.exit(1)
-  }
-}
+  // RabbitMQ owns recovery, so HTTP remains available while the broker is offline.
+  void initRabbitMQClient()
+})()
 
 const initRabbitMQClient = async () => {
   try { await rabbitMQService.connect(); logInfo('[user-service] RabbitMQ client initialized. now listening...') }
-  catch (error) { logError('[user-service] RabbitMQ initial connection failed; recovery is scheduled:', error) }
+  catch { logError('[user-service] RabbitMQ initial connection failed; recovery is scheduled') }
 }
 
-// Start the server
-startServer()
-
 let shutdownPromise: Promise<void> | undefined
-const gracefulShutdown = (signal: string): Promise<void> => {
+export const gracefulShutdown = (signal: string): Promise<void> => {
   if (shutdownPromise) return shutdownPromise
   shutdownPromise = (async () => {
   logInfo(`[user-service] ${signal} received. Starting graceful shutdown...`)
-  let failed = false
-  try { if (server) await new Promise<void>((resolve) => server.close(() => resolve())) } catch (error) { failed = true; logError('[user-service] HTTP shutdown failed:', error) }
-  try { await rabbitMQService.disconnect() } catch (error) { failed = true; logError('[user-service] RabbitMQ shutdown failed:', error) }
+  await starting?.catch(() => undefined)
+  try { if (server) await new Promise<void>((resolve, reject) => server!.close(error => error ? reject(error) : resolve())) } catch { process.exitCode = 1; logError('[user-service] HTTP shutdown failed') }
+  try { await rabbitMQService.disconnect() } catch { process.exitCode = 1; logError('[user-service] RabbitMQ shutdown failed') }
   try {
     const { AppDataSource } = await import('./database/connection')
     if (AppDataSource.isInitialized) await AppDataSource.destroy()
-  } catch (error) { failed = true; logError('[user-service] Database shutdown failed:', error) }
+  } catch { process.exitCode = 1; logError('[user-service] Database shutdown failed') }
   logInfo('[user-service] Graceful shutdown complete')
-  process.exit(failed ? 1 : 0)
   })()
   return shutdownPromise
 }
 
 const unexpectedErrorHandler = (error: unknown) => {
   logError('[user-service]: Uncaught Exception', error)
+  process.exitCode = 1
   void gracefulShutdown('UNCAUGHT_EXCEPTION').catch((shutdownError) => logError('[user-service] Shutdown failed:', shutdownError))
 }
 
@@ -176,3 +168,11 @@ process.on('SIGTERM', () => { void gracefulShutdown('SIGTERM').catch((error) => 
 process.on('SIGINT', () => { void gracefulShutdown('SIGINT').catch((error) => logError('[user-service] Shutdown failed:', error)) })
 process.on('uncaughtException', unexpectedErrorHandler)
 process.on('unhandledRejection', unexpectedErrorHandler)
+
+if (require.main === module) {
+  start().catch(() => {
+    process.exitCode = 1
+    logError('[user-service] Failed to start server')
+    void gracefulShutdown('STARTUP_FAILURE').catch(() => { process.exitCode = 1 })
+  })
+}
