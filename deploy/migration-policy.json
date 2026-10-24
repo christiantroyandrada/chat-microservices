@@ -21,6 +21,11 @@
       "classification": "backward-compatible"
     },
     {
+      "path": "notification-service/src/database/migrations/1792627200000-AddNotificationInbox.ts",
+      "sha256": "b6f0a5d82eab145acdc58e2cbc01f04c6ef64946837bba8eb9293156e9f9590d",
+      "classification": "backward-compatible"
+    },
+    {
       "path": "user-service/src/database/migrations/1733150000000-InitialSchema.ts",
       "sha256": "3ac8e9601ac0d27083971ede8f605e73cae17d194f927bb770b333de288ed0ea",
       "classification": "backward-compatible"

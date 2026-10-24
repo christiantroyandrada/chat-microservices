@@ -74,6 +74,8 @@ requireText(release, /mkdir -p .*certbot\/conf.*certbot\/www/, 'release must cre
 requireText(release, /GRANT SELECT,\s*INSERT,\s*UPDATE,\s*DELETE ON users, prekeys TO user_svc/, 'release must restore user table grants');
 requireText(release, /GRANT SELECT,\s*INSERT,\s*UPDATE,\s*DELETE ON messages, outbox_events TO chat_svc/, 'release must restore chat and outbox table grants');
 requireText(release, /GRANT SELECT,\s*INSERT,\s*UPDATE,\s*DELETE ON notifications TO notif_svc/, 'release must restore notification table grants');
+requireText(release, /GRANT SELECT,\s*INSERT,\s*UPDATE ON notification_inbox TO notif_svc;/, 'release must grant notification receipt access without deletion');
+assert.doesNotMatch(release, /GRANT[^;]*DELETE[^;]*ON notification_inbox\b/, 'release must not grant notification receipt deletion');
 requireText(release, /RELEASE_HEALTH_TIMEOUT|RELEASE_HEALTH_MAX_ATTEMPTS/, 'health checks must be bounded and poll');
 requireText(release, /docker pull "\$USER_IMAGE_REF"/, 'release must pull immutable candidate images directly');
 requireText(release, /docker pull "\$CHAT_IMAGE_REF"/, 'release must pull the chat candidate image');

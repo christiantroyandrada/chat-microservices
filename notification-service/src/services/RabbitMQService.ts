@@ -1,16 +1,7 @@
 import amqp, { Channel, ChannelModel, ConsumeMessage } from 'amqplib'
 import config from '../config/config'
-import type { NotificationQueuePayload } from '../types'
-import { FCMService } from './FCMService'
-import { SecureEmailService } from './SecureEmailService'
-import { UserStatusStore } from '../utils'
-import { Notification } from '../database'
-import { NotificationType } from '../database/models/NotificationModel'
-import { AppDataSource } from '../database/connection'
 import { logInfo, logWarn, logError } from '../utils/logger'
-import { loadTemplate, renderTemplate, loadLogoDataUri } from './EmailTemplateService'
-import { handleMessageReceived } from './handlers/messageHandler'
-import { handleUserRegistered } from './handlers/welcomeHandler'
+import { notificationInbox, PermanentNotificationError } from './NotificationInbox'
 import { notificationsConsumedTotal } from '../utils/metrics'
 
 const MAX_RECONNECT_ATTEMPTS = 10
@@ -19,9 +10,6 @@ const INITIAL_RECONNECT_DELAY_MS = 1000
 class RabbitMQService {
   private channel!: Channel
   private connection!: ChannelModel
-  private readonly fcmService = FCMService
-  private readonly emailService = new SecureEmailService()
-  private readonly userStatusStore = UserStatusStore.getInstance()
   private reconnectAttempts = 0
   private isReconnecting = false
 
@@ -69,70 +57,36 @@ class RabbitMQService {
     }, delay)
   }
 
-  // Template and logo helpers moved to EmailTemplateService for modularity.
-
   async consumeNotification () {
     // Declare the notifications queue to MATCH the existing broker topology:
     // durable, NO dead-letter args. The live CloudAMQP queue was created without
     // a DLX; declaring x-dead-letter-exchange here (even '') throws
     // 406 PRECONDITION_FAILED. Producer and consumer must declare identical args.
-    await this.channel.assertQueue(config.queue.notifications, { durable: true })
-
-    this.channel.consume(config.queue.notifications, async (msg) => {
-      if (!msg) return
-      try {
-        const payload = JSON.parse(msg.content.toString())
-        await this.handleMessage(payload, msg)
-      } catch (err) {
-        logError('[notification-service] consumeNotification error:', err)
-        // avoid infinite requeues on failure — nack and drop the message
-        try {
-          this.channel.nack(msg, false, false)
-        } catch (e) {
-          logError('[notification-service] failed to nack message:', e)
-        }
-      }
+    const channel = this.channel
+    await channel.assertQueue(config.queue.notifications, { durable: true })
+    await channel.prefetch(10)
+    await channel.consume(config.queue.notifications, (msg) => {
+      if (msg) void this.handleMessage(channel, msg).catch(() => logError('[notification-service] Consumer callback failed'))
     })
   }
 
-  private async handleMessage(payload: NotificationQueuePayload, msg: ConsumeMessage) {
-    const { type } = payload
-    const notificationRepo = AppDataSource.getRepository(Notification)
-
-    notificationsConsumedTotal.inc({ type: type || 'unknown' })
-
-    // Handle known event types. MESSAGE_RECEIVED keeps the original behavior.
-    switch (type) {
-      case 'MESSAGE_RECEIVED': {
-        await handleMessageReceived(payload, msg, {
-          fcmService: this.fcmService,
-          emailService: this.emailService,
-          userStatusStore: this.userStatusStore,
-          notificationRepo,
-          channel: this.channel,
-        })
-        return
-      }
-
-      case 'USER_REGISTERED': {
-        await handleUserRegistered(payload, msg, {
-          emailService: this.emailService,
-          notificationRepo,
-          channel: this.channel,
-        })
-        return
-      }
-
-      // USER_LOGGED_IN events are intentionally ignored to limit notification
-      // types to: registration and offline message alerts. If needed in future
-      // this can be added back behind a feature flag.
-
-      default: {
-        // Unknown event types are ignored by the notification-service
-        this.channel.ack(msg)
-        return
-      }
+  private async handleMessage(channel: Channel, msg: ConsumeMessage): Promise<void> {
+    let payload: unknown
+    try {
+      if (msg.content.length > 100_000) throw new PermanentNotificationError('Notification payload too large')
+      try { payload = JSON.parse(msg.content.toString()) }
+      catch { throw new PermanentNotificationError('Invalid notification JSON') }
+      await notificationInbox.accept(payload, msg.properties.messageId)
+    } catch (error) {
+      logError('[notification-service] Notification receipt failed')
+      try { channel.nack(msg, false, !(error instanceof PermanentNotificationError)) }
+      catch { logError('[notification-service] Notification rejection failed') }
+      return
     }
+    const type = (payload as { type?: unknown } | null)?.type
+    notificationsConsumedTotal.inc({ type: type === 'MESSAGE_RECEIVED' || type === 'USER_REGISTERED' ? type : 'unknown' })
+    try { channel.ack(msg) }
+    catch { logError('[notification-service] Notification acknowledgement failed') }
   }
 
   isHealthy (): boolean {

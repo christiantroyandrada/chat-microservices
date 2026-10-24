@@ -4,14 +4,16 @@ import config from '../config/config'
 import { logInfo, logError } from '../utils/logger'
 import { Notification } from './models/NotificationModel'
 import { InitialSchema1733150000000 } from './migrations/1733150000000-InitialSchema'
+import { AddNotificationInbox1792627200000 } from './migrations/1792627200000-AddNotificationInbox'
+import { NotificationInboxRecord } from './models/NotificationInboxModel'
 
 export const AppDataSource = new DataSource({
   type: 'postgres',
   url: config.DATABASE_URL,
   synchronize: false, // Schema is owned by migrations (applied as admin in the migrate step). The runtime role (notif_svc) has no DDL rights.
   logging: config.env === 'development',
-  entities: [Notification],
-  migrations: [InitialSchema1733150000000],
+  entities: [Notification, NotificationInboxRecord],
+  migrations: [InitialSchema1733150000000, AddNotificationInbox1792627200000],
   migrationsRun: false, // We run migrations explicitly before starting services
   // Per-service migrations table — avoids cross-service migration-name collisions
   // on the shared DB (all services define InitialSchema1733150000000).
