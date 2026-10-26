@@ -2,7 +2,7 @@ import axios, { AxiosInstance } from 'axios'
 import nodemailer, { type SendMailOptions, type Transporter } from 'nodemailer'
 import config from '../config/config'
 import { logInfo, logWarn, logError } from '../utils/logger'
-import type { BrevoEmailPayload, BrevoAccountInfo, AxiosErrorResponse } from '../types'
+import type { BrevoEmailPayload, BrevoAccountInfo } from '../types'
 
 type Attachment = { filename: string; contentBase64: string; cid?: string }
 
@@ -33,16 +33,16 @@ export class SecureEmailService {
     textContent?: string,
     attachments?: Attachment[]
   ): Promise<{ messageId: string }> {
-    if (!config.SENDINBLUE_APIKEY) {
-      throw new Error('[SecureEmailService] API key not configured')
-    }
-
     if (!config.EMAIL_FROM) {
       throw new Error('[SecureEmailService] EMAIL_FROM not configured')
     }
+    const smtpConfigured = config.smtp?.host && config.smtp.user && config.smtp.pass
+    if (!smtpConfigured && !config.SENDINBLUE_APIKEY) {
+      throw new Error('[SecureEmailService] API key not configured')
+    }
 
     try {
-      if (config.smtp && config.smtp.host && config.smtp.user && config.smtp.pass) {
+      if (smtpConfigured) {
         if (!this.smtpTransport) {
           this.smtpTransport = nodemailer.createTransport({
             host: config.smtp.host,
@@ -54,6 +54,9 @@ export class SecureEmailService {
             },
             disableFileAccess: true,
             disableUrlAccess: true,
+            connectionTimeout: 4000,
+            greetingTimeout: 4000,
+            socketTimeout: 10000,
           })
         }
 
@@ -71,6 +74,10 @@ export class SecureEmailService {
         }
 
         const info = await this.smtpTransport.sendMail(mailOptions)
+        if (!Array.isArray(info.accepted) || !info.accepted.length) {
+          if (info.rejected?.length) throw Object.assign(new Error('Provider rejected recipient'), { code: 'EENVELOPE', responseCode: 550 })
+          throw new Error('Provider acceptance missing')
+        }
         logInfo('[SecureEmailService] SMTP email sent successfully:', info.messageId || info.response)
         return { messageId: info.messageId || String(info.response || '') }
       }
@@ -91,24 +98,12 @@ export class SecureEmailService {
       }
 
       const response = await this.client.post('/smtp/email', payload)
+      if (typeof response.data?.messageId !== 'string' || !response.data.messageId.trim()) throw new Error('Provider acceptance missing')
 
       logInfo('[SecureEmailService] Email sent successfully:', response.data.messageId)
       return { messageId: response.data.messageId }
     } catch (err: unknown) {
-      if (axios.isAxiosError(err)) {
-        if (err.response) {
-          const errorResponse = err.response as AxiosErrorResponse
-          logError('[SecureEmailService] API error:', {
-            status: errorResponse.status,
-            data: errorResponse.data
-          })
-          throw new Error(`SendinBlue API error: ${errorResponse.status} - ${JSON.stringify(errorResponse.data)}`)
-        } else if (err.request) {
-          logError('[SecureEmailService] Network error:', err.message)
-          throw new Error(`SendinBlue network error: ${err.message}`)
-        }
-      }
-      logError('[SecureEmailService] Unexpected error:', err)
+      logError('[SecureEmailService] Email delivery failed')
       throw err
     }
   }

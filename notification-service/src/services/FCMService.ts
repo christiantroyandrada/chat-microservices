@@ -19,7 +19,7 @@ function getFirebaseApp(): App | undefined {
     return initializedApp
   } catch (err) {
     logError('[FCMService] Failed to initialize Firebase Admin SDK:', err)
-    return undefined
+    throw err
   }
 }
 
@@ -41,10 +41,13 @@ export const FCMService = {
     }
 
     try {
-      await getMessaging(app).send(payload)
+      const messageId = await getMessaging(app).send(payload)
+      if (typeof messageId !== 'string' || !messageId.trim()) throw new Error('Provider acceptance missing')
       logInfo('Push notification sent successfully')
+      return messageId
     } catch (err) {
       logError('Error sending notification', err)
+      throw err
     }
   },
 }

@@ -119,9 +119,10 @@ describe('SecureEmailService', () => {
   })
 
   test('creates one secure SMTP transport and sends buffered CID attachments', async () => {
+    emailConfig().SENDINBLUE_APIKEY = undefined
     emailConfig().smtp = { host: 'smtp.chat.example', pass: 'smtp-pass', port: '465', user: 'smtp-user' }
     const transport = {
-      sendMail: jest.fn().mockResolvedValue({ messageId: '', response: '250 queued' }),
+      sendMail: jest.fn().mockResolvedValue({ messageId: '', response: '250 queued', accepted: ['person@example.com'] }),
     }
     nodemailerBoundary().createTransport.mockReturnValue(transport)
     const service = new (loadService().SecureEmailService)()
@@ -144,6 +145,9 @@ describe('SecureEmailService', () => {
       auth: { user: 'smtp-user', pass: 'smtp-pass' },
       disableFileAccess: true,
       disableUrlAccess: true,
+      connectionTimeout: 4000,
+      greetingTimeout: 4000,
+      socketTimeout: 10000,
     })
     expect(transport.sendMail).toHaveBeenNthCalledWith(1, {
       from: 'Chat Service <noreply@chat.example>',
@@ -158,7 +162,7 @@ describe('SecureEmailService', () => {
 
   test('defaults SMTP to numeric port 587 and disables TLS-only port security elsewhere', async () => {
     emailConfig().smtp = { host: 'smtp.chat.example', pass: 'smtp-pass', port: 0, user: 'smtp-user' }
-    const transport = { sendMail: jest.fn().mockResolvedValue({ messageId: 'smtp-message-2' }) }
+    const transport = { sendMail: jest.fn().mockResolvedValue({ messageId: 'smtp-message-2', accepted: ['person@example.com'] }) }
     nodemailerBoundary().createTransport.mockReturnValue(transport)
     const service = new (loadService().SecureEmailService)()
 
@@ -172,6 +176,9 @@ describe('SecureEmailService', () => {
       auth: { user: 'smtp-user', pass: 'smtp-pass' },
       disableFileAccess: true,
       disableUrlAccess: true,
+      connectionTimeout: 4000,
+      greetingTimeout: 4000,
+      socketTimeout: 10000,
     })
   })
 
@@ -206,12 +213,21 @@ describe('SecureEmailService', () => {
     httpClient.post.mockRejectedValueOnce(unexpected)
 
     await expect(service.sendTransactionalEmail('person@example.com', 'Subject', '<p>Body</p>'))
-      .rejects.toThrow('SendinBlue API error: 401 - {"code":"invalid-key"}')
+      .rejects.toMatchObject({ response: { status: 401, data: { code: 'invalid-key' } } })
     await expect(service.sendTransactionalEmail('person@example.com', 'Subject', '<p>Body</p>'))
-      .rejects.toThrow('SendinBlue network error: socket closed')
+      .rejects.toMatchObject({ request: {}, message: 'socket closed' })
     axiosBoundary().isAxiosError.mockReturnValue(false)
     await expect(service.sendTransactionalEmail('person@example.com', 'Subject', '<p>Body</p>'))
       .rejects.toBe(unexpected)
+  })
+
+  test('does not claim acceptance without provider confirmation', async () => {
+    const service = new (loadService().SecureEmailService)()
+    httpClient.post.mockResolvedValue({ data: {} })
+    await expect(service.sendTransactionalEmail('person@example.com', 'Subject', '<p>Body</p>')).rejects.toThrow('Provider acceptance missing')
+    emailConfig().smtp = { host: 'smtp.chat.example', pass: 'smtp-pass', port: 587, user: 'smtp-user' }
+    nodemailerBoundary().createTransport.mockReturnValue({ sendMail: jest.fn().mockResolvedValue({ accepted: [], rejected: ['person@example.com'] }) })
+    await expect(service.sendTransactionalEmail('person@example.com', 'Subject', '<p>Body</p>')).rejects.toMatchObject({ code: 'EENVELOPE', responseCode: 550 })
   })
 
   test('keeps account lookup and compatibility wrapper behavior', async () => {

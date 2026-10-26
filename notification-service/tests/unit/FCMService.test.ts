@@ -85,8 +85,8 @@ describe('FCMService.sendPushNotification', () => {
     firebaseMessaging().getMessaging.mockReturnValue({ send })
     const { FCMService } = loadService()
 
-    await expect(FCMService.sendPushNotification('device-token', 'Encrypted preview', { conversationId: 'c-1' })).resolves.toBeUndefined()
-    await expect(FCMService.sendPushNotification('device-token', 'Follow up')).resolves.toBeUndefined()
+    await expect(FCMService.sendPushNotification('device-token', 'Encrypted preview', { conversationId: 'c-1' })).resolves.toBe('message-1')
+    await expect(FCMService.sendPushNotification('device-token', 'Follow up')).resolves.toBe('message-1')
 
     expect(firebaseApp().getApps).toHaveBeenCalledTimes(2)
     expect(firebaseApp().applicationDefault).toHaveBeenCalledTimes(1)
@@ -112,7 +112,7 @@ describe('FCMService.sendPushNotification', () => {
     const send = jest.fn().mockResolvedValue('message-2')
     firebaseMessaging().getMessaging.mockReturnValue({ send })
 
-    await expect(loadService().FCMService.sendPushNotification('device-token', 'Hello', {})).resolves.toBeUndefined()
+    await expect(loadService().FCMService.sendPushNotification('device-token', 'Hello', {})).resolves.toBe('message-2')
 
     expect(firebaseApp().initializeApp).not.toHaveBeenCalled()
     expect(firebaseApp().applicationDefault).not.toHaveBeenCalled()
@@ -130,7 +130,7 @@ describe('FCMService.sendPushNotification', () => {
     firebaseApp().getApps.mockReturnValue([namedApp])
     firebaseMessaging().getMessaging.mockReturnValue({ send })
 
-    await expect(loadService().FCMService.sendPushNotification('device-token', 'Hello')).resolves.toBeUndefined()
+    await expect(loadService().FCMService.sendPushNotification('device-token', 'Hello')).resolves.toBe('message-3')
 
     expect(firebaseApp().initializeApp).not.toHaveBeenCalled()
     expect(firebaseApp().applicationDefault).not.toHaveBeenCalled()
@@ -155,8 +155,8 @@ describe('FCMService.sendPushNotification', () => {
     firebaseMessaging().getMessaging.mockReturnValue({ send })
     const { FCMService } = loadService()
 
-    await expect(FCMService.sendPushNotification('device-token', 'Before deletion')).resolves.toBeUndefined()
-    await expect(FCMService.sendPushNotification('device-token', 'After deletion')).resolves.toBeUndefined()
+    await expect(FCMService.sendPushNotification('device-token', 'Before deletion')).resolves.toBe('message-4')
+    await expect(FCMService.sendPushNotification('device-token', 'After deletion')).resolves.toBe('message-4')
 
     expect(firebaseApp().applicationDefault).toHaveBeenCalledTimes(1)
     expect(firebaseApp().initializeApp).toHaveBeenCalledWith({ credential })
@@ -176,8 +176,8 @@ describe('FCMService.sendPushNotification', () => {
     const { logError } = jest.requireMock('../../src/utils/logger') as { logError: jest.Mock }
     const { FCMService } = loadService()
 
-    await expect(FCMService.sendPushNotification('device-token', 'First try')).resolves.toBeUndefined()
-    await expect(FCMService.sendPushNotification('device-token', 'Second try')).resolves.toBeUndefined()
+    await expect(FCMService.sendPushNotification('device-token', 'First try')).rejects.toThrow('credential unavailable')
+    await expect(FCMService.sendPushNotification('device-token', 'Second try')).resolves.toBe('message-3')
 
     expect(firebaseApp().initializeApp).toHaveBeenCalledTimes(2)
     expect(send).toHaveBeenCalledTimes(1)
@@ -188,7 +188,7 @@ describe('FCMService.sendPushNotification', () => {
     expect(logError).toHaveBeenCalledWith('[FCMService] Failed to initialize Firebase Admin SDK:', expect.any(Error))
   })
 
-  test('contains a messaging send failure and resolves the caller', async () => {
+  test('propagates a messaging send failure', async () => {
     process.env.GOOGLE_APPLICATION_CREDENTIALS = '/tmp/firebase-service-account.json'
     firebaseApp().applicationDefault.mockReturnValue({ kind: 'application-default' })
     firebaseApp().initializeApp.mockReturnValue({ name: '[DEFAULT]' })
@@ -196,7 +196,7 @@ describe('FCMService.sendPushNotification', () => {
     firebaseMessaging().getMessaging.mockReturnValue({ send })
     const { logError } = jest.requireMock('../../src/utils/logger') as { logError: jest.Mock }
 
-    await expect(loadService().FCMService.sendPushNotification('device-token', 'Hello')).resolves.toBeUndefined()
+    await expect(loadService().FCMService.sendPushNotification('device-token', 'Hello')).rejects.toThrow('messaging unavailable')
 
     expect(logError).toHaveBeenCalledWith('Error sending notification', expect.any(Error))
   })
