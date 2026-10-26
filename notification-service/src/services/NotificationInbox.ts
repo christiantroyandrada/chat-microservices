@@ -99,7 +99,10 @@ export class NotificationInbox {
       }
       const [existing] = await manager.query('SELECT canonical = $2::jsonb AS matches FROM notification_inbox WHERE "eventKey" = $1', [event.eventKey, JSON.stringify(event.canonical)])
       if (!existing?.matches) throw new PermanentNotificationError('Notification event identity conflict')
-      await manager.query('UPDATE notification_inbox SET advisory = advisory || $2::jsonb WHERE "eventKey" = $1', [event.eventKey, JSON.stringify(event.advisory)])
+      await manager.query(`UPDATE notification_inbox SET advisory = advisory || $2::jsonb,
+        "emailAvailableAt" = CASE WHEN "emailState" = 'deferred' THEN NOW() ELSE "emailAvailableAt" END,
+        "pushAvailableAt" = CASE WHEN "pushState" = 'deferred' THEN NOW() ELSE "pushAvailableAt" END
+        WHERE "eventKey" = $1 AND advisory IS DISTINCT FROM (advisory || $2::jsonb)`, [event.eventKey, JSON.stringify(event.advisory)])
       return 'duplicate'
     })
   }

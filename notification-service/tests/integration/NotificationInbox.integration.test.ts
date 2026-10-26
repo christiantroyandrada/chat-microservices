@@ -7,13 +7,17 @@ import { randomUUID } from 'node:crypto'
 import { Notification, NotificationType } from '../../src/database/models/NotificationModel'
 import { InitialSchema1733150000000 } from '../../src/database/migrations/1733150000000-InitialSchema'
 import { AddNotificationInbox1792627200000 } from '../../src/database/migrations/1792627200000-AddNotificationInbox'
+import { AddNotificationDelivery1792800000000 } from '../../src/database/migrations/1792800000000-AddNotificationDelivery'
 import { NotificationInbox, PermanentNotificationError } from '../../src/services/NotificationInbox'
 import NotificationController from '../../src/controllers/NotificationController'
 import { AppDataSource } from '../../src/database'
 
 const url = process.env.NOTIFICATION_INTEGRATION_DATABASE_URL
 if (url !== 'postgresql://task7@127.0.0.1:55447/task7_notification_20261022') throw new Error('Explicit Task7 isolated database required')
-const database = new DataSource({ type: 'postgres', url, entities: [Notification], migrations: [InitialSchema1733150000000, AddNotificationInbox1792627200000], migrationsTableName: 'typeorm_migrations_notif', synchronize: false })
+const schema = `task7b_inbox_${randomUUID().replace(/-/g, '')}`
+const admin = new DataSource({ type: 'postgres', url })
+const extra = { options: `-c search_path=${schema},public`, connectionTimeoutMillis: 2000 }
+const database = new DataSource({ type: 'postgres', url, schema, extra, entities: [Notification], migrations: [InitialSchema1733150000000, AddNotificationInbox1792627200000, AddNotificationDelivery1792800000000], migrationsTableName: 'typeorm_migrations_notif', synchronize: false })
 const inbox = new NotificationInbox(database)
 const userId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
 const envelope = ' {"__encrypted":true,"body":"fixture-cipher"} '
@@ -26,12 +30,14 @@ async function guard() {
   expect(container.HostConfig.Tmpfs).toEqual({ '/var/lib/postgresql/data': 'rw' })
   expect(container.Mounts).toEqual([])
   expect(container.HostConfig.PortBindings).toEqual({ '5432/tcp': [{ HostIp: '127.0.0.1', HostPort: '55447' }] })
-  const [identity] = await database.query('SELECT current_database() AS database, current_user AS role, inet_server_port() AS port')
+  const [identity] = await admin.query('SELECT current_database() AS database, current_user AS role, inet_server_port() AS port')
   expect(identity).toEqual({ database: 'task7_notification_20261022', role: 'task7', port: 5432 })
 }
 beforeAll(async () => {
-  await database.initialize()
+  await admin.initialize()
   await guard()
+  await admin.query(`CREATE SCHEMA ${schema}`)
+  await database.initialize()
   const runner = database.createQueryRunner()
   try { await new InitialSchema1733150000000().up(runner) }
   finally { await runner.release() }
@@ -41,7 +47,10 @@ beforeAll(async () => {
 })
 beforeEach(async () => { await guard(); await database.query('TRUNCATE notification_inbox, notifications') })
 afterEach(() => jest.restoreAllMocks())
-afterAll(async () => { if (database.isInitialized) await database.destroy() })
+afterAll(async () => {
+  if (database.isInitialized) await database.destroy()
+  if (admin.isInitialized) { await guard(); await admin.query(`DROP SCHEMA ${schema} CASCADE`); await admin.destroy() }
+})
 
 test('concurrent receipts create one visible row and one durable identity', async () => {
   const payload = event()
@@ -93,6 +102,48 @@ test('advisory replay preserves exact canonical bytes, receipt time, and visible
   const visible = await database.getRepository(Notification).findOneByOrFail({ userId })
   expect(visible.read).toBe(true)
   expect(Object.keys(visible).sort()).toEqual(['createdAt', 'id', 'message', 'read', 'title', 'type', 'updatedAt', 'userId'])
+})
+
+test.each(['pending', 'retry', 'deferred', 'sent', 'failed', 'skipped'])('replay preserves %s providers and wakes only deferred providers', async state => {
+  const payload = event({ userEmail: 'first@fixture.invalid', userToken: 'first-token', recipientOnline: false })
+  await inbox.accept(payload)
+  const token = randomUUID()
+  await database.query(`UPDATE notification_inbox SET "emailState" = $1, "pushState" = $1,
+    "emailAttempts" = 3, "pushAttempts" = 4, "emailReason" = 'fixture_reason', "pushReason" = 'fixture_reason',
+    "emailAvailableAt" = clock_timestamp() + interval '1 hour', "pushAvailableAt" = clock_timestamp() + interval '2 hours',
+    "deliveryLeaseToken" = $2, "deliveryLockedAt" = clock_timestamp()`, [state, token])
+  const [before] = await database.query('SELECT * FROM notification_inbox')
+  const replay = { ...payload, userEmail: 'second@fixture.invalid', userToken: undefined }
+  await inbox.accept(replay)
+  const [after] = await database.query('SELECT * FROM notification_inbox')
+  expect(after).toMatchObject({ canonical: before.canonical, receivedAt: before.receivedAt,
+    advisory: { userEmail: 'second@fixture.invalid', userToken: 'first-token', recipientOnline: false },
+    emailState: state, pushState: state, emailAttempts: 3, pushAttempts: 4,
+    emailReason: 'fixture_reason', pushReason: 'fixture_reason', deliveryLeaseToken: token, deliveryLockedAt: before.deliveryLockedAt })
+  const [{ now }] = await database.query('SELECT clock_timestamp() AS now')
+  for (const provider of ['email', 'push']) {
+    if (state === 'deferred') expect(after[`${provider}AvailableAt`].getTime()).toBeLessThanOrEqual(now.getTime())
+    else expect(after[`${provider}AvailableAt`]).toEqual(before[`${provider}AvailableAt`])
+  }
+  await inbox.accept(replay)
+  expect((await database.query('SELECT * FROM notification_inbox'))[0]).toEqual(after)
+})
+
+test('concurrent advisory replay merges both updates without changing delivery ownership', async () => {
+  const payload = event({ userEmail: 'first@fixture.invalid', userToken: 'first-token', recipientOnline: false })
+  await inbox.accept(payload)
+  await database.query(`UPDATE notification_inbox SET "emailState" = 'deferred', "pushState" = 'deferred',
+    "emailAvailableAt" = clock_timestamp() + interval '1 hour', "pushAvailableAt" = clock_timestamp() + interval '1 hour'`)
+  await Promise.all([
+    inbox.accept({ ...payload, userEmail: 'second@fixture.invalid', userToken: undefined }),
+    inbox.accept({ ...payload, userEmail: undefined, userToken: 'second-token' }),
+  ])
+  const [receipt] = await database.query('SELECT * FROM notification_inbox')
+  const [{ now }] = await database.query('SELECT clock_timestamp() AS now')
+  expect(receipt).toMatchObject({ advisory: { userEmail: 'second@fixture.invalid', userToken: 'second-token', recipientOnline: false },
+    emailState: 'deferred', pushState: 'deferred', emailAttempts: 0, pushAttempts: 0, deliveryLeaseToken: null, deliveryLockedAt: null })
+  expect(receipt.emailAvailableAt.getTime()).toBeLessThanOrEqual(now.getTime())
+  expect(receipt.pushAvailableAt.getTime()).toBeLessThanOrEqual(now.getTime())
 })
 
 test('canonical conflict cannot overwrite the receipt or create another notification', async () => {
@@ -154,15 +205,15 @@ test('actual deployment grants allow receipt insertion but deny receipt deletion
     await database.query(`DO $$ BEGIN CREATE ROLE ${role} LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE; EXCEPTION WHEN duplicate_object THEN NULL; END $$`)
   }
   for (const table of ['users', 'prekeys', 'messages', 'outbox_events']) await database.query(`CREATE TABLE IF NOT EXISTS ${table} (id uuid)`)
-  await database.query('GRANT USAGE ON SCHEMA public TO user_svc, chat_svc, notif_svc')
+  await database.query(`GRANT USAGE ON SCHEMA ${schema} TO user_svc, chat_svc, notif_svc`)
   const helper = readFileSync(resolve(__dirname, '../../../deploy/release-backend.sh'), 'utf8').match(/grant_service_tables\(\) \{[\s\S]*?\n\}/)?.[0]
   if (!helper) throw new Error('Known deployment grant helper context does not match')
   const statements = Array.from(helper.matchAll(/-c "((?:REVOKE ALL ON ALL TABLES IN SCHEMA public FROM |ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE ALL ON (?:TABLES|SEQUENCES) FROM |GRANT SELECT, INSERT, UPDATE(?:, DELETE)? ON )[a-zA-Z_, ]+);"/g), match => match[1] + ';')
   if (statements.length !== 7) throw new Error('Known deployment static grant statement count does not match')
-  for (const statement of statements) await database.query(statement)
+  for (const statement of statements) await database.query(statement.replace(/\bpublic\b/g, schema))
   const roleUrl = new URL(url!)
   roleUrl.username = 'notif_svc'
-  const runtime = new DataSource({ type: 'postgres', url: roleUrl.toString(), entities: [Notification] })
+  const runtime = new DataSource({ type: 'postgres', url: roleUrl.toString(), schema, extra, entities: [Notification] })
   await runtime.initialize()
   try {
     const payload = event()
@@ -175,7 +226,7 @@ test('actual deployment grants allow receipt insertion but deny receipt deletion
   } finally { await runtime.destroy() }
   for (const role of ['user_svc', 'chat_svc']) {
     roleUrl.username = role
-    const other = new DataSource({ type: 'postgres', url: roleUrl.toString() })
+    const other = new DataSource({ type: 'postgres', url: roleUrl.toString(), schema, extra })
     await other.initialize()
     try {
       for (const sql of [
