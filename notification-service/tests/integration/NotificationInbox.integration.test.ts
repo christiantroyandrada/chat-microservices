@@ -88,6 +88,28 @@ test('a lost commit response permits replay without another visible notification
   expect(await database.query('SELECT * FROM notification_inbox')).toHaveLength(1)
 })
 
+test('a blocked receipt has a five-second deadline and does not change durable state', async () => {
+  const payload = event({ userEmail: 'first@fixture.invalid' })
+  await inbox.accept(payload)
+  const [before] = await database.query('SELECT * FROM notification_inbox')
+  const holder = database.createQueryRunner()
+  await holder.startTransaction()
+  try {
+    await holder.query('SELECT * FROM notification_inbox WHERE "eventKey" = $1 FOR UPDATE', [before.eventKey])
+    const started = Date.now()
+    const result = await inbox.accept({ ...payload, userEmail: 'second@fixture.invalid' }).catch(error => error)
+    expect(result).toBeInstanceOf(Error)
+    expect(Date.now() - started).toBeLessThan(6500)
+    expect(await database.getRepository(Notification).count()).toBe(1)
+  } finally {
+    await holder.rollbackTransaction()
+    await holder.release()
+  }
+  expect((await database.query('SELECT * FROM notification_inbox'))[0]).toEqual(before)
+  await expect(inbox.accept({ ...payload, userEmail: 'second@fixture.invalid' })).resolves.toBe('duplicate')
+  expect(await database.getRepository(Notification).count()).toBe(1)
+}, 10000)
+
 test('advisory replay preserves exact canonical bytes, receipt time, and visible read state', async () => {
   const payload = event({ userEmail: 'first@fixture.invalid', userToken: 'fixture-token', recipientOnline: false })
   await inbox.accept(payload)

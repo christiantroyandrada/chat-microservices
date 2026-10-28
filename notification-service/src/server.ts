@@ -9,7 +9,8 @@ import { errorMiddleware, errorHandler } from './middleware'
 import config from './config/config'
 import { rabbitMQService } from './services/RabbitMQService'
 import { logInfo, logWarn, logError } from './utils/logger'
-import { connectDB } from './database'
+import { AppDataSource } from './database/connection'
+import { NotificationDeliveryWorker } from './services/NotificationDeliveryWorker'
 import notificationRouter from './routes/notificationRoutes'
 import { requestLogger } from './middleware/requestLogger'
 import { getMetrics, getContentType } from './utils/metrics'
@@ -22,7 +23,7 @@ const validateEnv = () => {
   
   if (missing.length > 0) {
     logError(`[notification-service] FATAL: Missing required environment variables: ${missing.join(', ')}`)
-    process.exit(1)
+    throw new Error('Missing required notification configuration')
   }
   
   // Warn if email credentials are missing (optional but recommended)
@@ -31,10 +32,12 @@ const validateEnv = () => {
   }
 }
 
-validateEnv()
-
-const app: Express = express()
-let server: Server
+export const app: Express = express()
+const worker = new NotificationDeliveryWorker()
+let server: Server | undefined
+let startupPromise: Promise<void> | undefined
+let shutdownPromise: Promise<void> | undefined
+let shuttingDown = false
 
 app.disable('x-powered-by')
 // Trust the first proxy hop — required for express-rate-limit to read the
@@ -112,8 +115,7 @@ app.use(cookieParser()) // Parse cookies to read JWT from httpOnly cookies
 
 app.get('/health', async (_req, res) => {
   try {
-    const { AppDataSource } = await import('./database/connection')
-    const healthy = AppDataSource.isInitialized && rabbitMQService.isHealthy()
+    const healthy = !shuttingDown && AppDataSource.isInitialized && rabbitMQService.isHealthy() && worker.isHealthy()
     return res.status(healthy ? 200 : 503).json({ status: healthy ? 'ok' : 'degraded' })
   } catch (err) {
     logError('[notification-service] Health check error:', err)
@@ -137,72 +139,109 @@ app.use('/notifications', notificationRouter)
 app.use(errorMiddleware)
 app.use(errorHandler)
 
-const start = async () => {
-  // Connect to database (as the non-superuser runtime role notif_svc)
-  await connectDB()
-
-  // NOTE: migrations are applied by the dedicated `notification-migrate` step
-  // (as admin) before this service starts — the runtime role has no DDL rights.
-
-  server = app.listen(config.PORT, () => {
-    logInfo(`[notification-service] Server is running on port ${config.PORT}`)
-  })
-
-  // Initialize RabbitMQ client for message queue consumption
-  await initializeRabbitMQClient()
+export function start(): Promise<void> {
+  if (startupPromise) return startupPromise
+  if (shuttingDown) return Promise.reject(new Error('Notification service is shutting down'))
+  startupPromise = startResources()
+  return startupPromise
 }
 
-const initializeRabbitMQClient = async () => {
-  const maxRetries = 5
-  for (let attempt = 1; attempt <= maxRetries; attempt++) {
-    try {
-      await rabbitMQService.connect()
-      logInfo('[notification-service] RabbitMQ client initialized. now listening...')
-      return
-    } catch (e) {
-      if (attempt < maxRetries) {
-        const delay = 2000 * attempt
-        logWarn(`[notification-service] RabbitMQ connection attempt ${attempt}/${maxRetries} failed, retrying in ${delay}ms...`)
-        await new Promise(r => setTimeout(r, delay))
-      } else {
-        logError(`[notification-service] Failed to initialize RabbitMQ client after all retries: ${e}`)
-      }
-    }
-  }
-}
-
-start().catch(err => {
-  logError('[notification-service] Failed to start:', err)
-  process.exit(1)
-})
-
-const gracefulShutdown = async (signal: string) => {
-  logInfo(`[notification-service] ${signal} received. Starting graceful shutdown...`)
+async function startResources(): Promise<void> {
   try {
-    if (server) {
-      await new Promise<void>((resolve) => server.close(() => resolve()))
-      logInfo('[notification-service] HTTP server closed')
-    }
-    await rabbitMQService.disconnect()
-    const { AppDataSource } = await import('./database/connection')
-    if (AppDataSource.isInitialized) {
-      await AppDataSource.destroy()
-      logInfo('[notification-service] Database connection closed')
-    }
-    logInfo('[notification-service] Graceful shutdown complete')
-    process.exit(0)
-  } catch (err) {
-    logError('[notification-service] Error during graceful shutdown:', err)
-    process.exit(1)
+    validateEnv()
+    await AppDataSource.initialize()
+    if (shuttingDown) return
+    worker.start()
+    await new Promise<void>((resolve, reject) => {
+      const failed = (error: Error) => reject(error)
+      server = app.listen(config.PORT, () => {
+        server?.off('error', failed)
+        logInfo(`[notification-service] Server is running on port ${config.PORT}`)
+        resolve()
+      })
+      server.once('error', failed)
+    })
+    if (shuttingDown) return
+    void rabbitMQService.connect().catch(() => logError('[notification-service] Initial RabbitMQ connection failed; recovery remains active'))
+  } catch (error) {
+    process.exitCode = 1
+    // The failing startup must not wait for a shutdown that joins this startup.
+    if (!shuttingDown) await requestShutdown('STARTUP_FAILURE', false)
+    throw error
   }
 }
 
-const unexpectedErrorHandler = (error: unknown) => {
-  logError('[notification-service]: Uncaught Exception', error)
-  gracefulShutdown('UNCAUGHT_EXCEPTION').catch(() => process.exit(1))
+async function attemptCleanup(work: () => Promise<void>): Promise<void> {
+  try { await work() }
+  catch (error) {
+    process.exitCode = 1
+    logError('[notification-service] Cleanup failed:', error)
+  }
 }
 
-process.on('SIGTERM', () => gracefulShutdown('SIGTERM'))
-process.on('SIGINT', () => gracefulShutdown('SIGINT'))
-process.on('uncaughtException', unexpectedErrorHandler)
-process.on('unhandledRejection', unexpectedErrorHandler)
+function closeHttp(): Promise<void> {
+  const current = server
+  server = undefined
+  if (!current) return Promise.resolve()
+  return new Promise<void>((resolve, reject) => {
+    let finished = false
+    const finish = (error?: Error) => {
+      if (finished) return
+      finished = true
+      clearTimeout(timeout)
+      if (error) reject(error)
+      else resolve()
+    }
+    const timeout = setTimeout(() => {
+      try { current.closeAllConnections() }
+      finally { finish(new Error('Notification HTTP drain timed out')) }
+    }, 5000)
+    timeout.unref?.()
+    try {
+      current.close(finish)
+      current.closeIdleConnections()
+    } catch (error) { finish(error as Error) }
+  })
+}
+
+export function gracefulShutdown(signal: string): Promise<void> {
+  return requestShutdown(signal, true)
+}
+
+function requestShutdown(signal: string, joinStartup: boolean): Promise<void> {
+  if (shutdownPromise) return shutdownPromise
+  shuttingDown = true
+  logInfo(`[notification-service] ${signal} received. Starting graceful shutdown...`)
+  // An unconfirmed provider child can survive completed drains. Clean processes exit naturally.
+  const watchdog = setTimeout(() => {
+    process.exitCode = 1
+    process.exit(1)
+  }, 30000)
+  watchdog.unref?.()
+  const workerStopped = attemptCleanup(() => worker.stop())
+  const brokerStopped = attemptCleanup(() => rabbitMQService.disconnect())
+  shutdownPromise = (async () => {
+    if (joinStartup) await startupPromise?.catch(() => undefined)
+    await Promise.all([workerStopped, brokerStopped, attemptCleanup(closeHttp)])
+    if (AppDataSource.isInitialized) await attemptCleanup(() => AppDataSource.destroy())
+    logInfo('[notification-service] Graceful shutdown complete')
+  })()
+  return shutdownPromise
+}
+
+if (require.main === module) {
+  const unexpectedErrorHandler = (error: unknown) => {
+    logError('[notification-service] Unexpected error:', error)
+    process.exitCode = 1
+    void gracefulShutdown('UNEXPECTED_ERROR')
+  }
+  process.on('SIGTERM', () => { void gracefulShutdown('SIGTERM') })
+  process.on('SIGINT', () => { void gracefulShutdown('SIGINT') })
+  process.on('uncaughtException', unexpectedErrorHandler)
+  process.on('unhandledRejection', unexpectedErrorHandler)
+  void start().catch(error => {
+    logError('[notification-service] Failed to start:', error)
+    process.exitCode = 1
+    void gracefulShutdown('STARTUP_FAILURE')
+  })
+}

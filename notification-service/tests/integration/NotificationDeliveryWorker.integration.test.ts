@@ -464,6 +464,8 @@ test('unconfirmed termination permanently stops new work and joins the active si
     await sibling.promise
     return sent
   }))
+  current.start()
+  expect(current.isHealthy()).toBe(true)
   let finished = false
   const pending = current.runOnce().finally(() => { finished = true })
   // Attach rejection handling before releasing the fatal callback.
@@ -473,7 +475,10 @@ test('unconfirmed termination permanently stops new work and joins the active si
   expect(finished).toBe(false)
   sibling.release()
   expect(await result).toMatchObject({ code: 'PROVIDER_TERMINATION_UNCONFIRMED' })
-  await current.runOnce(); current.start(); await current.stop()
+  expect(current.isHealthy()).toBe(false)
+  await current.runOnce(); current.start()
+  expect(current.isHealthy()).toBe(false)
+  await current.stop()
   expect(dispatch).toHaveBeenCalledTimes(2)
   const rows = await Promise.all(values.map(value => row(value.eventKey)))
   expect(rows.filter(value => value.deliveryLeaseToken !== null)).toHaveLength(1)

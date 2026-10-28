@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { DataSource } from 'typeorm'
 import { AppDataSource } from '../database/connection'
+import { notificationTransaction } from '../database/notificationTransaction'
 import { Notification, NotificationType } from '../database/models/NotificationModel'
 
 export class PermanentNotificationError extends Error {}
@@ -87,7 +88,7 @@ export class NotificationInbox {
   async accept(payload: unknown, messageId?: string): Promise<'inserted' | 'duplicate' | 'ignored'> {
     const event = normalize(payload, messageId)
     if (!event) return 'ignored'
-    return this.database.transaction(async manager => {
+    return notificationTransaction(this.database, async manager => {
       const inserted = await manager.query(`
         INSERT INTO notification_inbox ("eventKey", canonical, advisory)
         VALUES ($1, $2::jsonb, $3::jsonb)

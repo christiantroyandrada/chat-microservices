@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import type { DataSource, EntityManager } from 'typeorm'
 import { AppDataSource } from '../database/connection'
+import { notificationTransaction } from '../database/notificationTransaction'
 import config from '../config/config'
 import { APP_URL, LOGO_URL } from '../config/constants'
 import { loadTemplate, renderTemplate } from './EmailTemplateService'
@@ -42,6 +43,8 @@ export class NotificationDeliveryWorker {
     this.running = true
     this.schedule(0)
   }
+
+  isHealthy(): boolean { return this.running && !this.stopped }
 
   async stop(): Promise<void> {
     this.stopped = true
@@ -201,36 +204,7 @@ export class NotificationDeliveryWorker {
     })
   }
 
-  private async transaction<T>(work: (manager: EntityManager) => Promise<T>): Promise<T> {
-    const runner = this.database.createQueryRunner()
-    let client: { end(): Promise<void> } | undefined
-    let timeout: NodeJS.Timeout | undefined
-    let timedOut: Error | undefined
-    let forcedClose: Promise<void> | undefined
-    let workError: unknown
-    try {
-      client = await runner.connect() as { end(): Promise<void> }
-      timeout = setTimeout(() => {
-        timedOut = new Error('Notification delivery database operation timed out')
-        try { forcedClose = client?.end().catch(() => undefined) } catch { forcedClose = Promise.resolve() }
-      }, 5000)
-      timeout.unref?.()
-      await runner.startTransaction()
-      let result: T
-      try {
-        await runner.manager.query("SET LOCAL statement_timeout = '5000ms'")
-        result = await work(runner.manager)
-      } catch (error) { workError = error; throw error }
-      await runner.commitTransaction()
-      return result
-    } catch (error) {
-      const failure = workError ?? timedOut ?? error
-      if (runner.isTransactionActive) await runner.rollbackTransaction().catch(() => undefined)
-      throw failure
-    } finally {
-      if (timeout) clearTimeout(timeout)
-      if (forcedClose) await forcedClose
-      await runner.release().catch(() => undefined)
-    }
+  private transaction<T>(work: (manager: EntityManager) => Promise<T>): Promise<T> {
+    return notificationTransaction(this.database, work, 'Notification delivery database operation timed out')
   }
 }
