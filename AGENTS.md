@@ -18,3 +18,15 @@ Use these rules for AI-facing content:
 - Keep requirements, identifiers, commands, and recorded evidence exact.
 - If full vocabulary review is incomplete, state that limit.
 - Do not claim certified compliance from a sentence-length check.
+
+## Verification
+
+- Select checks from user outcomes, API contracts, database effects, and failure risks.
+- Prefer accessible roles and labels for browser actions. Use explicit test IDs when a stable testing contract requires them.
+- Verify persistence and authorization after actions. A success response or toast alone is insufficient.
+- Keep targeted transaction, concurrency, cryptographic, deadline, and rollback regression checks.
+- Run affected verification gates under the required runtime before completion. Run the complete release gate before release.
+- If a check fails, diagnose the application, fixture, runner, and environment before changing code.
+- Do not weaken assertions, suppress failures, or delete tests to reach a test-count ratio.
+- Record commands, versions, exit codes, mocked boundaries, and unresolved intermittent failures.
+- Review external scanners before adoption. Exposure and header scans do not replace authenticated access-control checks.
