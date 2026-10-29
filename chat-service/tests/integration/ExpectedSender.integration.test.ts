@@ -13,6 +13,8 @@ const { randomUUID } = require('node:crypto') as typeof import('node:crypto')
 const { DataSource } = require('typeorm') as typeof import('typeorm')
 const jwt = require('jsonwebtoken') as typeof import('jsonwebtoken')
 const { AppDataSource } = require('../../src/database') as typeof import('../../src/database')
+const { rabbitMQService } = require('../../src/services/RabbitMQService') as typeof import('../../src/services/RabbitMQService')
+const { clearUserDetailCache } = require('../../src/controllers/MessageController') as typeof import('../../src/controllers/MessageController')
 const { default: app } = require('../../src/app') as typeof import('../../src/app')
 const schema = `task8_sender_${randomUUID().replace(/-/g, '')}`
 const admin = new DataSource({ type: 'postgres', url, installExtensions: false })
@@ -51,6 +53,12 @@ beforeAll(async () => {
   origin = 'http://127.0.0.1:' + (http.address() as import('node:net').AddressInfo).port
 })
 beforeEach(async () => { await guard(); await AppDataSource.query(`TRUNCATE ${schema}.outbox_events, ${schema}.messages`) })
+beforeEach(() => {
+  clearUserDetailCache()
+  jest.mocked(rabbitMQService.getUserDetails).mockImplementation(async (_id, callback) => callback(null))
+  jest.clearAllMocks()
+})
+afterEach(() => jest.restoreAllMocks())
 afterAll(async () => {
   if (http) await new Promise<void>((resolve, reject) => http!.close(error => error ? reject(error) : resolve()))
   if (AppDataSource.isInitialized) await AppDataSource.destroy()
@@ -75,6 +83,61 @@ async function state() {
     events: await AppDataSource.query(`SELECT * FROM ${schema}.outbox_events ORDER BY id`),
   }
 }
+
+async function request(path: string, user: string, method = 'GET') {
+  const response = await fetch(origin + path, {
+    method,
+    headers: { cookie: 'jwt=' + jwt.sign({ id: user, username: 'Sender', email: 'sender@example.test' }, process.env.JWT_SECRET!) },
+  })
+  return { status: response.status, body: await response.json() as any }
+}
+
+const accountRoutes = [
+  ['/conversations', 'GET'],
+  ['/get/' + receiverId, 'GET'],
+  ['/messages/read/' + receiverId, 'PUT'],
+] as const
+
+it.each(accountRoutes)('rejects account B for account A at %s before native repository or profile access even with empty results', async (path, method) => {
+  const repository = jest.spyOn(AppDataSource, 'getRepository')
+  const response = await request(path + '?expectedUserId=' + senderId, otherId, method)
+  expect({ status: response.status, repositoryCalls: repository.mock.calls.length, profileCalls: jest.mocked(rabbitMQService.getUserDetails).mock.calls.length }).toEqual({ status: 403, repositoryCalls: 0, profileCalls: 0 })
+})
+
+it.each(accountRoutes.slice(0, 2))('rejects account B populated data at %s before native repository or profile access', async (path, method) => {
+  expect((await rest({ receiverId: otherId, message: envelope }, receiverId)).status).toBe(200)
+  const repository = jest.spyOn(AppDataSource, 'getRepository')
+  const response = await request(path + '?expectedUserId=' + senderId, otherId, method)
+  expect({ status: response.status, repositoryCalls: repository.mock.calls.length, profileCalls: jest.mocked(rabbitMQService.getUserDetails).mock.calls.length }).toEqual({ status: 403, repositoryCalls: 0, profileCalls: 0 })
+})
+
+it('preserves both accounts read states when account B cookie replaces account A before markAsRead', async () => {
+  for (const target of [senderId, otherId]) expect((await rest({ receiverId: target, message: envelope }, receiverId)).status).toBe(200)
+  const before = await state()
+  const response = await request('/messages/read/' + receiverId + '?expectedUserId=' + senderId, otherId, 'PUT')
+  expect({ status: response.status, ...await state() }).toEqual({ status: 403, ...before })
+})
+
+it.each(accountRoutes)('rejects malformed and repeated expectedUserId at %s without repository access', async (path, method) => {
+  const repository = jest.spyOn(AppDataSource, 'getRepository')
+  for (const query of ['expectedUserId=', 'expectedUserId=null', 'expectedUserId=invalid', 'expectedUserId=' + encodeURIComponent(' ' + senderId + ' '), 'expectedUserId=' + senderId + '&expectedUserId=' + senderId]) {
+    const response = await request(path + '?' + query, senderId, method)
+    expect({ status: response.status, repositoryCalls: repository.mock.calls.length }).toEqual({ status: 400, repositoryCalls: 0 })
+  }
+})
+
+it.each([false, true])('accepts matching case-normalized account preconditions and legacy omission %p for GET and read mutation', async legacy => {
+  for (const target of [senderId, otherId]) expect((await rest({ receiverId: target, message: envelope }, receiverId)).status).toBe(200)
+  const query = legacy ? '' : '?expectedUserId=' + senderId.toUpperCase()
+  const conversations = await request('/conversations' + query, senderId.toUpperCase())
+  expect(conversations).toMatchObject({ status: 200, body: { data: [{ id: receiverId, unreadCount: 1 }] } })
+  const history = await request('/get/' + receiverId.toUpperCase() + query, senderId.toUpperCase())
+  expect(history).toMatchObject({ status: 200, body: { data: [{ senderId: receiverId, receiverId: senderId, message: envelope, status: 'NotDelivered' }] } })
+  expect(await request('/messages/read/' + receiverId.toUpperCase() + query, senderId.toUpperCase(), 'PUT')).toMatchObject({ status: 200, body: { data: { modifiedCount: 1 } } })
+  const stored = await state()
+  expect(stored.messages.find((message: any) => message.receiverId === senderId).status).toBe('Seen')
+  expect(stored.messages.find((message: any) => message.receiverId === otherId).status).toBe('NotDelivered')
+})
 
 it('rejects account B authentication for account A command with zero native messages and outbox events', async () => {
   const response = await rest({ expectedSenderId: senderId, receiverId, message: envelope, clientMessageId: randomUUID() }, otherId)

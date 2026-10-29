@@ -402,6 +402,16 @@
             }
           },
           {
+            "name": "expectedUserId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Optional account precondition. A mismatch with the authenticated user returns 403 before data access."
+          },
+          {
             "name": "limit",
             "in": "query",
             "schema": {
@@ -434,7 +444,7 @@
             }
           },
           "400": {
-            "description": "Invalid pagination parameters",
+            "description": "Invalid pagination or account precondition",
             "content": {
               "application/json": {
                 "schema": {
@@ -445,6 +455,16 @@
           },
           "401": {
             "description": "Authentication required"
+          },
+          "403": {
+            "description": "Expected user does not match authenticated user",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         }
       }
@@ -462,6 +482,18 @@
             "cookieAuth": []
           }
         ],
+        "parameters": [
+          {
+            "name": "expectedUserId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Optional account precondition. A mismatch with the authenticated user returns 403 before data access."
+          }
+        ],
         "responses": {
           "200": {
             "description": "Conversation list (most recent first)",
@@ -473,8 +505,28 @@
               }
             }
           },
+          "400": {
+            "description": "Invalid account precondition",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "401": {
             "description": "Authentication required"
+          },
+          "403": {
+            "description": "Expected user does not match authenticated user",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         }
       }
@@ -501,6 +553,16 @@
               "type": "string",
               "format": "uuid"
             }
+          },
+          {
+            "name": "expectedUserId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Optional account precondition. A mismatch with the authenticated user returns 403 before data access."
           }
         ],
         "responses": {
@@ -514,8 +576,28 @@
               }
             }
           },
+          "400": {
+            "description": "Invalid sender ID or account precondition",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "401": {
             "description": "Authentication required"
+          },
+          "403": {
+            "description": "Expected user does not match authenticated user",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         }
       }

@@ -11,6 +11,11 @@ function requestRef(path: string, method: 'post'): string | undefined {
 }
 
 describe('chat-service OpenAPI contract', () => {
+  it.each([['/conversations', 'get'], ['/get/{receiverId}', 'get'], ['/messages/read/{senderId}', 'put']])('publishes optional expectedUserId and rejection contracts for %s', (path, method) => {
+    const operation = (spec.paths as Record<string, Record<string, any>>)[path][method]
+    expect(operation.parameters).toContainEqual({ name: 'expectedUserId', in: 'query', required: false, schema: { type: 'string', format: 'uuid' }, description: 'Optional account precondition. A mismatch with the authenticated user returns 403 before data access.' })
+    for (const status of ['400', '403']) expect(operation.responses[status].content['application/json'].schema).toEqual({ $ref: '#/components/schemas/Error' })
+  })
   it('uses the runtime message status values', () => {
     const message = (spec.components.schemas as Record<string, any>).Message
     expect(message.properties.status.enum).toEqual(['NotDelivered', 'Delivered', 'Seen'])

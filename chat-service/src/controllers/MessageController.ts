@@ -21,6 +21,16 @@ const userDetailCache = new LRUCache<string, CachedUserDetail>({
 });
 const messageSubmission = new MessageSubmissionService()
 
+const validateExpectedIdentity = (expectedId: unknown, authenticatedId: string, subject: 'user' | 'sender' = 'user') => {
+  if (expectedId === undefined) return;
+  if (typeof expectedId !== 'string' || !UUID.test(expectedId)) {
+    throw new APIError(400, `Expected ${subject} ID must be a valid UUID`);
+  }
+  if (canonicalUserId(expectedId) !== canonicalUserId(authenticatedId)) {
+    throw new APIError(403, `Expected ${subject} does not match authenticated user`);
+  }
+};
+
 /** Clear the user detail cache — exposed for testing */
 export const clearUserDetailCache = () => userDetailCache.clear();
 
@@ -87,14 +97,7 @@ const sendMessage = async (
     const { receiverId, message, clientMessageId, expectedSenderId } = req.body;
     const { _id, email, username } = req.user;
 
-    if (expectedSenderId !== undefined) {
-      if (typeof expectedSenderId !== 'string' || !UUID.test(expectedSenderId)) {
-        throw new APIError(400, 'Expected sender ID must be a valid UUID');
-      }
-      if (canonicalUserId(expectedSenderId) !== canonicalUserId(_id)) {
-        throw new APIError(403, 'Expected sender does not match authenticated user');
-      }
-    }
+    validateExpectedIdentity(expectedSenderId, _id, 'sender');
 
     validateReceiver(_id, receiverId);
 
@@ -174,6 +177,7 @@ const fetchConversation = async (
   next: NextFunction,
 ) => {
   try {
+    validateExpectedIdentity(req.query?.expectedUserId, req.user._id);
     const receiverId = typeof req.params.receiverId === 'string' ? canonicalUserId(req.params.receiverId) : req.params.receiverId;
     const senderId = canonicalUserId(req.user._id);
 
@@ -218,6 +222,7 @@ const getConversations = async (
   next: NextFunction,
 ) => {
   try {
+    validateExpectedIdentity(req.query?.expectedUserId, req.user._id);
     const userId = canonicalUserId(req.user._id);
 
     const messageRepo = AppDataSource.getRepository(Message);
@@ -319,6 +324,7 @@ const markAsRead = async (
   next: NextFunction,
 ) => {
   try {
+    validateExpectedIdentity(req.query?.expectedUserId, req.user._id);
     const { senderId: requestedSenderId } = req.params;
     const receiverId = canonicalUserId(req.user._id);
 

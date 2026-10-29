@@ -5,6 +5,7 @@ import { validateRequest } from '../middleware/validation/validateRequest'
 import {
   sendMessageValidation,
   fetchConversationValidation,
+  getConversationsValidation,
   markAsReadValidation
 } from '../middleware/validation/messageValidation'
 
@@ -27,6 +28,8 @@ chatServiceRouter.get(
 chatServiceRouter.get(
   '/conversations',
   authMiddleware as RequestHandler,
+  ...getConversationsValidation,
+  validateRequest,
   MessageController.getConversations as RequestHandler
 )
 chatServiceRouter.put(

@@ -190,13 +190,15 @@ const spec = {
         security: [{ cookieAuth: [] }],
         parameters: [
           { name: 'receiverId', in: 'path' as const, required: true, schema: { type: 'string' as const, format: 'uuid' } },
+          { name: 'expectedUserId', in: 'query' as const, required: false, schema: { type: 'string' as const, format: 'uuid' }, description: 'Optional account precondition. A mismatch with the authenticated user returns 403 before data access.' },
           { name: 'limit',  in: 'query' as const, schema: { type: 'integer' as const, default: 50, minimum: 1, maximum: 200 } },
           { name: 'offset', in: 'query' as const, schema: { type: 'integer' as const, default: 0, minimum: 0, maximum: Number.MAX_SAFE_INTEGER } },
         ],
         responses: {
           '200': { description: 'Conversation messages (chronological order)', content: { 'application/json': { schema: { $ref: '#/components/schemas/MessagesPageResponse' } } } },
-          '400': { description: 'Invalid pagination parameters', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
+          '400': { description: 'Invalid pagination or account precondition', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
           '401': { description: 'Authentication required' },
+          '403': { description: 'Expected user does not match authenticated user', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
         },
       },
     },
@@ -207,9 +209,14 @@ const spec = {
         tags: ['Messages'],
         summary: 'List all conversations for the authenticated user',
         security: [{ cookieAuth: [] }],
+        parameters: [
+          { name: 'expectedUserId', in: 'query' as const, required: false, schema: { type: 'string' as const, format: 'uuid' }, description: 'Optional account precondition. A mismatch with the authenticated user returns 403 before data access.' },
+        ],
         responses: {
           '200': { description: 'Conversation list (most recent first)', content: { 'application/json': { schema: { $ref: '#/components/schemas/ConversationListResponse' } } } },
+          '400': { description: 'Invalid account precondition', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
           '401': { description: 'Authentication required' },
+          '403': { description: 'Expected user does not match authenticated user', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
         },
       },
     },
@@ -222,10 +229,13 @@ const spec = {
         security: [{ cookieAuth: [] }],
         parameters: [
           { name: 'senderId', in: 'path' as const, required: true, schema: { type: 'string' as const, format: 'uuid' } },
+          { name: 'expectedUserId', in: 'query' as const, required: false, schema: { type: 'string' as const, format: 'uuid' }, description: 'Optional account precondition. A mismatch with the authenticated user returns 403 before data access.' },
         ],
         responses: {
           '200': { description: 'Messages marked as read', content: { 'application/json': { schema: { $ref: '#/components/schemas/MarkReadResponse' } } } },
+          '400': { description: 'Invalid sender ID or account precondition', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
           '401': { description: 'Authentication required' },
+          '403': { description: 'Expected user does not match authenticated user', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
         },
       },
     },

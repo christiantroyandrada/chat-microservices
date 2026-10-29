@@ -66,7 +66,15 @@ export const sendMessageValidation: ValidationChain[] = [
     .withMessage('Client message ID must be a valid UUID')
 ]
 
+export const getConversationsValidation: ValidationChain[] = [
+  query('expectedUserId')
+    .optional()
+    .custom(value => typeof value === 'string' && UUID.test(value))
+    .withMessage('Expected user ID must be a valid UUID'),
+]
+
 export const fetchConversationValidation: ValidationChain[] = [
+  ...getConversationsValidation,
   param('receiverId')
     .trim()
     .notEmpty()
@@ -84,6 +92,7 @@ export const fetchConversationValidation: ValidationChain[] = [
 ]
 
 export const markAsReadValidation: ValidationChain[] = [
+  ...getConversationsValidation,
   param('senderId')
     .trim()
     .notEmpty()

@@ -220,6 +220,53 @@ describe('chat-service runtime OpenAPI conformance', () => {
     jest.clearAllMocks()
   })
 
+  describe.each([
+    ['getConversations', '/conversations', 'get'],
+    ['fetchConversation', '/get/{receiverId}', 'get'],
+    ['markAsRead', '/messages/read/{senderId}', 'put'],
+  ] as const)('%s account precondition', (handler, path, method) => {
+    const req = (expectedUserId: unknown) => ({
+      user: { _id: userIds.partner },
+      params: { senderId: userIds.sender, receiverId: userIds.sender },
+      query: { expectedUserId },
+    })
+
+    it.each([null, [], [userIds.partner], [userIds.partner, userIds.partner], '', 7, 'invalid', ` ${userIds.partner} `])('rejects malformed expectedUserId %p before repository or profile access', async expectedUserId => {
+      const repository = jest.spyOn(AppDataSource, 'getRepository').mockImplementation(() => { throw new Error('Repository accessed before account precondition') })
+      const result = await invoke(MessageController[handler], req(expectedUserId))
+      expect(result.statusCode).toBe(400)
+      expect(repository).not.toHaveBeenCalled()
+      expect(rabbitMQService.getUserDetails).not.toHaveBeenCalled()
+      assertContractResponse(path, method, 400, { status: result.statusCode, message: result.error.message })
+    })
+
+    it('rejects a changed authenticated account before repository or profile access', async () => {
+      const repository = jest.spyOn(AppDataSource, 'getRepository').mockImplementation(() => { throw new Error('Repository accessed before account precondition') })
+      const result = await invoke(MessageController[handler], req(userIds.sender))
+      expect(result.statusCode).toBe(403)
+      expect(repository).not.toHaveBeenCalled()
+      expect(rabbitMQService.getUserDetails).not.toHaveBeenCalled()
+      assertContractResponse(path, method, 403, { status: result.statusCode, message: result.error.message })
+    })
+
+    it.each([undefined, userIds.partner.toUpperCase()])('accepts absent or canonical matching expectedUserId %p using the authenticated identity', async expectedUserId => {
+      const qb: any = {
+        where: jest.fn().mockReturnThis(), andWhere: jest.fn().mockReturnThis(), orderBy: jest.fn().mockReturnThis(),
+        skip: jest.fn().mockReturnThis(), take: jest.fn().mockReturnThis(), update: jest.fn().mockReturnThis(), set: jest.fn().mockReturnThis(),
+        getManyAndCount: jest.fn().mockResolvedValue([[], 0]), execute: jest.fn().mockResolvedValue({ affected: 0 }),
+      }
+      const repository = { query: jest.fn().mockResolvedValue([]), createQueryBuilder: jest.fn().mockReturnValue(qb) }
+      jest.spyOn(AppDataSource, 'getRepository').mockReturnValue(repository as any)
+      const result = await invoke(MessageController[handler], req(expectedUserId))
+      expect(result.statusCode).toBe(200)
+      expect(result.error).toBeUndefined()
+      if (handler === 'getConversations') expect(repository.query).toHaveBeenCalledWith(expect.any(String), [userIds.partner])
+      if (handler === 'fetchConversation') expect(qb.where).toHaveBeenCalledWith(expect.any(String), { senderId: userIds.partner, receiverId: userIds.sender })
+      if (handler === 'markAsRead') expect(qb.andWhere).toHaveBeenCalledWith('receiverId = :receiverId', { receiverId: userIds.partner })
+      assertContractResponse(path, method, 200, result.body)
+    })
+  })
+
   it('returns the published 403 contract before submission for a changed authenticated sender', async () => {
     const submit = jest.spyOn(MessageSubmissionService.prototype, 'submit').mockResolvedValue({ message: {} as any, replayed: false })
     const result = await invoke(MessageController.sendMessage, {
