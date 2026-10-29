@@ -42,6 +42,7 @@ describe('chat-service OpenAPI contract', () => {
     expect(request.required).toEqual(['receiverId', 'message'])
     expect(request.properties).toEqual({
       receiverId: { type: 'string', format: 'uuid' },
+      expectedSenderId: { type: 'string', format: 'uuid', description: 'Optional sender precondition. A mismatch with the authenticated sender returns 403 before submission.' },
       clientMessageId: { type: 'string', format: 'uuid', description: 'Optional stable send key. Reuse requires the same recipient and exact encrypted envelope.' },
       message: {
         type: 'string',
@@ -50,6 +51,7 @@ describe('chat-service OpenAPI contract', () => {
       }
     })
     expect(spec.paths['/send'].post.responses['409'].content['application/json'].schema).toEqual({ $ref: '#/components/schemas/Error' })
+    expect((spec.paths['/send'].post.responses as Record<string, any>)['403'].content['application/json'].schema).toEqual({ $ref: '#/components/schemas/Error' })
   })
 
 

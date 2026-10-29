@@ -14,6 +14,7 @@ import { validateRequest } from '../../src/middleware/validation/validateRequest
 import { MessageStatus } from '../../src/database/models/MessageModel'
 import spec from '../../src/openapi'
 import { rabbitMQService } from '../../src/services/RabbitMQService'
+import { MessageSubmissionService } from '../../src/services/MessageSubmissionService'
 
 type Schema = {
   $ref?: string
@@ -217,6 +218,17 @@ describe('chat-service runtime OpenAPI conformance', () => {
   afterEach(() => {
     jest.restoreAllMocks()
     jest.clearAllMocks()
+  })
+
+  it('returns the published 403 contract before submission for a changed authenticated sender', async () => {
+    const submit = jest.spyOn(MessageSubmissionService.prototype, 'submit').mockResolvedValue({ message: {} as any, replayed: false })
+    const result = await invoke(MessageController.sendMessage, {
+      user: { _id: userIds.partner },
+      body: { expectedSenderId: userIds.sender, receiverId: userIds.recipient, message: messageFixture(MessageStatus.NotDelivered).message },
+    })
+    expect(result.statusCode).toBe(403)
+    expect(submit).not.toHaveBeenCalled()
+    assertContractResponse('/send', 'post', 403, { status: result.statusCode, message: result.error.message })
   })
 
   it('returns conversations with numeric unread counts and validates the full response', async () => {

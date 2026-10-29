@@ -50,6 +50,7 @@ const spec = {
         required: ['receiverId', 'message'],
         properties: {
           receiverId: { type: 'string' as const, format: 'uuid' },
+          expectedSenderId: { type: 'string' as const, format: 'uuid', description: 'Optional sender precondition. A mismatch with the authenticated sender returns 403 before submission.' },
           clientMessageId: { type: 'string' as const, format: 'uuid', description: 'Optional stable send key. Reuse requires the same recipient and exact encrypted envelope.' },
           message: {
             type: 'string' as const,
@@ -175,6 +176,7 @@ const spec = {
           '200': { description: 'Message sent', content: { 'application/json': { schema: { $ref: '#/components/schemas/MessageResponse' } } } },
           '400': { description: 'Validation error', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
           '401': { description: 'Authentication required' },
+          '403': { description: 'Expected sender does not match authenticated user', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
           '409': { description: 'Client message ID conflicts with the stored recipient or encrypted envelope', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
         },
       },

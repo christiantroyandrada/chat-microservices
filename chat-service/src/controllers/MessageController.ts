@@ -6,7 +6,7 @@ import { parseConversationPagination } from '../middleware/validation/messageVal
 import { Message, AppDataSource } from '../database'
 import { APIError } from '../utils'
 import { MessageSubmissionService } from '../services/MessageSubmissionService'
-import { canonicalUserId } from '../utils/messageIdentity'
+import { canonicalUserId, UUID } from '../utils/messageIdentity'
 import { logWarn, logError } from '../utils/logger'
 import { MessageStatus } from '../database/models/MessageModel'
 import { chatMessagesSentTotal, chatMessagesReadTotal } from '../utils/metrics'
@@ -84,8 +84,17 @@ const sendMessage = async (
   next: NextFunction,
 ) => {
   try {
-    const { receiverId, message, clientMessageId } = req.body;
+    const { receiverId, message, clientMessageId, expectedSenderId } = req.body;
     const { _id, email, username } = req.user;
+
+    if (expectedSenderId !== undefined) {
+      if (typeof expectedSenderId !== 'string' || !UUID.test(expectedSenderId)) {
+        throw new APIError(400, 'Expected sender ID must be a valid UUID');
+      }
+      if (canonicalUserId(expectedSenderId) !== canonicalUserId(_id)) {
+        throw new APIError(403, 'Expected sender does not match authenticated user');
+      }
+    }
 
     validateReceiver(_id, receiverId);
 

@@ -27,6 +27,34 @@ import { MessageSubmissionService } from '../../src/services/MessageSubmissionSe
 describe('MessageController.sendMessage', () => {
   afterEach(() => { jest.clearAllMocks(); jest.restoreAllMocks() })
 
+  const senderId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+  const otherId = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc'
+  const body = { receiverId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', message: '{"__encrypted":true,"body":"ciphertext"}' }
+
+  it.each([null, [], [senderId], '', 7, 'invalid', ` ${senderId} `])('rejects invalid expectedSenderId %p without submission when middleware is bypassed', async expectedSenderId => {
+    const submit = jest.spyOn(MessageSubmissionService.prototype, 'submit').mockResolvedValue({ message: {} as any, replayed: false })
+    const next = jest.fn()
+    await MessageController.sendMessage({ user: { _id: senderId }, body: { ...body, expectedSenderId } } as any, { json: jest.fn() } as any, next)
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 400 }))
+    expect(submit).not.toHaveBeenCalled()
+  })
+
+  it('rejects a changed authenticated sender before submission', async () => {
+    const submit = jest.spyOn(MessageSubmissionService.prototype, 'submit').mockResolvedValue({ message: {} as any, replayed: false })
+    const next = jest.fn()
+    await MessageController.sendMessage({ user: { _id: otherId }, body: { ...body, expectedSenderId: senderId } } as any, { json: jest.fn() } as any, next)
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 403 }))
+    expect(submit).not.toHaveBeenCalled()
+  })
+
+  it('compares UUID case canonically and takes stored sender credentials only from authentication', async () => {
+    const submit = jest.spyOn(MessageSubmissionService.prototype, 'submit').mockResolvedValue({ message: {} as any, replayed: false })
+    const next = jest.fn()
+    await MessageController.sendMessage({ user: { _id: senderId, username: 'alice', email: 'a@example.com' }, body: { ...body, expectedSenderId: senderId.toUpperCase(), senderId: otherId } } as any, { json: jest.fn() } as any, next)
+    expect(next).not.toHaveBeenCalled()
+    expect(submit).toHaveBeenCalledWith(expect.objectContaining({ senderId, senderName: 'alice', senderEmail: 'a@example.com' }))
+  })
+
   it('succeeds when an encrypted envelope is provided', async () => {
     const mockReq: any = {
       user: { _id: 'sender1', username: 'alice', email: 'a@example.com' },

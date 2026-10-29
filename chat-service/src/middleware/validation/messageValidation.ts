@@ -1,4 +1,5 @@
 import { body, param, query, ValidationChain } from 'express-validator'
+import { UUID } from '../../utils/messageIdentity'
 
 const CHAT_PAGINATION = {
   limit: { defaultValue: 50, min: 1, max: 200 },
@@ -38,6 +39,11 @@ export function parseConversationPagination(queryValues: PaginationQuery): {
 }
 
 export const sendMessageValidation: ValidationChain[] = [
+  body('expectedSenderId')
+    .optional()
+    .custom(value => typeof value === 'string' && UUID.test(value))
+    .withMessage('Expected sender ID must be a valid UUID'),
+
   body('receiverId')
     .trim()
     .notEmpty()
