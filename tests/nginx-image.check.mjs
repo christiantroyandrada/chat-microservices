@@ -126,7 +126,7 @@ server.listen(8080, '127.0.0.1', () => {
   finally { server.close(() => assert.notEqual(spawnSync('sh', ['-c', probe]).status, 0)); }
 });
 `);
-		docker('run', '--rm', '--platform', 'linux/amd64', '--network', 'none', '-v', `${directory}:/fixture:ro`, 'node:22-trixie-slim@sha256:154ba2f4d6fec323d28e4f4bb86bba4677f1223391a1979cf521304e03a98dfa', '/fixture/probe.mjs');
+		docker('run', '--rm', '--platform', 'linux/amd64', '--network', 'none', '-v', `${directory}:/fixture:ro`, 'node:22-trixie-slim@sha256:2117f713a417f3aff682ac8f5bc2ebbdf1beed51f36e67ab1e0fd3866b6d2d8f', '/fixture/probe.mjs');
 	} finally {
 		rmSync(directory, { recursive: true, force: true });
 	}
