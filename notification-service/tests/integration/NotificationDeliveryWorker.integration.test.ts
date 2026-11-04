@@ -561,5 +561,3 @@ test.each(['START', 'COMMIT', 'ROLLBACK'] as const)('closes the acquired Postgre
     await new Promise<void>(resolve => server.close(() => resolve()))
   }
 }, 10000)
-
-
