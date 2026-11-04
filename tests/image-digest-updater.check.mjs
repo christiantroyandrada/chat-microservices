@@ -26,7 +26,7 @@ for (const scenario of ['valid', 'lookup-fails', 'malformed']) test(`digest refr
 		chmodSync(join(directory, 'crane'), 0o755);
 		writeFileSync(join(directory, 'docker'), '#!/bin/sh\nprintf \'%s\\n\' \'{"config":{"digest":"sha256:wrong-config"}}\'\n');
 		writeFileSync(join(directory, 'jq'), `#!/bin/sh\nprintf '%s\\n' 'sha256:${'2'.repeat(64)}'\n`);
-		const result = spawnSync('docker', ['--context', context, 'run', '--rm', '--network', 'none', '--platform', 'linux/amd64', '-v', `${directory}:/fixture`, '--entrypoint', 'bash', 'node:22-trixie-slim@sha256:154ba2f4d6fec323d28e4f4bb86bba4677f1223391a1979cf521304e03a98dfa', '-c', 'install -m 755 /fixture/crane /fixture/docker /fixture/jq /usr/local/bin/; exec bash /fixture/backend/scripts/cron/update-image-digests.sh --apply'], { encoding: 'utf8', timeout: 60000 });
+		const result = spawnSync('docker', ['--context', context, 'run', '--rm', '--network', 'none', '--platform', 'linux/amd64', '-v', `${directory}:/fixture`, '--entrypoint', 'bash', 'node:22-trixie-slim@sha256:2117f713a417f3aff682ac8f5bc2ebbdf1beed51f36e67ab1e0fd3866b6d2d8f', '-c', 'install -m 755 /fixture/crane /fixture/docker /fixture/jq /usr/local/bin/; exec bash /fixture/backend/scripts/cron/update-image-digests.sh --apply'], { encoding: 'utf8', timeout: 60000 });
 		if (scenario === 'valid') assert.equal(result.status, 0, result.stderr);
 		else assert.notEqual(result.status, 0, 'failed lookup must fail the refresh');
 		const expected = scenario === 'valid' ? newDigest : oldDigest;

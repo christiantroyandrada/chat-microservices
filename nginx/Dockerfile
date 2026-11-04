@@ -11,7 +11,7 @@
 #               OR: docker build --build-arg NGINX_ENV=production ./nginx
 ##############################################################################
 
-FROM nginxinc/nginx-unprivileged:stable-alpine-slim@sha256:3af0c10d960cc2502427fe1219c52989d309e7d65596869c60a34fd2fa2406f0
+FROM nginxinc/nginx-unprivileged:stable-alpine-slim@sha256:5d8bb9437d74a600ec5dbf90c035451c724dc33eac8d3a71078f6f8612c345f6
 
 # OCI Image Labels for traceability and security compliance
 LABEL org.opencontainers.image.title="Nginx Reverse Proxy" \
@@ -27,8 +27,8 @@ ARG NGINX_ENV=development
 # Copy both config files
 USER root
 
-# The pinned base predates the zlib CVE-2026-85091 fix.
-RUN apk add --no-cache --upgrade zlib=1.3.2-r1
+# Apply Alpine fixes for CVE-2026-85091 and CVE-2026-107891.
+RUN apk add --no-cache --upgrade zlib=1.3.2-r1 musl=1.2.6-r3 musl-utils=1.2.6-r3
 
 # Keep the existing VPS bind-mount path and UID; only nginx's writable cache changes owner.
 RUN mkdir -p /opt/bitnami/nginx/conf /var/www/certbot /etc/letsencrypt \
