@@ -1,0 +1,120 @@
+x-labels: &labels
+  chat.fullstack.run: ${FULLSTACK_RUN_ID:?}
+  chat.fullstack.project: ${FULLSTACK_PROJECT:?}
+
+x-app-environment: &app-environment
+  NODE_ENV: production
+  JWT_SECRET: fixture-fullstack-jwt-for-local-tests-only-2026
+  MESSAGE_BROKER_URL: amqp://fixture:FixtureRabbitOnly2026@rabbitmq:5672
+  CORS_ORIGINS: ${FULLSTACK_ORIGIN:?}
+
+services:
+  postgres:
+    image: postgres@sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24
+    platform: linux/arm64
+    labels: *labels
+    networks: [default, loopback]
+    environment:
+      POSTGRES_USER: fixture_admin
+      POSTGRES_PASSWORD: FixtureAdminOnly2026
+      POSTGRES_DB: ${FULLSTACK_DATABASE:?}
+    ports:
+      - 127.0.0.1:${FULLSTACK_PG_PORT:?}:5432
+    tmpfs:
+      - /var/lib/postgresql/data:rw,nosuid,size=256m
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -U fixture_admin -d $$POSTGRES_DB']
+      interval: 1s
+      timeout: 3s
+      retries: 60
+
+  rabbitmq:
+    image: rabbitmq@sha256:6931816af1a943f471c038b278835d36692d55dec769232739296bb91b7de0f5
+    platform: linux/arm64
+    labels: *labels
+    environment:
+      RABBITMQ_DEFAULT_USER: fixture
+      RABBITMQ_DEFAULT_PASS: FixtureRabbitOnly2026
+    tmpfs:
+      - /var/lib/rabbitmq:rw,nosuid,size=256m
+    healthcheck:
+      test: [CMD, rabbitmq-diagnostics, -q, ping]
+      interval: 2s
+      timeout: 5s
+      retries: 60
+
+  user:
+    image: ${FULLSTACK_PROJECT:?}-user:${FULLSTACK_RUN_ID:?}
+    build:
+      context: ${FULLSTACK_SNAPSHOT:?}/backend/user-service
+      labels: *labels
+    platform: linux/arm64
+    labels: *labels
+    environment:
+      <<: *app-environment
+      PORT: '8081'
+      DATABASE_URL: postgres://user_svc:FixtureUserOnly2026@postgres:5432/${FULLSTACK_DATABASE:?}
+
+  chat:
+    image: ${FULLSTACK_PROJECT:?}-chat:${FULLSTACK_RUN_ID:?}
+    build:
+      context: ${FULLSTACK_SNAPSHOT:?}/backend/chat-service
+      labels: *labels
+    platform: linux/arm64
+    labels: *labels
+    environment:
+      <<: *app-environment
+      PORT: '8082'
+      DATABASE_URL: postgres://chat_svc:FixtureChatOnly2026@postgres:5432/${FULLSTACK_DATABASE:?}
+
+  notification:
+    image: ${FULLSTACK_PROJECT:?}-notification:${FULLSTACK_RUN_ID:?}
+    build:
+      context: ${FULLSTACK_SNAPSHOT:?}/backend/notification-service
+      labels: *labels
+    platform: linux/arm64
+    labels: *labels
+    environment:
+      <<: *app-environment
+      PORT: '8083'
+      DATABASE_URL: postgres://notif_svc:FixtureNotificationOnly2026@postgres:5432/${FULLSTACK_DATABASE:?}
+      NOTIFICATIONS_QUEUE: NOTIFICATIONS
+
+  frontend:
+    image: ${FULLSTACK_PROJECT:?}-frontend:${FULLSTACK_RUN_ID:?}
+    build:
+      context: ${FULLSTACK_SNAPSHOT:?}/frontend
+      labels: *labels
+      args:
+        PUBLIC_API_URL: ${FULLSTACK_ORIGIN:?}
+        PUBLIC_WS_URL: ${FULLSTACK_ORIGIN:?}
+    platform: linux/arm64
+    labels: *labels
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: '3000'
+      ORIGIN: ${FULLSTACK_ORIGIN:?}
+      PUBLIC_API_URL: ${FULLSTACK_ORIGIN:?}
+      PUBLIC_WS_URL: ${FULLSTACK_ORIGIN:?}
+
+  gateway:
+    image: ${FULLSTACK_PROJECT:?}-gateway:${FULLSTACK_RUN_ID:?}
+    build:
+      context: ${FULLSTACK_SNAPSHOT:?}/backend/nginx
+      labels: *labels
+    platform: linux/arm64
+    labels: *labels
+    networks: [default, loopback]
+    ports:
+      - 127.0.0.1:${FULLSTACK_TLS_PORT:?}:8443
+    volumes:
+      - ${FULLSTACK_RUNTIME:?}/nginx.conf:/opt/bitnami/nginx/conf/nginx.conf:ro
+      - ${FULLSTACK_RUNTIME:?}/certificates:/fixture-certificates:ro
+
+networks:
+  default:
+    internal: true
+    labels: *labels
+  loopback:
+    labels: *labels
