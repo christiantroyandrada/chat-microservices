@@ -50,6 +50,7 @@ test('gateway remains non-root with development, production TLS and read-only sh
 			assert.equal(docker('exec', id, 'id', '-u'), '1001');
 			if (fixture.name === 'development') {
 				docker('exec', id, 'apk', 'info', '--exists', 'zlib=1.3.2-r1');
+			docker('exec', id, 'apk', 'info', '--exists', 'musl=1.2.6-r3', 'musl-utils=1.2.6-r3');
 				docker('exec', id, 'sh', '-c', tcpProbe);
 			}
 			let published;

@@ -58,8 +58,17 @@
     "retry-request": "9.0.1",
     "teeny-request": "11.0.1",
     "brace-expansion@2": "2.1.7",
-    "body-parser": "2.3.0",
-    "qs": "6.16.0",
-    "websocket-driver": "0.7.5"
+    "body-parser": "2.4.0",
+    "qs": "6.16.1",
+    "typeorm": {
+      "glob": "14.0.3"
+    },
+    "websocket-driver": "0.7.5",
+    "axios": {
+      "follow-redirects": "1.16.2"
+    },
+    "google-gax": {
+      "rimraf": "6.1.4"
+    }
   }
 }
