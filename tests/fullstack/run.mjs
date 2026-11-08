@@ -23,9 +23,11 @@ assert.equal(Number(process.versions.node.split('.')[0]), 22, 'Use Node 22');
 assert.ok(options.has('--check') !== options.has('--start-fixture'), 'Select --check or --start-fixture');
 assert.ok(options.get('--frontend-dir'), '--frontend-dir is required');
 const frontend = realpathSync(resolve(options.get('--frontend-dir')));
-const docker = '/opt/homebrew/bin/docker';
-const compose = '/opt/homebrew/bin/docker-compose';
-const context = 'colima';
+const macOS = process.platform === 'darwin';
+const docker = macOS ? '/opt/homebrew/bin/docker' : 'docker';
+const compose = macOS ? '/opt/homebrew/bin/docker-compose' : docker;
+const context = macOS ? 'colima' : 'default';
+const composePrefix = macOS ? [] : ['--context', context, 'compose'];
 const runId = `fullstack-${randomUUID().replaceAll('-', '').slice(0, 12)}`;
 const project = runId;
 const databaseName = `fullstack_${runId.slice(10)}`;
@@ -286,7 +288,8 @@ async function poll(name, condition, timeout = 90_000) {
 async function main() {
   await checkGuards();
   if (options.has('--check')) return;
-  assert.equal(output(docker, ['context', 'show']), context, 'Select the colima context first');
+  assert.equal(output(docker, ['context', 'show']), context, `Use the ${context} Docker context`);
+  assert.ok(output(docker, ['context', 'inspect', context, '--format', '{{.Endpoints.docker.Host}}']).startsWith('unix://'), 'Only a local Unix Docker socket is permitted');
   assert.match(output(docker, ['--context', context, 'info', '--format', '{{.OSType}}/{{.Architecture}}']), /^linux\/(aarch64|arm64)$/);
   const backendCommit = output('/usr/bin/git', ['rev-parse', 'HEAD^{commit}']);
   const frontendCommit = output('/usr/bin/git', ['rev-parse', 'HEAD^{commit}'], frontend);
@@ -308,7 +311,7 @@ async function main() {
   writeFileSync(join(runtime, 'empty.env'), '');
   const composeArgs = ['--env-file', join(runtime, 'empty.env'), '--project-directory', runtime, '-p', project, '-f', join(root, 'tests/fullstack/compose.yml')];
   const command = (title, executable, args, extra = {}) => runCommand(title, executable, args, { cwd: root, env, log, ...extra });
-  const composeCommand = (title, args, extra) => command(title, compose, [...composeArgs, ...args], extra);
+  const composeCommand = (title, args, extra) => command(title, compose, [...composePrefix, ...composeArgs, ...args], extra);
   const dockerOutput = args => output(docker, ['--context', context, ...args]);
   const database = new Client({ connectionString: `postgres://fixture_admin:FixtureAdminOnly2026@127.0.0.1:${env.FULLSTACK_PG_PORT}/${databaseName}`, connectionTimeoutMillis: 5000, query_timeout: 5000, statement_timeout: 5000 });
   database.on('error', error => { process.exitCode = 1; console.error(`Fixture database connection failed: ${error.message}`); });
