@@ -64,6 +64,52 @@ test('image publication waits for integration tests and the security audit', () 
 	assert.ok(dependencies.includes('security-audit'));
 });
 
+test('every published backend image is built once and scanned before any registry push', () => {
+	const job = workflow('ci-main.yml').jobs['docker-build'];
+	const publications = [];
+	const scans = [];
+	for (const [service, variable, id] of [
+		['user-service', 'IMAGE_USER', 'build-user'],
+		['chat-service', 'IMAGE_CHAT', 'build-chat'],
+		['notification-service', 'IMAGE_NOTIFICATION', 'build-notification'],
+		['nginx', 'IMAGE_NGINX', 'build-nginx']
+	]) {
+		const tag = `chat-${service}:scan`;
+		const build = step(job, `Build ${service} for security scan`);
+		assert.match(build.uses, /^docker\/build-push-action@[a-f0-9]{40}$/);
+		assert.equal(build.with.context, `./${service}`);
+		assert.equal(build.with.push, false);
+		assert.equal(build.with.load, true);
+		assert.equal(build.with.tags, tag);
+		const scan = step(job, `Scan ${service} release image`);
+		assert.match(scan.uses, /^aquasecurity\/trivy-action@[a-f0-9]{40}$/);
+		assert.equal(scan.with['image-ref'], tag);
+		assert.equal(scan.with['exit-code'], '1');
+		assert.equal(scan.with.severity, 'CRITICAL,HIGH');
+		assert.equal(scan['continue-on-error'], undefined);
+		assert.equal(scan.if, undefined);
+		assert.ok(job.steps.indexOf(build) < job.steps.indexOf(scan));
+		scans.push(job.steps.indexOf(scan));
+		const publish = step(job, `Publish ${service}`);
+		assert.equal(publish.id, id);
+		assert.equal(publish.uses, undefined);
+		assert.equal(publish.if, undefined);
+		assert.doesNotMatch(publish.run, /docker (?:build|buildx)|\|\| true/);
+		assert.equal(publish.env.SCAN_IMAGE, tag);
+		assert.equal(publish.env.RELEASE_IMAGE, '${{ env.' + variable + ' }}');
+		assert.ok(publish.run.includes('docker tag "$SCAN_IMAGE" "$RELEASE_IMAGE:$GITHUB_SHA"'));
+		assert.ok(publish.run.includes('docker push "$RELEASE_IMAGE:$GITHUB_SHA"'));
+		assert.ok(publish.run.includes('docker image inspect --format \'{{index .RepoDigests 0}}\' "$RELEASE_IMAGE:$GITHUB_SHA"'));
+		assert.ok(publish.run.includes('[[ "$digest_ref" == "$RELEASE_IMAGE"@sha256:* ]]'));
+		assert.ok(publish.run.includes('^sha256:[a-f0-9]{64}$'));
+		assert.ok(publish.run.includes('echo "digest=$digest" >> "$GITHUB_OUTPUT"'));
+		publications.push(job.steps.indexOf(publish));
+	}
+	assert.ok(Math.max(...scans) < Math.min(...publications));
+	const builds = job.steps.filter(candidate => candidate.uses?.startsWith('docker/build-push-action@'));
+	assert.equal(builds.length, 4);
+});
+
 test('release uses the built-in GitHub token without declaring a reserved caller secret', () => {
 	const deploy = workflow('deploy.yml');
 	const declared = Object.keys(deploy.on.workflow_call.secrets);

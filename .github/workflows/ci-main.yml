@@ -147,59 +147,128 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and push user-service
-        id: build-user
+      - name: Build user-service for security scan
         # Pinned to specific commit SHA for supply-chain security
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: ./user-service
-          push: true
-          tags: |
-            ghcr.io/${{ github.repository_owner }}/chat-user-service:${{ github.sha }}
-            ghcr.io/${{ github.repository_owner }}/chat-user-service:latest
+          push: false
+          load: true
+          tags: chat-user-service:scan
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Build and push chat-service
-        id: build-chat
+      - name: Build chat-service for security scan
         # Pinned to specific commit SHA for supply-chain security
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: ./chat-service
-          push: true
-          tags: |
-            ghcr.io/${{ github.repository_owner }}/chat-chat-service:${{ github.sha }}
-            ghcr.io/${{ github.repository_owner }}/chat-chat-service:latest
+          push: false
+          load: true
+          tags: chat-chat-service:scan
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Build and push notification-service
-        id: build-notification
+      - name: Build notification-service for security scan
         # Pinned to specific commit SHA for supply-chain security
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: ./notification-service
-          push: true
-          tags: |
-            ghcr.io/${{ github.repository_owner }}/chat-notification-service:${{ github.sha }}
-            ghcr.io/${{ github.repository_owner }}/chat-notification-service:latest
+          push: false
+          load: true
+          tags: chat-notification-service:scan
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Build and push nginx
-        id: build-nginx
+      - name: Build nginx for security scan
         # Pinned to specific commit SHA for supply-chain security
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: ./nginx
-          push: true
-          tags: |
-            ghcr.io/${{ github.repository_owner }}/chat-nginx:${{ github.sha }}
-            ghcr.io/${{ github.repository_owner }}/chat-nginx:latest
+          push: false
+          load: true
+          tags: chat-nginx:scan
           build-args: |
             NGINX_ENV=production
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Scan user-service release image
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: chat-user-service:scan
+          format: table
+          exit-code: '1'
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          scanners: vuln
+
+      - name: Scan chat-service release image
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: chat-chat-service:scan
+          format: table
+          exit-code: '1'
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          scanners: vuln
+
+      - name: Scan notification-service release image
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: chat-notification-service:scan
+          format: table
+          exit-code: '1'
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          scanners: vuln
+
+      - name: Scan nginx release image
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: chat-nginx:scan
+          format: table
+          exit-code: '1'
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          scanners: vuln
+
+      - name: Publish user-service
+        id: build-user
+        env:
+          SCAN_IMAGE: chat-user-service:scan
+          RELEASE_IMAGE: ${{ env.IMAGE_USER }}
+        run: &publish-scanned-image |
+          docker tag "$SCAN_IMAGE" "$RELEASE_IMAGE:$GITHUB_SHA"
+          docker push "$RELEASE_IMAGE:$GITHUB_SHA"
+          digest_ref="$(docker image inspect --format '{{index .RepoDigests 0}}' "$RELEASE_IMAGE:$GITHUB_SHA")"
+          [[ "$digest_ref" == "$RELEASE_IMAGE"@sha256:* ]] || { echo "Unexpected registry image" >&2; exit 1; }
+          digest="${digest_ref##*@}"
+          [[ "$digest" =~ ^sha256:[a-f0-9]{64}$ ]] || { echo "Invalid registry digest" >&2; exit 1; }
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+          docker tag "$SCAN_IMAGE" "$RELEASE_IMAGE:latest"
+          docker push "$RELEASE_IMAGE:latest"
+
+      - name: Publish chat-service
+        id: build-chat
+        env:
+          SCAN_IMAGE: chat-chat-service:scan
+          RELEASE_IMAGE: ${{ env.IMAGE_CHAT }}
+        run: *publish-scanned-image
+
+      - name: Publish notification-service
+        id: build-notification
+        env:
+          SCAN_IMAGE: chat-notification-service:scan
+          RELEASE_IMAGE: ${{ env.IMAGE_NOTIFICATION }}
+        run: *publish-scanned-image
+
+      - name: Publish nginx
+        id: build-nginx
+        env:
+          SCAN_IMAGE: chat-nginx:scan
+          RELEASE_IMAGE: ${{ env.IMAGE_NGINX }}
+        run: *publish-scanned-image
 
   deploy:
     name: Deploy to VPS
