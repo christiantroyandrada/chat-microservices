@@ -371,11 +371,8 @@ async function main() {
       CREATE ROLE notif_svc LOGIN PASSWORD 'FixtureNotificationOnly2026';
       GRANT CONNECT ON DATABASE "${databaseName}" TO user_svc, chat_svc, notif_svc;
       GRANT USAGE ON SCHEMA public TO user_svc, chat_svc, notif_svc;
-      GRANT SELECT, INSERT, UPDATE, DELETE ON users, prekeys TO user_svc;
-      GRANT SELECT, INSERT, UPDATE, DELETE ON messages, outbox_events TO chat_svc;
-      GRANT SELECT, INSERT, UPDATE, DELETE ON notifications TO notif_svc;
-      GRANT SELECT, INSERT, UPDATE ON notification_inbox TO notif_svc;
     `);
+    await query(readFileSync(join(root, 'scripts/grant-service-privileges.sql'), 'utf8'));
     const privileges = (await query("SELECT has_table_privilege('notif_svc','notification_inbox','DELETE') AS inbox_delete, has_table_privilege('chat_svc','users','SELECT') AS cross_table, has_table_privilege('user_svc','typeorm_migrations_user','SELECT') AS migration_access")).rows[0];
     assert.deepEqual(privileges, { inbox_delete: false, cross_table: false, migration_access: false });
     writeFileSync(join(evidence, 'restricted-role-check.json'), JSON.stringify(privileges));

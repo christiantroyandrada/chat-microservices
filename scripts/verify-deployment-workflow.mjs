@@ -117,4 +117,10 @@ assert.doesNotMatch(rollback, /write_state/, 'rollback must preserve authoritati
 assert.doesNotMatch(release, /DROP\s+SCHEMA|docker\s+system\s+prune/, 'release must not destructively reset the database or global Docker state');
 assert.doesNotMatch(release, /(^|[^A-Za-z])frontend([^A-Za-z]|$)|docker\s+(volume|container)\s+prune|docker\s+image\s+prune/, 'release must not alter unowned services or prune shared state');
 
+const integrationGrants = await readFile(path.join(root, 'scripts/grant-service-privileges.sql'), 'utf8');
+const grantFunction = release.slice(release.indexOf('\ngrant_service_tables() {'), release.indexOf('\nensure_dependencies()'));
+const releaseStatements = Array.from(grantFunction.matchAll(/-c "([^"\n]+;)"/g), match => match[1]);
+const integrationStatements = integrationGrants.split('\n').map(line => line.trim()).filter(line => line && !line.startsWith('--'));
+assert.deepEqual(integrationStatements, releaseStatements, 'integration grants must match production grants');
+
 console.log('deployment workflow verification passed');
