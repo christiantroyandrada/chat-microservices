@@ -241,10 +241,9 @@ jobs:
           RELEASE_IMAGE: ${{ env.IMAGE_USER }}
         run: &publish-scanned-image |
           docker tag "$SCAN_IMAGE" "$RELEASE_IMAGE:$GITHUB_SHA"
-          docker push "$RELEASE_IMAGE:$GITHUB_SHA"
-          digest_ref="$(docker image inspect --format '{{index .RepoDigests 0}}' "$RELEASE_IMAGE:$GITHUB_SHA")"
-          [[ "$digest_ref" == "$RELEASE_IMAGE"@sha256:* ]] || { echo "Unexpected registry image" >&2; exit 1; }
-          digest="${digest_ref##*@}"
+          push_output="$(docker push "$RELEASE_IMAGE:$GITHUB_SHA")"
+          printf '%s\n' "$push_output"
+          digest="$(awk -v tag="$GITHUB_SHA:" '$1 == tag && $2 == "digest:" { print $3 }' <<< "$push_output")"
           [[ "$digest" =~ ^sha256:[a-f0-9]{64}$ ]] || { echo "Invalid registry digest" >&2; exit 1; }
           echo "digest=$digest" >> "$GITHUB_OUTPUT"
           docker tag "$SCAN_IMAGE" "$RELEASE_IMAGE:latest"

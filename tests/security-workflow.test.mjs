@@ -99,8 +99,9 @@ test('every published backend image is built once and scanned before any registr
 		assert.equal(publish.env.RELEASE_IMAGE, '${{ env.' + variable + ' }}');
 		assert.ok(publish.run.includes('docker tag "$SCAN_IMAGE" "$RELEASE_IMAGE:$GITHUB_SHA"'));
 		assert.ok(publish.run.includes('docker push "$RELEASE_IMAGE:$GITHUB_SHA"'));
-		assert.ok(publish.run.includes('docker image inspect --format \'{{index .RepoDigests 0}}\' "$RELEASE_IMAGE:$GITHUB_SHA"'));
-		assert.ok(publish.run.includes('[[ "$digest_ref" == "$RELEASE_IMAGE"@sha256:* ]]'));
+		assert.doesNotMatch(publish.run, /RepoDigests|docker image inspect/);
+		assert.ok(publish.run.includes('awk -v tag="$GITHUB_SHA:"'));
+		assert.ok(publish.run.includes('<<< "$push_output"'));
 		assert.ok(publish.run.includes('^sha256:[a-f0-9]{64}$'));
 		assert.ok(publish.run.includes('echo "digest=$digest" >> "$GITHUB_OUTPUT"'));
 		publications.push(job.steps.indexOf(publish));
