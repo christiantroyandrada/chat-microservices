@@ -28,7 +28,7 @@ ARG NGINX_ENV=development
 USER root
 
 # Apply Alpine fixes for CVE-2026-85091 and CVE-2026-107891.
-RUN apk add --no-cache --upgrade zlib=1.3.2-r1 musl=1.2.6-r3 musl-utils=1.2.6-r3
+RUN apk add --no-cache --upgrade zlib=1.4-r0 musl=1.2.6-r3 musl-utils=1.2.6-r3
 
 # Keep the existing VPS bind-mount path and UID; only nginx's writable cache changes owner.
 RUN mkdir -p /opt/bitnami/nginx/conf /var/www/certbot /etc/letsencrypt \

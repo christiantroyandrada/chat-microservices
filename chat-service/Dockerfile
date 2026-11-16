@@ -33,7 +33,7 @@ RUN npm run build \
 	&& rm -rf /root/.npm /tmp/*
 
 # Production stage - use latest pinned distroless image
-FROM gcr.io/distroless/nodejs22-debian13:nonroot@sha256:8ad9cc935b7843c4024b7e1487b5ef472c354ea847b97c667023e2618552607e
+FROM gcr.io/distroless/nodejs22-debian13:nonroot@sha256:39c66687298417dbf3ff2fb8b6012c20554494e16414ef7afd07b9abbb45b501
 
 WORKDIR /usr/src/app
 
