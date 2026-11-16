@@ -1,5 +1,5 @@
 import 'reflect-metadata'
-import { execFileSync } from 'node:child_process'
+import { requireNotificationIntegrationDatabase } from './notificationIntegrationDatabase'
 import { randomUUID } from 'node:crypto'
 import { DataSource } from 'typeorm'
 import { Notification } from '../../src/database/models/NotificationModel'
@@ -8,22 +8,13 @@ import { AddNotificationInbox1792627200000 } from '../../src/database/migrations
 import { AddNotificationDelivery1792800000000 } from '../../src/database/migrations/1792800000000-AddNotificationDelivery'
 import { NotificationInbox } from '../../src/services/NotificationInbox'
 
-const url = process.env.NOTIFICATION_INTEGRATION_DATABASE_URL
-if (url !== 'postgresql://task7@127.0.0.1:55447/task7_notification_20261022') throw new Error('Explicit Task7 isolated database required')
+const fixture = requireNotificationIntegrationDatabase(process.env)
+const { url } = fixture
 const schema = `task7b_delivery_${randomUUID().replace(/-/g, '')}`
-const admin = new DataSource({ type: 'postgres', url })
-const database = new DataSource({ type: 'postgres', url, schema, entities: [Notification], extra: { options: `-c search_path=${schema},public` } })
+const admin = new DataSource({ type: 'postgres', url, installExtensions: false })
+const database = new DataSource({ type: 'postgres', url, schema, installExtensions: false, entities: [Notification], extra: { options: `-c search_path=${schema},public` } })
 
-async function guard() {
-  expect(execFileSync('/opt/homebrew/bin/docker', ['context', 'show'], { encoding: 'utf8' }).trim()).toBe('colima')
-  const [container] = JSON.parse(execFileSync('/opt/homebrew/bin/docker', ['--context', 'colima', 'inspect', 'task7a-20261022-postgres'], { encoding: 'utf8' }))
-  expect(container.Config.Labels['chat.fixture']).toBe('task7a-20261022')
-  expect(container.HostConfig.Tmpfs).toEqual({ '/var/lib/postgresql/data': 'rw' })
-  expect(container.Mounts).toEqual([])
-  expect(container.HostConfig.PortBindings).toEqual({ '5432/tcp': [{ HostIp: '127.0.0.1', HostPort: '55447' }] })
-  expect((await admin.query('SELECT current_database() AS database, current_user AS role, inet_server_port() AS port'))[0])
-    .toEqual({ database: 'task7_notification_20261022', role: 'task7', port: 5432 })
-}
+const guard = () => fixture.assertIdentity(admin)
 
 beforeAll(async () => {
   await admin.initialize()

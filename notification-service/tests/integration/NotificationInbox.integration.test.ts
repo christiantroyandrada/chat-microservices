@@ -1,6 +1,6 @@
 import 'reflect-metadata'
 import { DataSource } from 'typeorm'
-import { execFileSync } from 'node:child_process'
+import { requireNotificationIntegrationDatabase } from './notificationIntegrationDatabase'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { randomUUID } from 'node:crypto'
@@ -12,27 +12,18 @@ import { NotificationInbox, PermanentNotificationError } from '../../src/service
 import NotificationController from '../../src/controllers/NotificationController'
 import { AppDataSource } from '../../src/database'
 
-const url = process.env.NOTIFICATION_INTEGRATION_DATABASE_URL
-if (url !== 'postgresql://task7@127.0.0.1:55447/task7_notification_20261022') throw new Error('Explicit Task7 isolated database required')
+const fixture = requireNotificationIntegrationDatabase(process.env)
+const { url } = fixture
 const schema = `task7b_inbox_${randomUUID().replace(/-/g, '')}`
-const admin = new DataSource({ type: 'postgres', url })
+const admin = new DataSource({ type: 'postgres', url, installExtensions: false })
 const extra = { options: `-c search_path=${schema},public`, connectionTimeoutMillis: 2000 }
-const database = new DataSource({ type: 'postgres', url, schema, extra, entities: [Notification], migrations: [InitialSchema1733150000000, AddNotificationInbox1792627200000, AddNotificationDelivery1792800000000], migrationsTableName: 'typeorm_migrations_notif', synchronize: false })
+const database = new DataSource({ type: 'postgres', url, schema, installExtensions: false, extra, entities: [Notification], migrations: [InitialSchema1733150000000, AddNotificationInbox1792627200000, AddNotificationDelivery1792800000000], migrationsTableName: 'typeorm_migrations_notif', synchronize: false })
 const inbox = new NotificationInbox(database)
 const userId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
 const envelope = ' {"__encrypted":true,"body":"fixture-cipher"} '
 const event = (extra = {}) => ({ type: 'MESSAGE_RECEIVED', eventId: randomUUID(), userId, senderId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', isEncrypted: true, envelope, message: '[Encrypted message]', from: 'sender@fixture.invalid', fromName: 'Sender', ...extra })
 
-async function guard() {
-  expect(execFileSync('/opt/homebrew/bin/docker', ['context', 'show'], { encoding: 'utf8' }).trim()).toBe('colima')
-  const [container] = JSON.parse(execFileSync('/opt/homebrew/bin/docker', ['--context', 'colima', 'inspect', 'task7a-20261022-postgres'], { encoding: 'utf8' }))
-  expect(container.Config.Labels['chat.fixture']).toBe('task7a-20261022')
-  expect(container.HostConfig.Tmpfs).toEqual({ '/var/lib/postgresql/data': 'rw' })
-  expect(container.Mounts).toEqual([])
-  expect(container.HostConfig.PortBindings).toEqual({ '5432/tcp': [{ HostIp: '127.0.0.1', HostPort: '55447' }] })
-  const [identity] = await admin.query('SELECT current_database() AS database, current_user AS role, inet_server_port() AS port')
-  expect(identity).toEqual({ database: 'task7_notification_20261022', role: 'task7', port: 5432 })
-}
+const guard = () => fixture.assertIdentity(admin)
 beforeAll(async () => {
   await admin.initialize()
   await guard()
