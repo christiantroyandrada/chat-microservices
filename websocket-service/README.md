@@ -19,7 +19,7 @@ Connect to `/ws/v1?expectedUserId=<id>` with the matching `jwt` session cookie. 
 
 ## Browser pilot
 
-Set `PUBLIC_GO_WS_ENABLED=true` in the frontend runtime. Forward the same-origin `/ws/v1` path to the relay. The browser receives messages and receipt events through Go. Receipt events cause the browser to read current status from the chat API. The browser acknowledges delivery through the chat API. Go pilot clients exchange typing indicators with other Go pilot clients. The browser clears a typing indicator after three seconds without a refresh. Socket.IO still handles presence. Legacy clients still receive Socket.IO receipts. After reconnect, it refreshes the conversation list and fetches the latest 50 messages in the open conversation.
+Set `PUBLIC_GO_WS_ENABLED=true` in the frontend runtime. Forward the same-origin `/ws/v1` path to the relay. The browser receives messages and receipt events through Go. Receipt events cause the browser to read current status from the chat API. The browser acknowledges delivery through the chat API. Go pilot clients exchange typing indicators with other Go pilot clients. The browser clears a typing indicator after three seconds without a refresh. Go pilot clients see the online status of the selected conversation peer. Status covers Go tabs on the same relay instance. It shows as unavailable while the connection reconnects. Legacy clients still receive Socket.IO receipts. After reconnect, it refreshes the conversation list and fetches the latest 50 messages in the open conversation.
 
 To run the isolated test, use the committed frontend and backend worktrees. From the backend worktree, run:
 
@@ -29,7 +29,6 @@ node tests/fullstack/run.mjs --start-fixture --go-websocket --frontend-dir /path
 
 ## Before cutover
 
-1. Add native presence. Verify that multiple tabs and reconnects give the correct status.
-2. Verify mixed-client behavior for typing and presence. Remove the pilot's remaining Socket.IO dependencies.
-3. Measure connection capacity and test restart, account change, and slow clients. Use the results to set pilot limits.
-4. Package the service from this backend repository. Test a limited rollout and rollback before making Go the default.
+1. Verify mixed-client typing and presence. Authorize presence watches on the server before the public rollout. Remove the pilot's remaining Socket.IO dependencies.
+2. Measure connection capacity and test restart, account change, and slow clients. Use the results to set pilot limits.
+3. Package the service from this backend repository. Test a limited rollout and rollback before making Go the default.

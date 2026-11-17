@@ -60,6 +60,7 @@ func (m message) valid() bool {
 type subscriber struct {
 	queue  chan []byte
 	cancel context.CancelFunc
+	watch  string // Protected by relay.mu.
 }
 
 type relay struct {
@@ -164,6 +165,9 @@ func (r *relay) connect(w http.ResponseWriter, req *http.Request) {
 		r.subscribers[id] = make(map[*subscriber]struct{})
 	}
 	r.subscribers[id][sub] = struct{}{}
+	if len(r.subscribers[id]) == 1 {
+		r.notifyPresenceLocked(id, true)
+	}
 	r.mu.Unlock()
 	defer func() {
 		r.mu.Lock()
@@ -171,6 +175,7 @@ func (r *relay) connect(w http.ResponseWriter, req *http.Request) {
 		delete(r.subscribers[id], sub)
 		if len(r.subscribers[id]) == 0 {
 			delete(r.subscribers, id)
+			r.notifyPresenceLocked(id, false)
 		}
 	}()
 
@@ -184,7 +189,7 @@ func (r *relay) connect(w http.ResponseWriter, req *http.Request) {
 	}
 	go func() {
 		defer cancel()
-		r.readTyping(ctx, conn, id)
+		r.readCommands(ctx, conn, id, sub)
 	}()
 	heartbeat := time.NewTicker(25 * time.Second)
 	defer heartbeat.Stop()
@@ -207,7 +212,7 @@ func (r *relay) connect(w http.ResponseWriter, req *http.Request) {
 	}
 }
 
-func (r *relay) readTyping(ctx context.Context, conn *websocket.Conn, userID string) {
+func (r *relay) readCommands(ctx context.Context, conn *websocket.Conn, userID string, sub *subscriber) {
 	var window time.Time
 	var count int
 	for {
@@ -224,19 +229,64 @@ func (r *relay) readTyping(ctx context.Context, conn *websocket.Conn, userID str
 			return
 		}
 		var input struct {
-			Type       string `json:"type"`
-			ReceiverID string `json:"receiverId"`
-			IsTyping   *bool  `json:"isTyping"`
+			Type       string  `json:"type"`
+			ReceiverID string  `json:"receiverId"`
+			IsTyping   *bool   `json:"isTyping"`
+			UserID     *string `json:"userId"`
 		}
-		if kind != websocket.MessageText || !decodeJSON(bytes.NewReader(data), &input) ||
-			input.Type != "typing" || input.IsTyping == nil || !uuid.MatchString(input.ReceiverID) ||
-			input.ReceiverID == userID {
+		if kind != websocket.MessageText || !decodeJSON(bytes.NewReader(data), &input) {
 			continue
 		}
-		r.fanout(input.ReceiverID, "typing", struct {
-			UserID   string `json:"userId"`
-			IsTyping bool   `json:"isTyping"`
-		}{userID, *input.IsTyping})
+		switch input.Type {
+		case "watchPresence":
+			if input.UserID == nil || input.ReceiverID != "" || input.IsTyping != nil {
+				continue
+			}
+			peer := *input.UserID
+			if peer == "" || peer != userID && uuid.MatchString(peer) {
+				r.watchPresence(userID, sub, peer)
+			}
+		case "typing":
+			if input.UserID != nil || input.IsTyping == nil || input.ReceiverID == userID ||
+				!uuid.MatchString(input.ReceiverID) {
+				continue
+			}
+			r.fanout(input.ReceiverID, "typing", struct {
+				UserID   string `json:"userId"`
+				IsTyping bool   `json:"isTyping"`
+			}{userID, *input.IsTyping})
+		}
+	}
+}
+
+func presenceFrame(userID string, online bool) []byte {
+	frame, _ := encodeFrame("presence", struct {
+		UserID string `json:"userId"`
+		Online bool   `json:"online"`
+	}{userID, online})
+	return frame
+}
+
+func (r *relay) watchPresence(owner string, sub *subscriber, peer string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, connected := r.subscribers[owner][sub]; !connected {
+		return
+	}
+	sub.watch = peer
+	if peer != "" {
+		sub.enqueue(presenceFrame(peer, len(r.subscribers[peer]) != 0), true)
+	}
+}
+
+func (r *relay) notifyPresenceLocked(userID string, online bool) {
+	frame := presenceFrame(userID, online)
+	for _, connections := range r.subscribers {
+		for sub := range connections {
+			if sub.watch == userID {
+				sub.enqueue(frame, true)
+			}
+		}
 	}
 }
 
@@ -297,24 +347,32 @@ func (r *relay) publish(w http.ResponseWriter, userID, kind string, data any) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (r *relay) fanout(userID, kind string, data any) error {
-	frame, err := json.Marshal(struct {
+func encodeFrame(kind string, data any) ([]byte, error) {
+	return json.Marshal(struct {
 		Type string `json:"type"`
 		Data any    `json:"data"`
 	}{kind, data})
+}
+
+func (r *relay) fanout(userID, kind string, data any) error {
+	frame, err := encodeFrame(kind, data)
 	if err != nil {
 		return err
 	}
 	r.mu.Lock()
 	for sub := range r.subscribers[userID] {
-		select {
-		case sub.queue <- frame:
-		default:
-			if kind != "typing" {
-				sub.cancel()
-			}
-		}
+		sub.enqueue(frame, kind != "typing")
 	}
 	r.mu.Unlock()
 	return nil
+}
+
+func (s *subscriber) enqueue(frame []byte, disconnectWhenFull bool) {
+	select {
+	case s.queue <- frame:
+	default:
+		if disconnectWhenFull {
+			s.cancel()
+		}
+	}
 }

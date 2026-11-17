@@ -29,6 +29,8 @@ func TestRelay(t *testing.T) {
 			return
 		}
 		switch cookie.Value {
+		case "alice":
+			fmt.Fprintf(w, `{"status":200,"data":{"id":%q}}`, alice)
 		case "bob":
 			fmt.Fprintf(w, `{"status":200,"data":{"id":%q}}`, bob)
 		case "carol":
@@ -76,7 +78,7 @@ func TestRelay(t *testing.T) {
 	}
 	connect := func(user string) *websocket.Conn {
 		t.Helper()
-		owner := map[string]string{"bob": bob, "carol": carol}[user]
+		owner := map[string]string{"alice": alice, "bob": bob, "carol": carol}[user]
 		c, _, err := dial(user, origin, owner)
 		if err != nil {
 			t.Fatal(err)
@@ -199,4 +201,38 @@ func TestRelay(t *testing.T) {
 
 	post(token, bob, first, ciphertext, http.StatusNoContent)
 	read(bobSocket, first, bob)
+
+	watch := func(id string) {
+		t.Helper()
+		data := fmt.Appendf(nil, `{"type":"watchPresence","userId":%q}`, id)
+		if err := bobSocket.Write(ctx, websocket.MessageText, data); err != nil {
+			t.Fatal(err)
+		}
+	}
+	presence := func(id string, online bool) {
+		t.Helper()
+		_, body, err := bobSocket.Read(ctx)
+		want := fmt.Sprintf(`{"type":"presence","data":{"userId":%q,"online":%t}}`, id, online)
+		if err != nil || string(body) != want {
+			t.Fatalf("presence frame = %s, %v; want %s", body, err, want)
+		}
+	}
+	watch(alice)
+	presence(alice, false)
+	aliceSocket := connect("alice")
+	presence(alice, true)
+	aliceOtherTab := connect("alice")
+	if err := aliceSocket.Close(websocket.StatusNormalClosure, ""); err != nil {
+		t.Fatal(err)
+	}
+	watch(alice)
+	presence(alice, true)
+	if err := aliceOtherTab.Close(websocket.StatusNormalClosure, ""); err != nil {
+		t.Fatal(err)
+	}
+	presence(alice, false)
+	connect("alice")
+	presence(alice, true)
+	watch(carol)
+	presence(carol, true)
 }
