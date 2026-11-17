@@ -25,6 +25,13 @@ const oldUserDigestRef = `ghcr.io/acme/chat-user-service@sha256:${oldDig}`;
 const oldChatDigestRef = `ghcr.io/acme/chat-chat-service@sha256:${oldDig}`;
 const oldNotifDigestRef = `ghcr.io/acme/chat-notification-service@sha256:${oldDig}`;
 const oldNginxDigestRef = `ghcr.io/acme/chat-nginx@sha256:${oldDig}`;
+const relayRef = `ghcr.io/acme/chat-websocket@sha256:${dig}`;
+const priorRelayRef = `ghcr.io/acme/chat-websocket@sha256:${oldDig}`;
+const relayEnv = {
+  GO_WS_IMAGE: relayRef,
+  GO_WS_SESSION_KEY: 'fixture-session-key-only-0123456789',
+  GO_WS_BRIDGE_TOKEN: 'fixture-bridge-token-only-0123456789',
+};
 const olderUserDigestRef = `ghcr.io/acme/chat-user-service@sha256:${olderDig}`;
 const olderChatDigestRef = `ghcr.io/acme/chat-chat-service@sha256:${olderDig}`;
 const olderNotifDigestRef = `ghcr.io/acme/chat-notification-service@sha256:${olderDig}`;
@@ -56,6 +63,7 @@ if [ "$1" = compose ] && echo "$*" | grep -q 'ps -q'; then
     *'ps -q chat'*) printf '%s\n' chat-container ;;
     *'ps -q notification'*) printf '%s\n' notification-container ;;
     *'ps -q nginx'*) printf '%s\n' nginx-container ;;
+    *'ps -q go-websocket'*) printf '%s\n' relay-container ;;
   esac
   exit 0
 fi
@@ -65,6 +73,7 @@ if [ "$1" = inspect ]; then
     *chat-container*) printf '%s\n' "\${RUNTIME_CHAT_IMAGE:-\$RELEASE_EXPECTED_IMAGE}" ;;
     *notification-container*) printf '%s\n' "\${RUNTIME_NOTIFICATION_IMAGE:-\$RELEASE_EXPECTED_IMAGE}" ;;
     *nginx-container*) printf '%s\n' "\${RUNTIME_NGINX_IMAGE:-\$RELEASE_EXPECTED_IMAGE}" ;;
+    *relay-container*) printf '%s\n' "\${RUNTIME_RELAY_IMAGE:-\$RELEASE_EXPECTED_IMAGE}" ;;
   esac
   exit 0
 fi
@@ -153,6 +162,76 @@ test('role creation emits literal PostgreSQL dollar delimiters through real Bash
 test('static verifier accepts the immutable, split ownership workflow', () => {
   const result = spawnSync(process.execPath, [verifier], { cwd: repo, encoding: 'utf8' });
   assert.equal(result.status, 0, result.stderr || result.stdout);
+});
+
+test('relay accepts only an owned digest and distinct keys before Docker mutation', async () => {
+  for (const extraEnv of [
+    { ...relayEnv, GO_WS_IMAGE: 'ghcr.io/acme/chat-websocket:latest' },
+    { ...relayEnv, GO_WS_SESSION_KEY: '' },
+    { ...relayEnv, GO_WS_SESSION_KEY: relayEnv.GO_WS_BRIDGE_TOKEN },
+  ]) {
+    const h = await harness({ state: stateFor(), extraEnv });
+    const result = run(h.env);
+    assert.notEqual(result.status, 0);
+    assert.equal(await readFile(h.log, 'utf8').catch(() => ''), '');
+  }
+});
+
+test('opt-in relay is staged by digest with private configuration and enters release state', async () => {
+  const h = await harness({ state: stateFor(), extraEnv: relayEnv });
+  const result = run(h.env);
+  assert.equal(result.status, 0, result.stderr);
+  const config = await readFile(path.join(h.root, 'chat-microservices/backend.compose.yml'), 'utf8');
+  const { services } = yaml.load(config);
+  assert.equal(services['go-websocket'].image, relayRef);
+  assert.equal(services['go-websocket'].ports, undefined);
+  assert.equal(services['go-websocket'].read_only, true);
+  assert.deepEqual(services['go-websocket'].cap_drop, ['ALL']);
+  assert.equal(services.user.environment.GO_WS_SESSION_KEY, '${GO_WS_SESSION_KEY:?GO_WS_SESSION_KEY is required}');
+  assert.equal(services.chat.environment.GO_WS_BRIDGE_URL, 'http://go-websocket:8090/internal/messages');
+  assert.ok(!config.includes(relayEnv.GO_WS_SESSION_KEY) && !config.includes(relayEnv.GO_WS_BRIDGE_TOKEN));
+  const log = await readFile(h.log, 'utf8');
+  assert.ok(log.includes(`docker pull ${relayRef}`));
+  assert.match(log, /up -d --no-deps user chat notification nginx go-websocket/);
+  const state = await readFile(path.join(h.root, 'release-state.env'), 'utf8');
+  assert.ok(state.includes(`go-websocket.current=${relayRef}\n`));
+  assert.doesNotMatch(state, /^go-websocket\.previous=/m);
+});
+
+test('failed relay candidate restores the recorded relay digest and leaves release state unchanged', async () => {
+  const state = stateFor() + `go-websocket.current=${priorRelayRef}\n`;
+  const h = await harness({ state, extraEnv: {
+    ...relayEnv,
+    RELEASE_HEALTHCHECK_COMMAND: 'test "$RELEASE_HEALTH_SERVICE" != go-websocket',
+    RELEASE_ROLLBACK_HEALTHCHECK_COMMAND: 'true',
+  } });
+  const result = run(h.env);
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /rollback completed/);
+  assert.equal(await readFile(path.join(h.root, 'release-state.env'), 'utf8'), state);
+  const config = yaml.load(await readFile(path.join(h.root, 'chat-microservices/backend.compose.yml'), 'utf8'));
+  assert.equal(config.services['go-websocket'].image, priorRelayRef);
+  assert.match(await readFile(h.log, 'utf8'), /pull go-websocket/);
+});
+
+test('failed first relay enable removes only the project relay and restores the legacy generation', async () => {
+  const state = stateFor();
+  const id = 'e'.repeat(64);
+  const h = await harness({
+    state,
+    extraEnv: { ...relayEnv, RELEASE_HEALTHCHECK_COMMAND: 'test "$RELEASE_HEALTH_SERVICE" != go-websocket' },
+    dockerBody: `if [ "$1" = ps ]; then printf '%s\\n' '${id}'; fi`,
+  });
+  const result = run(h.env);
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /rollback completed/);
+  assert.equal(await readFile(path.join(h.root, 'release-state.env'), 'utf8'), state);
+  const config = yaml.load(await readFile(path.join(h.root, 'chat-microservices/backend.compose.yml'), 'utf8'));
+  assert.equal(config.services['go-websocket'], undefined);
+  const log = await readFile(h.log, 'utf8');
+  assert.match(log, /ps -aq --no-trunc --filter label=com\.docker\.compose\.project=chat-microservices --filter label=com\.docker\.compose\.service=go-websocket/);
+  assert.ok(log.includes(`docker stop --time 8 ${id}\n`));
+  assert.ok(log.includes(`docker rm ${id}\n`));
 });
 
 test('main CI exports all four build-step digests and passes them to deploy workflow', async () => {

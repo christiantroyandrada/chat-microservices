@@ -58,6 +58,10 @@ Add `--check-relay-capacity` to the isolated fixture command to check the cap th
 
 ## Before cutover
 
+The backend workflow leaves the relay off by default. Set the backend repository variable `GO_WS_PILOT` to `true` to build, scan, and deploy it with the next backend release. Put distinct `GO_WS_SESSION_KEY` and `GO_WS_BRIDGE_TOKEN` values in the production Infisical environment first. Keep both keys available during rollback to a release that used the relay.
+
+The backend release records the relay's registry digest. If a candidate fails, the release restores the recorded relay digest or removes the relay if the prior release used Socket.IO alone. The backend switch does not enable the browser pilot.
+
 1. Verify the image and its digest in staging. Measure capacity through the staging gateway.
 2. Verify account changes, restart, and recovery. Rehearse rollback to the verified prior release.
 3. Run the adversarial review on the final candidate. Review correctness, failure modes, and structure independently. Resolve blocking findings and repeat affected checks before the VPS pilot.

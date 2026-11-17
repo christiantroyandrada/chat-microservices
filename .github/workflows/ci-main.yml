@@ -17,6 +17,7 @@ env:
   IMAGE_CHAT: ghcr.io/${{ github.repository_owner }}/chat-chat-service
   IMAGE_NOTIFICATION: ghcr.io/${{ github.repository_owner }}/chat-notification-service
   IMAGE_NGINX: ghcr.io/${{ github.repository_owner }}/chat-nginx
+  IMAGE_RELAY: ghcr.io/${{ github.repository_owner }}/chat-websocket
 
 jobs:
   build:
@@ -131,6 +132,7 @@ jobs:
       chat_digest: ${{ steps.build-chat.outputs.digest }}
       notification_digest: ${{ steps.build-notification.outputs.digest }}
       nginx_digest: ${{ steps.build-nginx.outputs.digest }}
+      relay_digest: ${{ steps.publish-relay.outputs.digest }}
     steps:
       - name: Checkout
         # Pinned to specific commit SHA for supply-chain security
@@ -194,6 +196,17 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      - name: Build Go relay for security scan
+        if: vars.GO_WS_PILOT == 'true'
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: ./websocket-service
+          push: false
+          load: true
+          tags: chat-websocket:scan
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
       - name: Scan user-service release image
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
@@ -228,6 +241,17 @@ jobs:
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: chat-nginx:scan
+          format: table
+          exit-code: '1'
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          scanners: vuln
+
+      - name: Scan Go relay release image
+        if: vars.GO_WS_PILOT == 'true'
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: chat-websocket:scan
           format: table
           exit-code: '1'
           severity: CRITICAL,HIGH
@@ -270,6 +294,14 @@ jobs:
           RELEASE_IMAGE: ${{ env.IMAGE_NGINX }}
         run: *publish-scanned-image
 
+      - name: Publish Go relay
+        if: vars.GO_WS_PILOT == 'true'
+        id: publish-relay
+        env:
+          SCAN_IMAGE: chat-websocket:scan
+          RELEASE_IMAGE: ${{ env.IMAGE_RELAY }}
+        run: *publish-scanned-image
+
   deploy:
     name: Deploy to VPS
     needs: docker-build
@@ -280,4 +312,5 @@ jobs:
       chat_digest: ${{ needs.docker-build.outputs.chat_digest }}
       notification_digest: ${{ needs.docker-build.outputs.notification_digest }}
       nginx_digest: ${{ needs.docker-build.outputs.nginx_digest }}
+      relay_digest: ${{ needs.docker-build.outputs.relay_digest }}
     secrets: inherit

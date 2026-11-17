@@ -370,16 +370,15 @@ async function main() {
     mkdirSync(certificates);
     await command('Generate disposable localhost TLS fixture', 'openssl', ['req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-days', '1', '-subj', '/CN=127.0.0.1', '-addext', 'subjectAltName=IP:127.0.0.1', '-keyout', join(certificates, 'privkey.pem'), '-out', join(certificates, 'fullchain.pem')]);
     chmodSync(join(certificates, 'privkey.pem'), 0o644);
-    const gateway = readFileSync(join(env.FULLSTACK_SNAPSHOT, 'backend/nginx/nginx.conf'), 'utf8');
-    assert.equal((gateway.match(/listen 8080;/g) ?? []).length, 1);
-    const upgrade = goWebSocket ? `
-    location = /ws/v1 {
-        proxy_pass http://go-websocket:8090;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection Upgrade;
-    }` : '';
-    writeFileSync(join(runtime, 'nginx.conf'), gateway.replace('listen 8080;', 'listen 8443 ssl;\n    ssl_certificate /fixture-certificates/fullchain.pem;\n    ssl_certificate_key /fixture-certificates/privkey.pem;' + upgrade));
+    const gatewayRoot = join(env.FULLSTACK_SNAPSHOT, 'backend/nginx');
+    const gateway = goWebSocket
+      ? readFileSync(join(gatewayRoot, 'ssl/nginx-ssl.conf'), 'utf8')
+        .replaceAll(/\/etc\/letsencrypt\/live\/[^/]+\//g, '/fixture-certificates/')
+        .replaceAll('server_name chat.ctaprojects.xyz www.chat.ctaprojects.xyz;', 'server_name 127.0.0.1;')
+        .replace('server n8n:5678;', 'server 127.0.0.1:1;')
+      : readFileSync(join(gatewayRoot, 'nginx.conf'), 'utf8')
+        .replace('listen 8080;', 'listen 8443 ssl;\n    ssl_certificate /fixture-certificates/fullchain.pem;\n    ssl_certificate_key /fixture-certificates/privkey.pem;');
+    writeFileSync(join(runtime, 'nginx.conf'), gateway);
     for (const image of ['postgres@sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24', 'rabbitmq@sha256:6931816af1a943f471c038b278835d36692d55dec769232739296bb91b7de0f5']) {
       const [detail] = JSON.parse(dockerOutput(['image', 'inspect', image]));
       assert.equal(detail.Os, 'linux');
@@ -460,6 +459,7 @@ async function main() {
       await waitForHTTPS(path);
     }
     if (goWebSocket) {
+      assert.equal(await httpsStatus('/ws/v1', { Origin: env.FULLSTACK_ORIGIN }), 401);
       const user = inspectService('user');
       await command('Verify the internal session endpoint requires both credentials', docker, ['--context', context, 'exec', user.Id, user.Path, '-e', `
         const assert = require('node:assert/strict');
@@ -506,6 +506,7 @@ async function main() {
       assert.ok(stored.length >= 2 && stored.every(row => row.isEncrypted), 'Expected persisted ciphertext from the Go flow');
       await command('Stop verified Go relay', docker, ['--context', context, 'stop', '--timeout', '8', relay.Id]);
       assert.equal(inspectService('go-websocket').State.Running, false);
+      assert.equal(await httpsStatus('/ws/v1', { Origin: env.FULLSTACK_ORIGIN }), 404);
       const frontendBefore = inspectService('frontend');
       if (rollbackImage) assert.notEqual(rollbackImage, frontendBefore.Image, 'Rollback image equals the active image');
       await composeCommand('Restore the frontend with Go disabled', ['up', '-d', '--no-deps', '--force-recreate', '--no-build', '--pull', 'never', 'frontend'], {

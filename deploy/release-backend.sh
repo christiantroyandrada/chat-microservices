@@ -13,6 +13,10 @@ USER_IMAGE_REF="${USER_IMAGE:-}"
 CHAT_IMAGE_REF="${CHAT_IMAGE:-}"
 NOTIFICATION_IMAGE_REF="${NOTIFICATION_IMAGE:-}"
 NGINX_IMAGE_REF="${NGINX_IMAGE:-}"
+RELAY_IMAGE_REF="${GO_WS_IMAGE:-}"
+GO_WS_ORIGIN="https://chat.ctaprojects.xyz"
+GO_WS_SESSION_KEY="${GO_WS_SESSION_KEY:-}"
+GO_WS_BRIDGE_TOKEN="${GO_WS_BRIDGE_TOKEN:-}"
 ADMIN_USERNAME="${ADMIN_USERNAME:-postgres}"
 ADMIN_PASSWORD_ENCODED="${ADMIN_PASSWORD_ENCODED:-}"
 
@@ -35,6 +39,7 @@ validate_ref() {
     chat) repository=chat-chat-service ;;
     notification) repository=chat-notification-service ;;
     nginx) repository=chat-nginx ;;
+    go-websocket) repository=chat-websocket ;;
     *) die "unknown owned service: $service" ;;
   esac
   [[ "$ref" =~ ^ghcr\.io/$REPO_OWNER/$repository@sha256:[0-9a-f]{64}$ ]] || \
@@ -45,6 +50,7 @@ validate_ref user "$USER_IMAGE_REF"
 validate_ref chat "$CHAT_IMAGE_REF"
 validate_ref notification "$NOTIFICATION_IMAGE_REF"
 validate_ref nginx "$NGINX_IMAGE_REF"
+[[ -z "$RELAY_IMAGE_REF" ]] || validate_ref go-websocket "$RELAY_IMAGE_REF"
 
 mkdir -p "$DEPLOY_PATH" "$SERVICE_DIR"
 command -v flock >/dev/null 2>&1 || die "flock is required"
@@ -68,6 +74,8 @@ while IFS='=' read -r key value; do
     notification.previous) PREVIOUS_NOTIFICATION="$value" ;;
     nginx.current) CURRENT_NGINX="$value" ;;
     nginx.previous) PREVIOUS_NGINX="$value" ;;
+    go-websocket.current) CURRENT_RELAY="$value" ;;
+    go-websocket.previous) PREVIOUS_RELAY="$value" ;;
   esac
 done < <([[ -f "$STATE_FILE" ]] && awk 'NF || /^$/' "$STATE_FILE" || true)
 
@@ -79,25 +87,34 @@ done < <([[ -f "$STATE_FILE" ]] && awk 'NF || /^$/' "$STATE_FILE" || true)
 [[ -z "${PREVIOUS_CHAT:-}" ]] || validate_ref chat "$PREVIOUS_CHAT"
 [[ -z "${PREVIOUS_NOTIFICATION:-}" ]] || validate_ref notification "$PREVIOUS_NOTIFICATION"
 [[ -z "${PREVIOUS_NGINX:-}" ]] || validate_ref nginx "$PREVIOUS_NGINX"
+[[ -z "${CURRENT_RELAY:-}" ]] || validate_ref go-websocket "$CURRENT_RELAY"
+[[ -z "${PREVIOUS_RELAY:-}" ]] || validate_ref go-websocket "$PREVIOUS_RELAY"
 
-if [[ -n "${CURRENT_USER:-}${CURRENT_CHAT:-}${CURRENT_NOTIFICATION:-}${CURRENT_NGINX:-}" ]]; then
+if [[ -n "${CURRENT_USER:-}${CURRENT_CHAT:-}${CURRENT_NOTIFICATION:-}${CURRENT_NGINX:-}${CURRENT_RELAY:-}" ]]; then
   [[ -n "${CURRENT_USER:-}" && -n "${CURRENT_CHAT:-}" && -n "${CURRENT_NOTIFICATION:-}" && -n "${CURRENT_NGINX:-}" ]] ||
     die "current release state is not complete or coherent"
 fi
-if [[ -n "${PREVIOUS_USER:-}${PREVIOUS_CHAT:-}${PREVIOUS_NOTIFICATION:-}${PREVIOUS_NGINX:-}" ]]; then
+if [[ -n "${PREVIOUS_USER:-}${PREVIOUS_CHAT:-}${PREVIOUS_NOTIFICATION:-}${PREVIOUS_NGINX:-}${PREVIOUS_RELAY:-}" ]]; then
   [[ -n "${PREVIOUS_USER:-}" && -n "${PREVIOUS_CHAT:-}" && -n "${PREVIOUS_NOTIFICATION:-}" && -n "${PREVIOUS_NGINX:-}" ]] ||
     die "previous release state is not complete or coherent"
 fi
 
+if [[ -n "$RELAY_IMAGE_REF${CURRENT_RELAY:-}" ]]; then
+  [[ ${#GO_WS_SESSION_KEY} -ge 32 && ${#GO_WS_BRIDGE_TOKEN} -ge 32 && "$GO_WS_SESSION_KEY" != "$GO_WS_BRIDGE_TOKEN" ]] ||
+    die "relay requires distinct session and bridge secrets of at least 32 characters"
+fi
+
 TARGET_ALREADY_CURRENT=0
 if [[ "${CURRENT_USER:-}" == "$USER_IMAGE_REF" && "${CURRENT_CHAT:-}" == "$CHAT_IMAGE_REF" &&
-      "${CURRENT_NOTIFICATION:-}" == "$NOTIFICATION_IMAGE_REF" && "${CURRENT_NGINX:-}" == "$NGINX_IMAGE_REF" ]]; then
+      "${CURRENT_NOTIFICATION:-}" == "$NOTIFICATION_IMAGE_REF" && "${CURRENT_NGINX:-}" == "$NGINX_IMAGE_REF" &&
+      "${CURRENT_RELAY:-}" == "$RELAY_IMAGE_REF" ]]; then
   TARGET_ALREADY_CURRENT=1
 fi
 
 write_state() {
   local user_current="$1" chat_current="$2" notification_current="$3" nginx_current="$4"
   local user_previous="${5:-}" chat_previous="${6:-}" notification_previous="${7:-}" nginx_previous="${8:-}"
+  local relay_current="${9:-}" relay_previous="${10:-}"
   local tmp="${STATE_FILE}.tmp.$$"
   local source="/dev/null"
   [[ -f "$STATE_FILE" ]] && source="$STATE_FILE"
@@ -111,16 +128,19 @@ write_state() {
     -v uc="$user_current" -v up="$user_previous" \
     -v cc="$chat_current" -v cp="$chat_previous" \
     -v nc="$notification_current" -v np="$notification_previous" \
-    -v xc="$nginx_current" -v xp="$nginx_previous" '
+    -v xc="$nginx_current" -v xp="$nginx_previous" \
+    -v wc="$relay_current" -v wp="$relay_previous" '
     BEGIN {
       value["user.current"] = uc; value["user.previous"] = up
       value["chat.current"] = cc; value["chat.previous"] = cp
       value["notification.current"] = nc; value["notification.previous"] = np
       value["nginx.current"] = xc; value["nginx.previous"] = xp
+      value["go-websocket.current"] = wc; value["go-websocket.previous"] = wp
       order[1] = "user.current"; order[2] = "user.previous"
       order[3] = "chat.current"; order[4] = "chat.previous"
       order[5] = "notification.current"; order[6] = "notification.previous"
       order[7] = "nginx.current"; order[8] = "nginx.previous"
+      order[9] = "go-websocket.current"; order[10] = "go-websocket.previous"
     }
     /^[[:alnum:]_-]+\.(current|previous)=/ {
       if ($1 in value) {
@@ -130,7 +150,7 @@ write_state() {
     }
     { print }
     END {
-      for (i = 1; i <= 8; i++) {
+      for (i = 1; i <= 10; i++) {
         key = order[i]
         if (!(key in seen) && value[key] != "") print key, value[key]
       }
@@ -151,6 +171,7 @@ user.pending=$USER_IMAGE_REF
 chat.pending=$CHAT_IMAGE_REF
 notification.pending=$NOTIFICATION_IMAGE_REF
 nginx.pending=$NGINX_IMAGE_REF
+go-websocket.pending=$RELAY_IMAGE_REF
 EOF
   chmod 600 "$tmp"
   mv -f "$tmp" "$PENDING_STATE_FILE"
@@ -158,7 +179,13 @@ EOF
 
 write_compose() {
   local tmp="${COMPOSE_FILE}.tmp.$$"
-  cat > "$tmp" <<EOF
+  local session_key_env='' chat_bridge_env=''
+  if [[ -n "$RELAY_IMAGE_REF" ]]; then
+    session_key_env='      GO_WS_SESSION_KEY: ${GO_WS_SESSION_KEY:?GO_WS_SESSION_KEY is required}'
+    chat_bridge_env='      GO_WS_BRIDGE_URL: http://go-websocket:8090/internal/messages
+      GO_WS_BRIDGE_TOKEN: ${GO_WS_BRIDGE_TOKEN:?GO_WS_BRIDGE_TOKEN is required}'
+  fi
+  cat > "$tmp" <<EOF || return 1
 name: $PROJECT_NAME
 services:
   postgres:
@@ -186,6 +213,7 @@ services:
       MESSAGE_BROKER_URL: \${MESSAGE_BROKER_URL:?MESSAGE_BROKER_URL is required}
       CORS_ORIGINS: \${CORS_ORIGINS:?CORS_ORIGINS is required}
       DATABASE_URL: \${DATABASE_URL_USER:-postgresql://user_svc:\${DB_USER_SVC_PASS:?DB_USER_SVC_PASS is required}@postgres:5432/chat_db}
+$session_key_env
     depends_on:
       postgres: { condition: service_healthy }
     healthcheck:
@@ -204,6 +232,7 @@ services:
       MESSAGE_BROKER_URL: \${MESSAGE_BROKER_URL:?MESSAGE_BROKER_URL is required}
       CORS_ORIGINS: \${CORS_ORIGINS:?CORS_ORIGINS is required}
       DATABASE_URL: \${DATABASE_URL_CHAT:-postgresql://chat_svc:\${DB_CHAT_SVC_PASS:?DB_CHAT_SVC_PASS is required}@postgres:5432/chat_db}
+$chat_bridge_env
     depends_on:
       postgres: { condition: service_healthy }
     healthcheck:
@@ -253,13 +282,32 @@ services:
       timeout: 5s
       retries: 3
     networks: [default, n8n_nginx_bridge]
+EOF
+  if [[ -n "$RELAY_IMAGE_REF" ]]; then
+    cat >> "$tmp" <<EOF || return 1
+  go-websocket:
+    image: ${RELAY_IMAGE_REF}
+    restart: always
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    stop_grace_period: 8s
+    environment:
+      GO_WS_ORIGIN: ${GO_WS_ORIGIN}
+      GO_WS_SESSION_URL: http://user:8081/internal/ws/session
+      GO_WS_CHAT_HISTORY_URL: http://chat:8082/get
+      GO_WS_SESSION_KEY: \${GO_WS_SESSION_KEY:?GO_WS_SESSION_KEY is required}
+      GO_WS_BRIDGE_TOKEN: \${GO_WS_BRIDGE_TOKEN:?GO_WS_BRIDGE_TOKEN is required}
+EOF
+  fi
+  cat >> "$tmp" <<EOF || return 1
 volumes:
   postgres-data:
 networks:
   n8n_nginx_bridge:
     external: true
 EOF
-  chmod 600 "$tmp"
+  chmod 600 "$tmp" || return 1
   mv -f "$tmp" "$COMPOSE_FILE"
 }
 
@@ -267,6 +315,26 @@ compose() {
   local args=(--project-name "$PROJECT_NAME" --file "$COMPOSE_FILE")
   [[ ! -f "$SERVICE_DIR/docker-compose.override.yml" ]] || args+=(--file "$SERVICE_DIR/docker-compose.override.yml")
   docker compose "${args[@]}" "$@"
+}
+
+stop_release_relay() {
+  local relay_container
+  relay_container="$(docker ps -aq --no-trunc --filter "label=com.docker.compose.project=$PROJECT_NAME" \
+    --filter 'label=com.docker.compose.service=go-websocket')" || return 1
+  if [[ -n "$relay_container" ]]; then
+    [[ "$relay_container" =~ ^[0-9a-f]{64}$ ]] || return 1
+    docker stop --time 8 "$relay_container" || return 1
+    docker rm "$relay_container" || return 1
+  fi
+}
+
+start_release_services() {
+  if [[ -n "$RELAY_IMAGE_REF" ]]; then
+    compose up -d --no-deps user chat notification nginx go-websocket
+    return
+  fi
+  stop_release_relay || return 1
+  compose up -d --no-deps user chat notification nginx
 }
 
 run_migrations() {
@@ -327,21 +395,31 @@ wait_for_postgres() {
 
 health_check() {
   local service route timeout interval max_attempts attempts deadline status
+  local health_url="${RELEASE_HEALTH_URL:-https://localhost}"
+  local services=(user chat notification nginx)
+  [[ -z "$RELAY_IMAGE_REF" ]] || services+=(go-websocket)
   timeout="${RELEASE_HEALTH_TIMEOUT:-120}"
   interval="${RELEASE_POLL_INTERVAL:-5}"
   max_attempts="${RELEASE_HEALTH_MAX_ATTEMPTS:-60}"
-  for service in user chat notification nginx; do
+  for service in "${services[@]}"; do
     case "$service" in
       user) route=/api/user/health ;;
       chat) route=/chat/health ;;
       notification) route=/notifications/health ;;
       nginx) route=/health ;;
+      go-websocket) route=/ws/v1 ;;
     esac
     attempts=0
     deadline=$((SECONDS + timeout))
     while (( attempts < max_attempts )); do
       if [[ -n "${RELEASE_HEALTHCHECK_COMMAND:-}" ]]; then
         if RELEASE_HEALTH_SERVICE="$service" RELEASE_HEALTH_PATH="$route" bash -c "$RELEASE_HEALTHCHECK_COMMAND"; then
+          break
+        fi
+      elif [[ "$service" == go-websocket ]]; then
+        if status="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' --max-time 5 \
+          -k -H 'Host: chat.ctaprojects.xyz' -H "Origin: $GO_WS_ORIGIN" "${health_url%/}$route")" &&
+          [[ "$status" == 401 ]]; then
           break
         fi
       else
@@ -360,7 +438,6 @@ health_check() {
   done
 
   if [[ -z "${RELEASE_HEALTHCHECK_COMMAND:-}" ]]; then
-    local health_url="${RELEASE_HEALTH_URL:-https://localhost}"
     for route in /api/user/health /chat/health /notifications/health; do
       curl --fail --silent --show-error --max-time "$timeout" -k -H 'Host: chat.ctaprojects.xyz' "${health_url%/}$route" >/dev/null || {
         echo "release-backend: public health check failed for $route" >&2
@@ -372,12 +449,15 @@ health_check() {
 
 verify_running_images() {
   local service container image expected
-  for service in user chat notification nginx; do
+  local services=(user chat notification nginx)
+  [[ -z "$RELAY_IMAGE_REF" ]] || services+=(go-websocket)
+  for service in "${services[@]}"; do
     case "$service" in
       user) expected="$USER_IMAGE_REF" ;;
       chat) expected="$CHAT_IMAGE_REF" ;;
       notification) expected="$NOTIFICATION_IMAGE_REF" ;;
       nginx) expected="$NGINX_IMAGE_REF" ;;
+      go-websocket) expected="$RELAY_IMAGE_REF" ;;
     esac
     container="$(compose ps -q "$service" | head -n 1)"
     [[ -n "$container" ]] || {
@@ -400,6 +480,7 @@ pull_images() {
   docker pull "$CHAT_IMAGE_REF" || return 1
   docker pull "$NOTIFICATION_IMAGE_REF" || return 1
   docker pull "$NGINX_IMAGE_REF" || return 1
+  [[ -z "$RELAY_IMAGE_REF" ]] || docker pull "$RELAY_IMAGE_REF" || return 1
 }
 
 run_broker_preflight() {
@@ -426,12 +507,13 @@ deploy_candidate() {
   provision_database || return 1
   run_migrations || return 1
   grant_service_tables || return 1
-  compose up -d --no-deps user chat notification nginx || return 1
+  start_release_services || return 1
   verify_running_images || return 1
   health_check || return 1
   if (( TARGET_ALREADY_CURRENT == 0 )); then
     write_state "$USER_IMAGE_REF" "$CHAT_IMAGE_REF" "$NOTIFICATION_IMAGE_REF" "$NGINX_IMAGE_REF" \
-      "${CURRENT_USER:-}" "${CURRENT_CHAT:-}" "${CURRENT_NOTIFICATION:-}" "${CURRENT_NGINX:-}"
+      "${CURRENT_USER:-}" "${CURRENT_CHAT:-}" "${CURRENT_NOTIFICATION:-}" "${CURRENT_NGINX:-}" \
+      "$RELAY_IMAGE_REF" "${CURRENT_RELAY:-}"
   fi
 }
 
@@ -443,6 +525,9 @@ rollback() {
   rollback_nginx="${CURRENT_NGINX:-}"
   [[ -n "$rollback_user" && -n "$rollback_chat" &&
      -n "$rollback_notification" && -n "$rollback_nginx" ]] || {
+    if [[ -n "$RELAY_IMAGE_REF" ]]; then
+      stop_release_relay || echo "release-backend: failed to remove unrecorded relay" >&2
+    fi
     echo "release-backend: no complete rollback generation; refusing invented rollback" >&2
     return 1
   }
@@ -450,9 +535,11 @@ rollback() {
   CHAT_IMAGE_REF="$rollback_chat"
   NOTIFICATION_IMAGE_REF="$rollback_notification"
   NGINX_IMAGE_REF="$rollback_nginx"
-  write_compose
+  RELAY_IMAGE_REF="${CURRENT_RELAY:-}"
+  write_compose || return 1
   compose pull user chat notification nginx || return 1
-  compose up -d --no-deps user chat notification nginx || return 1
+  [[ -z "$RELAY_IMAGE_REF" ]] || compose pull go-websocket || return 1
+  start_release_services || return 1
   verify_running_images || return 1
   if [[ -n "${RELEASE_ROLLBACK_HEALTHCHECK_COMMAND:-}" ]]; then
     bash -c "$RELEASE_ROLLBACK_HEALTHCHECK_COMMAND" || return 1

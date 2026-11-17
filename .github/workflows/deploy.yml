@@ -19,6 +19,11 @@ on:
         description: Digest for chat-nginx image (sha256:...)
         required: true
         type: string
+      relay_digest:
+        description: Digest for the optional chat-websocket image (sha256:...)
+        required: false
+        type: string
+        default: ''
     secrets:
       PGADMIN_EMAIL:
         required: false
@@ -74,6 +79,7 @@ jobs:
           CHAT_DIGEST: ${{ inputs.chat_digest }}
           NOTIFICATION_DIGEST: ${{ inputs.notification_digest }}
           NGINX_DIGEST: ${{ inputs.nginx_digest }}
+          RELAY_DIGEST: ${{ inputs.relay_digest }}
         run: |
           for d in "$USER_DIGEST" "$CHAT_DIGEST" "$NOTIFICATION_DIGEST" "$NGINX_DIGEST"; do
             if ! echo "$d" | grep -Eq '^sha256:[0-9a-f]{64}$'; then
@@ -81,6 +87,10 @@ jobs:
               exit 1
             fi
           done
+          if [[ -n "$RELAY_DIGEST" && ! "$RELAY_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo "relay digest must be sha256:<64 lowercase hex>" >&2
+            exit 1
+          fi
 
       - name: Verify migration policy
         run: node scripts/verify-migration-policy.mjs
@@ -104,6 +114,9 @@ jobs:
           CHAT_IMAGE: ghcr.io/${{ github.repository_owner }}/chat-chat-service@${{ inputs.chat_digest }}
           NOTIFICATION_IMAGE: ghcr.io/${{ github.repository_owner }}/chat-notification-service@${{ inputs.notification_digest }}
           NGINX_IMAGE: ghcr.io/${{ github.repository_owner }}/chat-nginx@${{ inputs.nginx_digest }}
+          GO_WS_IMAGE: ${{ inputs.relay_digest != '' && format('ghcr.io/{0}/chat-websocket@{1}', github.repository_owner, inputs.relay_digest) || '' }}
+          GO_WS_SESSION_KEY: ${{ env.GO_WS_SESSION_KEY }}
+          GO_WS_BRIDGE_TOKEN: ${{ env.GO_WS_BRIDGE_TOKEN }}
           REPO_OWNER: ${{ github.repository_owner }}
           DB_USER_SVC_PASS: ${{ env.DB_USER_SVC_PASS }}
           DB_CHAT_SVC_PASS: ${{ env.DB_CHAT_SVC_PASS }}
@@ -115,5 +128,5 @@ jobs:
           key: ${{ secrets.VPS_SSH_PRIVATE_KEY }}
           port: ${{ secrets.VPS_PORT }}
           command_timeout: 30m
-          envs: ADMIN_USERNAME,ADMIN_PASSWORD,ADMIN_PASSWORD_ENCODED,CORS_ORIGINS,MESSAGE_BROKER_URL,SENDINBLUE_APIKEY,SMTP_HOST,SMTP_PASS,SMTP_USER,EMAIL_FROM,PGADMIN_EMAIL,GITHUB_TOKEN,USER_IMAGE,CHAT_IMAGE,NOTIFICATION_IMAGE,NGINX_IMAGE,REPO_OWNER,DB_USER_SVC_PASS,DB_CHAT_SVC_PASS,DB_NOTIF_SVC_PASS,MIGRATIONS_ROLLBACK_SAFE
+          envs: ADMIN_USERNAME,ADMIN_PASSWORD,ADMIN_PASSWORD_ENCODED,CORS_ORIGINS,MESSAGE_BROKER_URL,SENDINBLUE_APIKEY,SMTP_HOST,SMTP_PASS,SMTP_USER,EMAIL_FROM,PGADMIN_EMAIL,GITHUB_TOKEN,USER_IMAGE,CHAT_IMAGE,NOTIFICATION_IMAGE,NGINX_IMAGE,GO_WS_IMAGE,GO_WS_SESSION_KEY,GO_WS_BRIDGE_TOKEN,REPO_OWNER,DB_USER_SVC_PASS,DB_CHAT_SVC_PASS,DB_NOTIF_SVC_PASS,MIGRATIONS_ROLLBACK_SAFE
           script_path: deploy/release-backend.sh

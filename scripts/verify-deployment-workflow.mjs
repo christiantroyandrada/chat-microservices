@@ -24,6 +24,9 @@ requireText(ci, /with:\s*\n\s*user_digest:\s*\$\{\{\s*needs\.docker-build\.outpu
 requireText(ci, /chat_digest:\s*\$\{\{\s*needs\.docker-build\.outputs\.chat_digest\s*\}\}/, 'main CI must pass chat digest to deploy');
 requireText(ci, /notification_digest:\s*\$\{\{\s*needs\.docker-build\.outputs\.notification_digest\s*\}\}/, 'main CI must pass notification digest to deploy');
 requireText(ci, /nginx_digest:\s*\$\{\{\s*needs\.docker-build\.outputs\.nginx_digest\s*\}\}/, 'main CI must pass nginx digest to deploy');
+requireText(ci, /relay_digest:\s*\$\{\{\s*steps\.publish-relay\.outputs\.digest\s*\}\}/, 'main CI must export the relay registry digest');
+requireText(ci, /name: Publish Go relay\s+if: vars\.GO_WS_PILOT == 'true'\s+id: publish-relay/, 'relay publishing must require explicit opt-in');
+requireText(ci, /relay_digest:\s*\$\{\{\s*needs\.docker-build\.outputs\.relay_digest\s*\}\}/, 'main CI must pass relay digest to deploy');
 assert.doesNotMatch(ci, /image_tag:\s*\$\{\{\s*github\.sha\s*\}\}/, 'main CI must not pass image_tag SHA');
 requireText(ci, /node --test tests\/deployment-workflow\.test\.mjs/, 'main CI must run deployment workflow tests');
 requireText(ci, /node scripts\/verify-deployment-workflow\.mjs/, 'main CI must run the deployment verifier');
@@ -38,6 +41,8 @@ requireText(deploy, /user_digest:[\s\S]*required:\s*true/, 'release must require
 requireText(deploy, /chat_digest:[\s\S]*required:\s*true/, 'release must require chat_digest');
 requireText(deploy, /notification_digest:[\s\S]*required:\s*true/, 'release must require notification_digest');
 requireText(deploy, /nginx_digest:[\s\S]*required:\s*true/, 'release must require nginx_digest');
+requireText(deploy, /relay_digest:\s*\n[^\n]*\n\s*required:\s*false/, 'release must keep the relay optional');
+requireText(deploy, /GO_WS_IMAGE:.*inputs\.relay_digest != ''[^\n]*chat-websocket@/, 'only a supplied relay digest may enable the relay');
 requireText(deploy, /actions\/checkout@[0-9a-f]{40}/, 'release workflow must checkout an exact revision');
 assert.doesNotMatch(deploy, /ref:\s*\$\{\{\s*inputs\.image_tag\s*\}\}/, 'release checkout must not be bound to image_tag');
 requireText(deploy, /appleboy\/ssh-action@[0-9a-f]{40}/, 'SSH action must remain pinned');
@@ -102,8 +107,8 @@ for (const [earlier, later] of [
 const candidateFlow = release.slice(release.indexOf('deploy_candidate()'), release.indexOf('\nrollback()'));
 for (const [earlier, later] of [
   ['write_pending_state', 'run_migrations'],
-  ['run_migrations', 'up -d --no-deps user chat notification nginx'],
-  ['up -d --no-deps user chat notification nginx', 'verify_running_images'],
+  ['run_migrations', 'start_release_services'],
+  ['start_release_services', 'verify_running_images'],
   ['verify_running_images', 'health_check'],
   ['health_check', 'write_state'],
 ]) {
