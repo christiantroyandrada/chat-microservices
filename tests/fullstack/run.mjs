@@ -384,7 +384,12 @@ async function main() {
       await composeCommand(`Build actual ${service} image`, ['build', service], { timeout: 600_000 });
     }
     await composeCommand('Start owned PostgreSQL and RabbitMQ', ['up', '-d', 'postgres', 'rabbitmq']);
-    const containerId = service => dockerOutput(['ps', '-aq', '--filter', `label=chat.fullstack.run=${runId}`, '--filter', `label=com.docker.compose.service=${service}`]);
+    const containerId = service => {
+      const ids = dockerOutput(['ps', '-aq', '--filter', `label=chat.fullstack.run=${runId}`,
+        '--filter', `label=com.docker.compose.service=${service}`, '--filter', 'label=com.docker.compose.oneoff=False']);
+      assert.match(ids, /^[0-9a-f]+$/, `Expected one service container for ${service}`);
+      return ids;
+    };
     for (const service of ['postgres', 'rabbitmq']) await poll(`${service} health`, () => dockerOutput(['inspect', containerId(service), '--format', '{{.State.Health.Status}}']) === 'healthy');
     await databaseCall(database, () => database.connect(), 'Fixture database connect');
     databaseIdentity = (await query('SELECT current_database() AS database, current_user AS role, system_identifier::text AS system FROM pg_control_system()')).rows[0];
@@ -428,14 +433,17 @@ async function main() {
       await waitForHTTPS(path);
     }
     if (goWebSocket) {
-      await composeCommand('Verify the internal session endpoint requires both credentials', ['exec', '-T', 'user', 'node', '-e', `
+      const user = inspectService('user');
+      await command('Verify the internal session endpoint requires both credentials', docker, ['--context', context, 'exec', user.Id, user.Path, '-e', `
         const assert = require('node:assert/strict');
         const url = 'http://localhost:8081/internal/ws/session';
         (async () => {
+          const key = process.env.GO_WS_SESSION_KEY;
           for (const [headers, status] of [
             [{}, 404],
             [{ 'X-Relay-Session-Key': 'invalid' }, 404],
-            [{ 'X-Relay-Session-Key': process.env.GO_WS_SESSION_KEY }, 401]
+            [{ 'X-Relay-Session-Key': key }, 401],
+            [{ 'X-Relay-Session-Key': key, Cookie: 'jwt=invalid' }, 401]
           ]) {
             const response = await fetch(url, { headers, signal: AbortSignal.timeout(3000) });
             assert.equal(response.status, status);
