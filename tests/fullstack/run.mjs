@@ -13,7 +13,7 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const options = new Map();
 for (let index = 2; index < process.argv.length; index++) {
   const argument = process.argv[index];
-  if (['--check', '--start-fixture', '--go-websocket'].includes(argument)) options.set(argument, true);
+  if (['--check', '--start-fixture', '--go-websocket', '--rehearse-rollback'].includes(argument)) options.set(argument, true);
   else {
     assert.equal(argument, '--frontend-dir', 'Unknown fixture argument');
     options.set(argument, process.argv[++index]);
@@ -32,6 +32,8 @@ const runId = `fullstack-${randomUUID().replaceAll('-', '').slice(0, 12)}`;
 const project = runId;
 const databaseName = `fullstack_${runId.slice(10)}`;
 const goWebSocket = options.has('--go-websocket');
+const rehearseRollback = options.has('--rehearse-rollback');
+assert.ok(!rehearseRollback || (goWebSocket && options.has('--start-fixture')), '--rehearse-rollback requires --start-fixture and --go-websocket');
 const services = new Set(['postgres', 'rabbitmq', 'user', 'chat', 'notification', 'frontend', 'gateway']);
 if (goWebSocket) services.add('go-websocket');
 const cleanEnvironment = Object.fromEntries(['HOME', 'PATH', 'TMPDIR', 'USER'].filter(key => process.env[key]).map(key => [key, process.env[key]]));
@@ -321,9 +323,19 @@ async function main() {
   const command = (title, executable, args, extra = {}) => runCommand(title, executable, args, { cwd: root, env, log, ...extra });
   const composeCommand = (title, args, extra) => command(title, compose, [...composePrefix, ...composeArgs, ...args], extra);
   const dockerOutput = args => output(docker, ['--context', context, ...args]);
-  const database = new Client({ connectionString: `postgres://fixture_admin:FixtureAdminOnly2026@127.0.0.1:${env.FULLSTACK_PG_PORT}/${databaseName}`, connectionTimeoutMillis: 5000, query_timeout: 5000, statement_timeout: 5000 });
+  const databaseUrl = `postgres://fixture_admin:FixtureAdminOnly2026@127.0.0.1:${env.FULLSTACK_PG_PORT}/${databaseName}`;
+  const database = new Client({ connectionString: databaseUrl, connectionTimeoutMillis: 5000, query_timeout: 5000, statement_timeout: 5000 });
   database.on('error', error => { process.exitCode = 1; console.error(`Fixture database connection failed: ${error.message}`); });
   const query = (...args) => databaseCall(database, () => database.query(...args), 'Fixture database query');
+  const waitForHTTPS = path => poll(`HTTPS ${path}`, () => new Promise((done, fail) => {
+    const probe = request(env.FULLSTACK_ORIGIN + path, { rejectUnauthorized: false }, response => {
+      response.resume();
+      done(response.statusCode === 200);
+    });
+    probe.setTimeout(3000, () => probe.destroy(new Error('Fixture HTTPS timeout')));
+    probe.on('error', fail);
+    probe.end();
+  }));
   let databaseIdentity;
   let primaryFailure;
   try {
@@ -393,9 +405,13 @@ async function main() {
     assert.deepEqual(privileges, { inbox_delete: false, cross_table: false, migration_access: false });
     writeFileSync(join(evidence, 'restricted-role-check.json'), JSON.stringify(privileges));
     await composeCommand('Start actual application services', ['up', '-d', '--no-deps', ...application]);
-    if (goWebSocket) {
-      const [relay] = JSON.parse(dockerOutput(['inspect', containerId('go-websocket')]));
-      ownedContainer(relay, owner);
+    const inspectService = service => {
+      const [container] = JSON.parse(dockerOutput(['inspect', containerId(service)]));
+      ownedContainer(container, owner);
+      return container;
+    };
+    const relay = goWebSocket ? inspectService('go-websocket') : undefined;
+    if (relay) {
       assert.equal(relay.Config.User, '65532:65532', 'The relay must run as an unprivileged user');
       assert.equal(relay.HostConfig.ReadonlyRootfs, true);
       assert.ok(relay.HostConfig.CapDrop?.includes('ALL'));
@@ -405,14 +421,45 @@ async function main() {
     }
     await composeCommand('Start fixture HTTPS gateway', ['up', '-d', '--no-deps', 'gateway']);
     for (const path of ['/user/health', '/chat/health', '/notifications/health', '/login']) {
-      await poll(`HTTPS ${path}`, () => new Promise((done, fail) => {
-        const probe = request(env.FULLSTACK_ORIGIN + path, { rejectUnauthorized: false }, response => { response.resume(); done(response.statusCode === 200); });
-        probe.setTimeout(3000, () => probe.destroy(new Error('Fixture HTTPS timeout')));
-        probe.on('error', fail);
-        probe.end();
-      }));
+      await waitForHTTPS(path);
     }
-    await command('Real two-context browser and database flow', process.execPath, [join(frontend, 'node_modules/@playwright/test/cli.js'), 'test', goWebSocket ? 'go-websocket.spec.ts' : 'chat.spec.ts', '--config', join(frontend, 'playwright.fullstack.config.ts')], { cwd: frontend, timeout: 180_000, env: { ...cleanEnvironment, FULLSTACK_ORIGIN: env.FULLSTACK_ORIGIN, FULLSTACK_EVIDENCE: evidence, FULLSTACK_RUN_ID: runId, FULLSTACK_BACKEND_ROOT: root, FULLSTACK_DATABASE_URL: `postgres://fixture_admin:FixtureAdminOnly2026@127.0.0.1:${env.FULLSTACK_PG_PORT}/${databaseName}`, FULLSTACK_DATABASE_ID: databaseIdentity.system } });
+    const browserFlow = (title, testArgs, evidencePath = evidence) => command(title, process.execPath,
+      [join(frontend, 'node_modules/@playwright/test/cli.js'), 'test', ...testArgs, '--config', join(frontend, 'playwright.fullstack.config.ts')],
+      { cwd: frontend, timeout: 180_000, env: {
+        ...cleanEnvironment, FULLSTACK_ORIGIN: env.FULLSTACK_ORIGIN, FULLSTACK_EVIDENCE: evidencePath,
+        FULLSTACK_RUN_ID: runId, FULLSTACK_BACKEND_ROOT: root,
+        FULLSTACK_DATABASE_URL: databaseUrl,
+        FULLSTACK_DATABASE_ID: databaseIdentity.system
+      } });
+    if (rehearseRollback) {
+      await command('Restart verified Go relay', docker, ['--context', context, 'restart', '--timeout', '8', relay.Id]);
+      const restarted = inspectService('go-websocket');
+      assert.equal(restarted.Id, relay.Id);
+      assert.equal(restarted.State.Running, true);
+      assert.notEqual(restarted.State.StartedAt, relay.State.StartedAt);
+    }
+    await browserFlow('Real two-context browser and database flow', goWebSocket ? ['go-websocket.spec.ts', '--grep', 'Go delivers ciphertext'] : ['chat.spec.ts']);
+    if (rehearseRollback) {
+      const stored = (await query('SELECT * FROM messages ORDER BY id')).rows;
+      assert.ok(stored.length >= 2 && stored.every(row => row.isEncrypted), 'Expected persisted ciphertext from the Go flow');
+      await command('Stop verified Go relay', docker, ['--context', context, 'stop', '--timeout', '8', relay.Id]);
+      assert.equal(inspectService('go-websocket').State.Running, false);
+      const frontendBefore = inspectService('frontend');
+      await composeCommand('Disable Go in the frontend', ['up', '-d', '--no-deps', '--force-recreate', 'frontend'], {
+        env: { ...env, FULLSTACK_GO_WS: 'false' }
+      });
+      const frontendAfter = inspectService('frontend');
+      assert.equal(frontendAfter.Image, frontendBefore.Image);
+      assert.notEqual(frontendAfter.Id, frontendBefore.Id);
+      assert.ok(frontendAfter.Config.Env.includes('PUBLIC_GO_WS_ENABLED=false'));
+      await waitForHTTPS('/login');
+      console.log('Wait for the 60-second shared prekey rate limit window to expire.');
+      await delay(60_000);
+      await browserFlow('Socket.IO browser flow after rollback', ['go-websocket.spec.ts', '--grep', 'Socket.IO delivers after Go rollback'], join(runtime, 'rollback-evidence'));
+      const afterRollback = (await query('SELECT * FROM messages WHERE id = ANY($1::uuid[]) ORDER BY id', [stored.map(row => row.id)])).rows;
+      assert.deepEqual(afterRollback, stored, 'Rollback changed messages from the Go flow');
+      console.log(`Verified Socket.IO rollback and preserved ${stored.length} Go message rows.`);
+    }
   } catch (error) {
     primaryFailure = error;
     process.exitCode = 1;

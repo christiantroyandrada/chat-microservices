@@ -28,6 +28,8 @@ To run the isolated test, use the committed frontend and backend worktrees. From
 node tests/fullstack/run.mjs --start-fixture --go-websocket --frontend-dir /path/to/frontend-worktree
 ```
 
+Add `--rehearse-rollback` to restart the relay before the Go browser test. The fixture then stops Go, disables the frontend flag, and runs the Socket.IO browser test against the same database. It waits one minute between flows for the shared prekey rate limit to reset and checks that the stored Go messages survive the switch.
+
 ## Container image
 
 Use Docker Buildx to build the relay image from the backend repo. The build runs the Go compiler on the build host's architecture.
