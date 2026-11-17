@@ -48,6 +48,10 @@ On SIGTERM, the relay stops admitting connections and sends a WebSocket going-aw
 
 The Go tests verify these limits on loopback. They also stop and restart the relay on the same port. Use staging measurements to set the pilot limit on the VPS.
 
+Add `--check-relay-capacity` to the isolated fixture command to check the cap through NGINX. The check opens 128 authenticated connections, verifies that the next connection receives HTTP 503, and confirms that closing one connection frees a slot.
+
+This check currently fails before the relay reaches 128 connections. Each upgrade calls the user service's `/me` endpoint from the relay's IP. Those calls share the user service's limit of 100 requests per IP per 15 minutes. Resolve the shared session-check limit before the pilot. Keep the limits on public routes.
+
 ## Before cutover
 
 1. Verify the image and its digest in staging. Measure capacity through the staging gateway.

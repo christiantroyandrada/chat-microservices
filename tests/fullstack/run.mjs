@@ -13,7 +13,7 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const options = new Map();
 for (let index = 2; index < process.argv.length; index++) {
   const argument = process.argv[index];
-  if (['--check', '--start-fixture', '--go-websocket', '--rehearse-rollback'].includes(argument)) options.set(argument, true);
+  if (['--check', '--start-fixture', '--go-websocket', '--rehearse-rollback', '--check-relay-capacity'].includes(argument)) options.set(argument, true);
   else {
     assert.equal(argument, '--frontend-dir', 'Unknown fixture argument');
     options.set(argument, process.argv[++index]);
@@ -33,7 +33,9 @@ const project = runId;
 const databaseName = `fullstack_${runId.slice(10)}`;
 const goWebSocket = options.has('--go-websocket');
 const rehearseRollback = options.has('--rehearse-rollback');
+const checkRelayCapacity = options.has('--check-relay-capacity');
 assert.ok(!rehearseRollback || (goWebSocket && options.has('--start-fixture')), '--rehearse-rollback requires --start-fixture and --go-websocket');
+assert.ok(!checkRelayCapacity || (goWebSocket && options.has('--start-fixture')), '--check-relay-capacity requires --start-fixture and --go-websocket');
 const services = new Set(['postgres', 'rabbitmq', 'user', 'chat', 'notification', 'frontend', 'gateway']);
 if (goWebSocket) services.add('go-websocket');
 const cleanEnvironment = Object.fromEntries(['HOME', 'PATH', 'TMPDIR', 'USER'].filter(key => process.env[key]).map(key => [key, process.env[key]]));
@@ -439,6 +441,9 @@ async function main() {
       assert.notEqual(restarted.State.StartedAt, relay.State.StartedAt);
     }
     await browserFlow('Real two-context browser and database flow', goWebSocket ? ['go-websocket.spec.ts', '--grep', 'Go delivers ciphertext'] : ['chat.spec.ts']);
+    if (checkRelayCapacity) {
+      await browserFlow('Go relay capacity through NGINX', ['go-websocket-capacity.spec.ts'], join(runtime, 'capacity-evidence'));
+    }
     if (rehearseRollback) {
       const stored = (await query('SELECT * FROM messages ORDER BY id')).rows;
       assert.ok(stored.length >= 2 && stored.every(row => row.isEncrypted), 'Expected persisted ciphertext from the Go flow');
