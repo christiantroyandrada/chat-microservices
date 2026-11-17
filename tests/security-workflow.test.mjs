@@ -68,32 +68,33 @@ test('every published backend image is built once and scanned before any registr
 	const job = workflow('ci-main.yml').jobs['docker-build'];
 	const publications = [];
 	const scans = [];
-	for (const [service, variable, id] of [
+	for (const [service, variable, id, label = service, tag = `chat-${service}:scan`, condition] of [
 		['user-service', 'IMAGE_USER', 'build-user'],
 		['chat-service', 'IMAGE_CHAT', 'build-chat'],
 		['notification-service', 'IMAGE_NOTIFICATION', 'build-notification'],
-		['nginx', 'IMAGE_NGINX', 'build-nginx']
+		['nginx', 'IMAGE_NGINX', 'build-nginx'],
+		['websocket-service', 'IMAGE_RELAY', 'publish-relay', 'Go relay', 'chat-websocket:scan', "vars.GO_WS_PILOT == 'true'"]
 	]) {
-		const tag = `chat-${service}:scan`;
-		const build = step(job, `Build ${service} for security scan`);
+		const build = step(job, `Build ${label} for security scan`);
 		assert.match(build.uses, /^docker\/build-push-action@[a-f0-9]{40}$/);
 		assert.equal(build.with.context, `./${service}`);
 		assert.equal(build.with.push, false);
 		assert.equal(build.with.load, true);
 		assert.equal(build.with.tags, tag);
-		const scan = step(job, `Scan ${service} release image`);
+		assert.equal(build.if, condition);
+		const scan = step(job, `Scan ${label} release image`);
 		assert.match(scan.uses, /^aquasecurity\/trivy-action@[a-f0-9]{40}$/);
 		assert.equal(scan.with['image-ref'], tag);
 		assert.equal(scan.with['exit-code'], '1');
 		assert.equal(scan.with.severity, 'CRITICAL,HIGH');
 		assert.equal(scan['continue-on-error'], undefined);
-		assert.equal(scan.if, undefined);
+		assert.equal(scan.if, condition);
 		assert.ok(job.steps.indexOf(build) < job.steps.indexOf(scan));
 		scans.push(job.steps.indexOf(scan));
-		const publish = step(job, `Publish ${service}`);
+		const publish = step(job, `Publish ${label}`);
 		assert.equal(publish.id, id);
 		assert.equal(publish.uses, undefined);
-		assert.equal(publish.if, undefined);
+		assert.equal(publish.if, condition);
 		assert.doesNotMatch(publish.run, /docker (?:build|buildx)|\|\| true/);
 		assert.equal(publish.env.SCAN_IMAGE, tag);
 		assert.equal(publish.env.RELEASE_IMAGE, '${{ env.' + variable + ' }}');
@@ -108,7 +109,7 @@ test('every published backend image is built once and scanned before any registr
 	}
 	assert.ok(Math.max(...scans) < Math.min(...publications));
 	const builds = job.steps.filter(candidate => candidate.uses?.startsWith('docker/build-push-action@'));
-	assert.equal(builds.length, 4);
+	assert.equal(builds.length, publications.length);
 });
 
 test('release uses the built-in GitHub token without declaring a reserved caller secret', () => {

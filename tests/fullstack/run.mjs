@@ -506,7 +506,8 @@ async function main() {
       assert.ok(stored.length >= 2 && stored.every(row => row.isEncrypted), 'Expected persisted ciphertext from the Go flow');
       await command('Stop verified Go relay', docker, ['--context', context, 'stop', '--timeout', '8', relay.Id]);
       assert.equal(inspectService('go-websocket').State.Running, false);
-      assert.equal(await httpsStatus('/ws/v1', { Origin: env.FULLSTACK_ORIGIN }), 404);
+      await poll('Socket.IO-only gateway', async () =>
+        (await httpsStatus('/ws/v1', { Origin: env.FULLSTACK_ORIGIN })) === 404, 20_000);
       const frontendBefore = inspectService('frontend');
       if (rollbackImage) assert.notEqual(rollbackImage, frontendBefore.Image, 'Rollback image equals the active image');
       await composeCommand('Restore the frontend with Go disabled', ['up', '-d', '--no-deps', '--force-recreate', '--no-build', '--pull', 'never', 'frontend'], {

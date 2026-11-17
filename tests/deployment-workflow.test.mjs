@@ -234,6 +234,16 @@ test('failed first relay enable removes only the project relay and restores the 
   assert.ok(log.includes(`docker rm ${id}\n`));
 });
 
+test('disabling the relay promotes a new generation even when the other digests stay the same', async () => {
+  const state = stateFor(dig) + `go-websocket.current=${relayRef}\n`;
+  const h = await harness({ state, extraEnv: { ...relayEnv, GO_WS_IMAGE: '' } });
+  const result = run(h.env);
+  assert.equal(result.status, 0, result.stderr);
+  const next = await readFile(path.join(h.root, 'release-state.env'), 'utf8');
+  assert.doesNotMatch(next, /^go-websocket\.current=/m);
+  assert.ok(next.includes(`go-websocket.previous=${relayRef}\n`));
+});
+
 test('main CI exports all four build-step digests and passes them to deploy workflow', async () => {
   const ci = await readFile(path.join(repo, '.github/workflows/ci-main.yml'), 'utf8');
   assert.match(ci, /id:\s*build-user/, 'user build must have id');
