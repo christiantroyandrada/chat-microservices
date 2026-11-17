@@ -28,8 +28,16 @@ To run the isolated test, use the committed frontend and backend worktrees. From
 node tests/fullstack/run.mjs --start-fixture --go-websocket --frontend-dir /path/to/frontend-worktree
 ```
 
+## Relay limits
+
+The relay accepts up to 128 connections per instance. This count includes handshakes. Each connection has a queue of eight frames. If the queue is full, the relay drops typing frames. It disconnects the client if a message, receipt, or presence frame cannot enter the queue.
+
+On SIGTERM, the relay stops admitting connections and sends a WebSocket going-away frame. It waits up to five seconds for connections to close. After reconnect, the browser reads missed messages from the chat API.
+
+The Go tests verify these limits on loopback. They also stop and restart the relay on the same port. Use staging measurements to set the pilot limit on the VPS.
+
 ## Before cutover
 
-1. Keep the Socket.IO compatibility path during the rollout. Remove it after the last legacy client moves to Go.
-2. Measure connection capacity and test restart, account change, and slow clients. Use the results to set pilot limits.
-3. Package the service from this backend repository. Test a limited rollout and rollback before making Go the default.
+1. Package the relay from this backend repository.
+2. Measure capacity on staging. Verify account changes, restart, and recovery through the deployed gateway.
+3. Verify rollback before the VPS pilot. Keep the Socket.IO compatibility path until the last legacy client moves to Go.

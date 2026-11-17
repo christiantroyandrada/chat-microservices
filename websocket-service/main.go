@@ -38,25 +38,35 @@ func main() {
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	connections, cancelConnections := context.WithCancel(context.Background())
+	defer cancelConnections()
+	relay := newRelay(origin, sessionURL, historyURL, token)
 	server := &http.Server{
 		Addr:              addr,
-		Handler:           newRelay(origin, sessionURL, historyURL, token),
+		Handler:           relay,
 		ReadHeaderTimeout: 3 * time.Second,
 		ReadTimeout:       5 * time.Second,
 		WriteTimeout:      5 * time.Second,
 		IdleTimeout:       30 * time.Second,
 		MaxHeaderBytes:    16 << 10,
-		BaseContext:       func(net.Listener) context.Context { return ctx },
+		BaseContext:       func(net.Listener) context.Context { return connections },
 	}
 	stopped := make(chan struct{})
 	go func() {
 		defer close(stopped)
 		<-ctx.Done()
+		drained := relay.beginShutdown()
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		if err := server.Shutdown(shutdownCtx); err != nil {
 			log.Printf("shutdown: %v", err)
 			server.Close()
+		}
+		select {
+		case <-drained:
+		case <-shutdownCtx.Done():
+			log.Print("WebSocket shutdown deadline reached")
+			cancelConnections()
 		}
 	}()
 	log.Printf("WebSocket relay listening on %s", addr)

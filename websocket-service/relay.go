@@ -69,17 +69,22 @@ type relay struct {
 	bridgeAuth                     [sha256.Size]byte
 	httpClient                     *http.Client
 	slots                          chan struct{}
+	stopping                       chan struct{}
+	active                         sync.WaitGroup
+	mux                            *http.ServeMux
 	mu                             sync.Mutex
 	subscribers                    map[string]map[*subscriber]struct{}
 }
 
-func newRelay(origin, sessionURL, historyURL, token string) http.Handler {
+func newRelay(origin, sessionURL, historyURL, token string) *relay {
 	r := &relay{
 		origin:      origin,
 		sessionURL:  sessionURL,
 		historyURL:  strings.TrimRight(historyURL, "/"),
 		bridgeAuth:  sha256.Sum256([]byte("Bearer " + token)),
 		slots:       make(chan struct{}, maxConnections),
+		stopping:    make(chan struct{}),
+		mux:         http.NewServeMux(),
 		subscribers: make(map[string]map[*subscriber]struct{}),
 		httpClient: &http.Client{
 			Timeout: 2 * time.Second,
@@ -88,11 +93,44 @@ func newRelay(origin, sessionURL, historyURL, token string) http.Handler {
 			},
 		},
 	}
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /ws/v1", r.connect)
-	mux.HandleFunc("POST /internal/messages", r.bridge(r.publishMessage))
-	mux.HandleFunc("POST /internal/receipts", r.bridge(r.publishReceipt))
-	return mux
+	r.mux.HandleFunc("GET /ws/v1", r.connect)
+	r.mux.HandleFunc("POST /internal/messages", r.bridge(r.publishMessage))
+	r.mux.HandleFunc("POST /internal/receipts", r.bridge(r.publishReceipt))
+	return r
+}
+
+func (r *relay) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+	r.mux.ServeHTTP(w, req)
+}
+
+func (r *relay) beginShutdown() <-chan struct{} {
+	r.mu.Lock()
+	close(r.stopping)
+	r.mu.Unlock()
+
+	drained := make(chan struct{})
+	go func() {
+		r.active.Wait()
+		close(drained)
+	}()
+	return drained
+}
+
+func (r *relay) admitConnection() bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	select {
+	case <-r.stopping:
+		return false
+	default:
+	}
+	select {
+	case r.slots <- struct{}{}:
+		r.active.Add(1)
+		return true
+	default:
+		return false
+	}
 }
 
 func (r *relay) userID(ctx context.Context, cookie *http.Cookie) (string, int) {
@@ -133,13 +171,14 @@ func (r *relay) connect(w http.ResponseWriter, req *http.Request) {
 		http.Error(w, "origin forbidden", http.StatusForbidden)
 		return
 	}
-	select {
-	case r.slots <- struct{}{}:
-		defer func() { <-r.slots }()
-	default:
-		http.Error(w, "connection limit", http.StatusServiceUnavailable)
+	if !r.admitConnection() {
+		http.Error(w, "connections unavailable", http.StatusServiceUnavailable)
 		return
 	}
+	defer func() {
+		<-r.slots
+		r.active.Done()
+	}()
 	cookie, _ := req.Cookie("jwt")
 	id, status := r.userID(req.Context(), cookie)
 	if status != http.StatusOK {
@@ -198,6 +237,9 @@ func (r *relay) connect(w http.ResponseWriter, req *http.Request) {
 	for {
 		select {
 		case <-ctx.Done():
+			return
+		case <-r.stopping:
+			conn.Close(websocket.StatusGoingAway, "relay shutting down")
 			return
 		case data := <-sub.queue:
 			if err := write(data); err != nil {
