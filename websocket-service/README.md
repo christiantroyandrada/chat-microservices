@@ -33,6 +33,8 @@ node tests/fullstack/run.mjs --start-fixture --go-websocket --frontend-dir /path
 
 Add `--rehearse-rollback` to restart the relay before the Go browser test. The fixture then stops Go, disables the frontend flag, and runs the Socket.IO browser test against the same database. It waits one minute between flows for the shared prekey rate limit to reset and checks that the stored Go messages survive the switch.
 
+Add `--rollback-frontend-sha <full-commit-sha>` to restore a prior frontend image during the rehearsal. The fixture builds the prior image before the test and starts it by local image ID. It records both image IDs after Socket.IO delivery and database checks pass.
+
 ## Container image
 
 Use Docker Buildx to build the relay image from the backend repo. The build runs the Go compiler on the build host's architecture.

@@ -84,9 +84,9 @@ services:
       NOTIFICATIONS_QUEUE: NOTIFICATIONS
 
   frontend:
-    image: ${FULLSTACK_PROJECT:?}-frontend:${FULLSTACK_RUN_ID:?}
+    image: ${FULLSTACK_FRONTEND_IMAGE:?}
     build:
-      context: ${FULLSTACK_SNAPSHOT:?}/frontend
+      context: ${FULLSTACK_FRONTEND_CONTEXT:?}
       labels: *labels
       args:
         PUBLIC_API_URL: ${FULLSTACK_ORIGIN:?}

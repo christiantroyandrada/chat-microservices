@@ -15,8 +15,10 @@ for (let index = 2; index < process.argv.length; index++) {
   const argument = process.argv[index];
   if (['--check', '--start-fixture', '--go-websocket', '--rehearse-rollback', '--check-relay-capacity'].includes(argument)) options.set(argument, true);
   else {
-    assert.equal(argument, '--frontend-dir', 'Unknown fixture argument');
-    options.set(argument, process.argv[++index]);
+    assert.ok(['--frontend-dir', '--rollback-frontend-sha'].includes(argument), 'Unknown fixture argument');
+    const value = process.argv[++index];
+    assert.ok(value && !value.startsWith('--'), `Missing value for ${argument}`);
+    options.set(argument, value);
   }
 }
 assert.equal(Number(process.versions.node.split('.')[0]), 22, 'Use Node 22');
@@ -33,8 +35,13 @@ const project = runId;
 const databaseName = `fullstack_${runId.slice(10)}`;
 const goWebSocket = options.has('--go-websocket');
 const rehearseRollback = options.has('--rehearse-rollback');
+const rollbackFrontendCommit = options.get('--rollback-frontend-sha');
 const checkRelayCapacity = options.has('--check-relay-capacity');
 assert.ok(!rehearseRollback || (goWebSocket && options.has('--start-fixture')), '--rehearse-rollback requires --start-fixture and --go-websocket');
+if (rollbackFrontendCommit) {
+  assert.ok(rehearseRollback, '--rollback-frontend-sha requires --rehearse-rollback');
+  assert.match(rollbackFrontendCommit, /^[0-9a-f]{40}$/, 'Use the full prior frontend commit SHA');
+}
 assert.ok(!checkRelayCapacity || (goWebSocket && options.has('--start-fixture')), '--check-relay-capacity requires --start-fixture and --go-websocket');
 const services = new Set(['postgres', 'rabbitmq', 'user', 'chat', 'notification', 'frontend', 'gateway']);
 if (goWebSocket) services.add('go-websocket');
@@ -299,8 +306,13 @@ async function main() {
   assert.match(output(docker, ['--context', context, 'info', '--format', '{{.OSType}}/{{.Architecture}}']), /^linux\/(aarch64|arm64)$/);
   const backendCommit = output('/usr/bin/git', ['rev-parse', 'HEAD^{commit}']);
   const frontendCommit = output('/usr/bin/git', ['rev-parse', 'HEAD^{commit}'], frontend);
+  if (rollbackFrontendCommit) {
+    assert.notEqual(rollbackFrontendCommit, frontendCommit, 'Rollback requires a prior frontend commit');
+    assert.equal(output('/usr/bin/git', ['rev-parse', `${rollbackFrontendCommit}^{commit}`], frontend), rollbackFrontendCommit);
+    output('/usr/bin/git', ['merge-base', '--is-ancestor', rollbackFrontendCommit, frontendCommit], frontend);
+  }
   const runtime = realpathSync(mkdtempSync(join(root, 'tests/fullstack/.runtime/')));
-  const owner = { runId, project, runtime, backendCommit, frontendCommit, databaseName };
+  const owner = { runId, project, runtime, backendCommit, frontendCommit, rollbackFrontendCommit, databaseName };
   writeFileSync(join(runtime, 'ownership.json'), JSON.stringify(owner, null, 2), { mode: 0o600 });
   chmodSync(runtime, 0o755);
   const log = join(runtime, 'commands.log');
@@ -315,6 +327,8 @@ async function main() {
   assert.notEqual(env.FULLSTACK_PG_PORT, env.FULLSTACK_TLS_PORT, 'Fixture PostgreSQL and TLS ports must differ');
   env.FULLSTACK_ORIGIN = `https://127.0.0.1:${env.FULLSTACK_TLS_PORT}`;
   env.FULLSTACK_GO_WS = String(goWebSocket);
+  env.FULLSTACK_FRONTEND_CONTEXT = join(env.FULLSTACK_SNAPSHOT, 'frontend');
+  env.FULLSTACK_FRONTEND_IMAGE = `${project}-frontend:${runId}`;
   if (goWebSocket) {
     env.FULLSTACK_GO_WS_BRIDGE_TOKEN = randomUUID() + randomUUID();
     env.FULLSTACK_GO_WS_SESSION_KEY = randomUUID() + randomUUID();
@@ -340,16 +354,18 @@ async function main() {
     probe.end();
   });
   const waitForHTTPS = path => poll(`HTTPS ${path}`, async () => (await httpsStatus(path)) === 200);
+  const archiveSnapshot = async (directory, commit, destination, paths = []) => {
+    const target = join(env.FULLSTACK_SNAPSHOT, destination);
+    mkdirSync(target, { recursive: true });
+    const archive = spawnSync('/usr/bin/git', ['archive', '--format=tar', commit, ...paths], { cwd: directory, env: cleanEnvironment, maxBuffer: 64 * 1024 * 1024 });
+    assert.equal(archive.status, 0, `Could not archive ${destination}`);
+    await command(`Extract ${destination} committed build context`, '/usr/bin/tar', ['-xf', '-', '-C', target], { input: archive.stdout });
+  };
   let databaseIdentity;
   let primaryFailure;
   try {
-    for (const [directory, commit, destination, paths] of [[root, backendCommit, 'backend', ['user-service', 'chat-service', 'notification-service', 'nginx', ...(goWebSocket ? ['websocket-service'] : [])]], [frontend, frontendCommit, 'frontend', []]]) {
-      const target = join(env.FULLSTACK_SNAPSHOT, destination);
-      mkdirSync(target, { recursive: true });
-      const archive = spawnSync('/usr/bin/git', ['archive', '--format=tar', commit, ...paths], { cwd: directory, env: cleanEnvironment, maxBuffer: 64 * 1024 * 1024 });
-      assert.equal(archive.status, 0, 'Candidate archive failed');
-      await command(`Extract ${destination} committed build context`, '/usr/bin/tar', ['-xf', '-', '-C', target], { input: archive.stdout });
-    }
+    await archiveSnapshot(root, backendCommit, 'backend', ['user-service', 'chat-service', 'notification-service', 'nginx', ...(goWebSocket ? ['websocket-service'] : [])]);
+    await archiveSnapshot(frontend, frontendCommit, 'frontend');
     const certificates = join(runtime, 'certificates');
     mkdirSync(certificates);
     await command('Generate disposable localhost TLS fixture', 'openssl', ['req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-days', '1', '-subj', '/CN=127.0.0.1', '-addext', 'subjectAltName=IP:127.0.0.1', '-keyout', join(certificates, 'privkey.pem'), '-out', join(certificates, 'fullchain.pem')]);
@@ -382,6 +398,17 @@ async function main() {
     const application = [...services].filter(service => !['postgres', 'rabbitmq', 'gateway'].includes(service));
     for (const service of [...application, 'gateway']) {
       await composeCommand(`Build actual ${service} image`, ['build', service], { timeout: 600_000 });
+    }
+    let rollbackImage;
+    if (rollbackFrontendCommit) {
+      await archiveSnapshot(frontend, rollbackFrontendCommit, 'frontend-rollback');
+      const rollbackTag = `${project}-frontend:rollback`;
+      await composeCommand('Build prior frontend image', ['build', 'frontend'], { timeout: 600_000, env: {
+        ...env, FULLSTACK_FRONTEND_CONTEXT: join(env.FULLSTACK_SNAPSHOT, 'frontend-rollback'),
+        FULLSTACK_FRONTEND_IMAGE: rollbackTag
+      } });
+      rollbackImage = dockerOutput(['image', 'inspect', rollbackTag, '--format', '{{.Id}}']);
+      assert.match(rollbackImage, /^sha256:[0-9a-f]{64}$/);
     }
     await composeCommand('Start owned PostgreSQL and RabbitMQ', ['up', '-d', 'postgres', 'rabbitmq']);
     const containerId = service => {
@@ -480,11 +507,12 @@ async function main() {
       await command('Stop verified Go relay', docker, ['--context', context, 'stop', '--timeout', '8', relay.Id]);
       assert.equal(inspectService('go-websocket').State.Running, false);
       const frontendBefore = inspectService('frontend');
-      await composeCommand('Disable Go in the frontend', ['up', '-d', '--no-deps', '--force-recreate', 'frontend'], {
-        env: { ...env, FULLSTACK_GO_WS: 'false' }
+      if (rollbackImage) assert.notEqual(rollbackImage, frontendBefore.Image, 'Rollback image equals the active image');
+      await composeCommand('Restore the frontend with Go disabled', ['up', '-d', '--no-deps', '--force-recreate', '--no-build', '--pull', 'never', 'frontend'], {
+        env: { ...env, FULLSTACK_GO_WS: 'false', FULLSTACK_FRONTEND_IMAGE: rollbackImage ?? env.FULLSTACK_FRONTEND_IMAGE }
       });
       const frontendAfter = inspectService('frontend');
-      assert.equal(frontendAfter.Image, frontendBefore.Image);
+      assert.equal(frontendAfter.Image, rollbackImage ?? frontendBefore.Image);
       assert.notEqual(frontendAfter.Id, frontendBefore.Id);
       assert.ok(frontendAfter.Config.Env.includes('PUBLIC_GO_WS_ENABLED=false'));
       await waitForHTTPS('/login');
@@ -493,6 +521,13 @@ async function main() {
       await browserFlow('Socket.IO browser flow after rollback', ['go-websocket.spec.ts', '--grep', 'Socket.IO delivers after Go rollback'], join(runtime, 'rollback-evidence'));
       const afterRollback = (await query('SELECT * FROM messages WHERE id = ANY($1::uuid[]) ORDER BY id', [stored.map(row => row.id)])).rows;
       assert.deepEqual(afterRollback, stored, 'Rollback changed messages from the Go flow');
+      if (rollbackImage) {
+        writeFileSync(join(evidence, 'frontend-image-rollback.json'), JSON.stringify({
+          candidate: { commit: frontendCommit, image: frontendBefore.Image },
+          restored: { commit: rollbackFrontendCommit, image: frontendAfter.Image },
+          preservedMessages: stored.length
+        }, null, 2));
+      }
       console.log(`Verified Socket.IO rollback and preserved ${stored.length} Go message rows.`);
     }
   } catch (error) {
