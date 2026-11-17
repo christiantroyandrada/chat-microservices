@@ -175,4 +175,28 @@ func TestRelay(t *testing.T) {
 			t.Fatalf("unexpected receipt: %s", body)
 		}
 	}
+
+	for _, payload := range []string{
+		fmt.Sprintf(`{"type":"typing","receiverId":%q,"userId":%q,"isTyping":true}`, carol, alice),
+		fmt.Sprintf(`{"type":"typing","receiverId":%q}`, carol),
+		fmt.Sprintf(`{"type":"typing","receiverId":%q,"isTyping":true}`, carol),
+		fmt.Sprintf(`{"type":"typing","receiverId":%q,"isTyping":false}`, carol),
+	} {
+		if err := bobSocket.Write(ctx, websocket.MessageText, []byte(payload)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, typing := range []bool{true, false} {
+		_, body, err := carolSocket.Read(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := fmt.Sprintf(`{"type":"typing","data":{"userId":%q,"isTyping":%t}}`, bob, typing)
+		if string(body) != want {
+			t.Fatalf("typing frame = %s, want %s", body, want)
+		}
+	}
+
+	post(token, bob, first, ciphertext, http.StatusNoContent)
+	read(bobSocket, first, bob)
 }

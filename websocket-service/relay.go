@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"crypto/subtle"
@@ -155,7 +156,7 @@ func (r *relay) connect(w http.ResponseWriter, req *http.Request) {
 
 	ctx, cancel := context.WithTimeout(req.Context(), sessionLimit)
 	defer cancel()
-	ctx = conn.CloseRead(ctx)
+	conn.SetReadLimit(512)
 
 	sub := &subscriber{queue: make(chan []byte, queueSize), cancel: cancel}
 	r.mu.Lock()
@@ -181,6 +182,10 @@ func (r *relay) connect(w http.ResponseWriter, req *http.Request) {
 	if err := write([]byte(`{"type":"ready"}`)); err != nil {
 		return
 	}
+	go func() {
+		defer cancel()
+		r.readTyping(ctx, conn, id)
+	}()
 	heartbeat := time.NewTicker(25 * time.Second)
 	defer heartbeat.Stop()
 	for {
@@ -199,6 +204,39 @@ func (r *relay) connect(w http.ResponseWriter, req *http.Request) {
 				return
 			}
 		}
+	}
+}
+
+func (r *relay) readTyping(ctx context.Context, conn *websocket.Conn, userID string) {
+	var window time.Time
+	var count int
+	for {
+		kind, data, err := conn.Read(ctx)
+		if err != nil {
+			return
+		}
+		now := time.Now()
+		if now.Sub(window) >= time.Second {
+			window, count = now, 0
+		}
+		count++
+		if count > 8 {
+			return
+		}
+		var input struct {
+			Type       string `json:"type"`
+			ReceiverID string `json:"receiverId"`
+			IsTyping   *bool  `json:"isTyping"`
+		}
+		if kind != websocket.MessageText || !decodeJSON(bytes.NewReader(data), &input) ||
+			input.Type != "typing" || input.IsTyping == nil || !uuid.MatchString(input.ReceiverID) ||
+			input.ReceiverID == userID {
+			continue
+		}
+		r.fanout(input.ReceiverID, "typing", struct {
+			UserID   string `json:"userId"`
+			IsTyping bool   `json:"isTyping"`
+		}{userID, *input.IsTyping})
 	}
 }
 
@@ -221,7 +259,11 @@ func (r *relay) bridge(publish http.HandlerFunc) http.HandlerFunc {
 }
 
 func decode(w http.ResponseWriter, req *http.Request, dst any) bool {
-	d := json.NewDecoder(http.MaxBytesReader(w, req.Body, maxMessageSize))
+	return decodeJSON(http.MaxBytesReader(w, req.Body, maxMessageSize), dst)
+}
+
+func decodeJSON(body io.Reader, dst any) bool {
+	d := json.NewDecoder(body)
 	d.DisallowUnknownFields()
 	return d.Decode(dst) == nil && errors.Is(d.Decode(&struct{}{}), io.EOF)
 }
@@ -248,22 +290,31 @@ func (r *relay) publishReceipt(w http.ResponseWriter, req *http.Request) {
 }
 
 func (r *relay) publish(w http.ResponseWriter, userID, kind string, data any) {
+	if err := r.fanout(userID, kind, data); err != nil {
+		http.Error(w, "invalid event", http.StatusBadRequest)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (r *relay) fanout(userID, kind string, data any) error {
 	frame, err := json.Marshal(struct {
 		Type string `json:"type"`
 		Data any    `json:"data"`
 	}{kind, data})
 	if err != nil {
-		http.Error(w, "invalid event", http.StatusBadRequest)
-		return
+		return err
 	}
 	r.mu.Lock()
 	for sub := range r.subscribers[userID] {
 		select {
 		case sub.queue <- frame:
 		default:
-			sub.cancel()
+			if kind != "typing" {
+				sub.cancel()
+			}
 		}
 	}
 	r.mu.Unlock()
-	w.WriteHeader(http.StatusNoContent)
+	return nil
 }
