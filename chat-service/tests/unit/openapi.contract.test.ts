@@ -16,6 +16,19 @@ describe('chat-service OpenAPI contract', () => {
     expect(operation.parameters).toContainEqual({ name: 'expectedUserId', in: 'query', required: false, schema: { type: 'string', format: 'uuid' }, description: 'Optional account precondition. A mismatch with the authenticated user returns 403 before data access.' })
     for (const status of ['400', '403']) expect(operation.responses[status].content['application/json'].schema).toEqual({ $ref: '#/components/schemas/Error' })
   })
+  it('publishes an authenticated and account-bound delivery acknowledgement', () => {
+    const operation = (spec.paths as Record<string, Record<string, any>>)['/messages/{messageId}/delivered']?.put
+    expect(operation).toMatchObject({
+      operationId: 'chat.acknowledgeDelivery',
+      'x-response-mode': 'envelope',
+      security: [{ cookieAuth: [] }],
+      parameters: [
+        { name: 'messageId', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } },
+        { name: 'expectedUserId', in: 'query', required: true, schema: { type: 'string', format: 'uuid' } },
+      ],
+    })
+    for (const status of ['200', '400', '401', '403', '404']) expect(operation.responses[status]).toBeDefined()
+  })
   it('uses the runtime message status values', () => {
     const message = (spec.components.schemas as Record<string, any>).Message
     expect(message.properties.status.enum).toEqual(['NotDelivered', 'Delivered', 'Seen'])

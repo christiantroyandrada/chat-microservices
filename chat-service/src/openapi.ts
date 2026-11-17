@@ -239,6 +239,26 @@ const spec = {
         },
       },
     },
+    '/messages/{messageId}/delivered': {
+      put: {
+        operationId: 'chat.acknowledgeDelivery' as const,
+        'x-response-mode': 'envelope' as const,
+        tags: ['Messages'],
+        summary: 'Acknowledge delivery of a message',
+        security: [{ cookieAuth: [] }],
+        parameters: [
+          { name: 'messageId', in: 'path' as const, required: true, schema: { type: 'string' as const, format: 'uuid' } },
+          { name: 'expectedUserId', in: 'query' as const, required: true, schema: { type: 'string' as const, format: 'uuid' } },
+        ],
+        responses: {
+          '200': { description: 'Delivery acknowledged. modifiedCount is 0 if the status did not change.', content: { 'application/json': { schema: { $ref: '#/components/schemas/MarkReadResponse' } } } },
+          '400': { description: 'Invalid message ID or account precondition', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
+          '401': { description: 'Authentication required' },
+          '403': { description: 'Expected user does not match authenticated user', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
+          '404': { description: 'Message not found for this recipient', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
+        },
+      },
+    },
     '/health': {
       get: {
         operationId: 'chat.health' as const,

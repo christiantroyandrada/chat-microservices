@@ -8,7 +8,7 @@ const mockPresence = { shutdown: jest.fn(async () => { order.push('presence') })
 const mockBroker = { connect: jest.fn(async () => undefined), disconnect: jest.fn(async () => { order.push('broker') }) }
 const mockWorker = { start: jest.fn(() => { order.push('worker-start') }), stop: jest.fn(async () => { order.push('worker-stop') }) }
 const mockDatabase = { isInitialized: true, destroy: jest.fn(async () => { order.push('database') }) }
-jest.mock('../../src/app', () => ({ __esModule: true, default: { listen: jest.fn(() => mockHttp) }, setRedisHealthProvider: jest.fn() }))
+jest.mock('../../src/app', () => ({ __esModule: true, default: { listen: jest.fn(() => mockHttp), locals: {} }, setRedisHealthProvider: jest.fn() }))
 jest.mock('../../src/database', () => ({ connectDB: jest.fn(async () => { order.push('database-start') }) }))
 jest.mock('../../src/database/connection', () => ({ AppDataSource: mockDatabase }))
 jest.mock('../../src/config/config', () => ({ __esModule: true, default: { PORT: 0 } }))

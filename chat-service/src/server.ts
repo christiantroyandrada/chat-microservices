@@ -70,6 +70,8 @@ export const start = (): Promise<Server> => starting ??= (async () => {
 
   // Initialize Socket.IO with authentication and event handlers
   io = createSocketServer(server, getPresenceStore(), redisContext)
+  app.locals.onMessageDelivered = (senderId: string, messageId: string, by: string) =>
+    io?.to(senderId).emit('messageDelivered', { messageId, by })
   return server
 })()
 

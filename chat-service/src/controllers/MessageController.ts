@@ -9,7 +9,7 @@ import { MessageSubmissionService } from '../services/MessageSubmissionService'
 import { relayAcceptedMessage } from '../services/websocketRelay'
 import { canonicalUserId, UUID } from '../utils/messageIdentity'
 import { logWarn, logError } from '../utils/logger'
-import { markConversationSeen } from '../services/messageReceipts'
+import { markConversationSeen, markMessageDelivered } from '../services/messageReceipts'
 import { chatMessagesSentTotal, chatMessagesReadTotal } from '../utils/metrics'
 import { rabbitMQService } from '../services/RabbitMQService'
 
@@ -350,7 +350,33 @@ const markAsRead = async (
   }
 };
 
+const acknowledgeDelivery = async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+  try {
+    if (req.query?.expectedUserId === undefined) throw new APIError(400, 'Expected user ID is required')
+    validateExpectedIdentity(req.query.expectedUserId, req.user._id)
+    const { messageId } = req.params
+    if (typeof messageId !== 'string' || !UUID.test(messageId)) {
+      throw new APIError(400, 'Message ID must be a valid UUID')
+    }
+    const id = canonicalUserId(messageId)
+    const receiverId = canonicalUserId(req.user._id)
+    const result = await markMessageDelivered(id, receiverId)
+    if (!result) throw new APIError(404, 'Message not found')
+    if (result.changed) {
+      req.app.locals.onMessageDelivered?.(result.senderId, id, receiverId)
+    }
+    return res.json({
+      status: 200,
+      message: 'Delivery acknowledged',
+      data: { modifiedCount: Number(result.changed) },
+    })
+  } catch (error) {
+    next(error)
+  }
+}
+
 export default {
+  acknowledgeDelivery,
   sendMessage,
   fetchConversation,
   getConversations,

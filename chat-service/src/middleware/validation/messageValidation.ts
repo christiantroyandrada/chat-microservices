@@ -91,6 +91,15 @@ export const fetchConversationValidation: ValidationChain[] = [
   })
 ]
 
+export const acknowledgeDeliveryValidation: ValidationChain[] = [
+  query('expectedUserId')
+    .custom(value => typeof value === 'string' && UUID.test(value))
+    .withMessage('Expected user ID must be a valid UUID'),
+  param('messageId')
+    .custom(value => typeof value === 'string' && UUID.test(value))
+    .withMessage('Message ID must be a valid UUID'),
+]
+
 export const markAsReadValidation: ValidationChain[] = [
   ...getConversationsValidation,
   param('senderId')

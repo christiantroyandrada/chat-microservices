@@ -4,8 +4,7 @@ import { MessageStatus } from '../database/models/MessageModel'
 import { APIError } from '../utils/apiError'
 import { canonicalUserId, UUID } from '../utils/messageIdentity'
 import { MessageSubmissionService } from '../services/MessageSubmissionService'
-import { markConversationSeen } from '../services/messageReceipts'
-import { relayReceipt } from '../services/websocketRelay'
+import { markConversationSeen, markMessageDelivered } from '../services/messageReceipts'
 import { logDebug, logInfo, logWarn, logError } from '../utils/logger'
 import type { IPresenceStore } from '../services/PresenceStore'
 import { chatMessagesSentTotal, chatPresenceChangesTotal } from '../utils/metrics'
@@ -234,21 +233,10 @@ export async function handleMessageDelivered(
   data: { messageId: string },
 ): Promise<void> {
   if (!userId || typeof data?.messageId !== 'string' || !UUID.test(data.messageId)) return
-  userId = canonicalUserId(userId)
-  const messageRepo = AppDataSource.getRepository(Message)
-  const existing = await messageRepo.findOne({ where: { id: data.messageId } })
-  if (!existing || existing.receiverId !== userId) return
-
-  if (existing.status === MessageStatus.NotDelivered) {
-    const result = await messageRepo.update(
-      { id: existing.id, receiverId: userId, status: MessageStatus.NotDelivered },
-      { status: MessageStatus.Delivered },
-    )
-    if ((result.affected ?? 0) > 0) {
-      void relayReceipt({ type: 'delivered', userId: existing.senderId, by: userId, messageId: existing.id })
-    }
-  }
-  io.to(existing.senderId).emit('messageDelivered', { messageId: data.messageId, by: userId })
+  const receiverId = canonicalUserId(userId)
+  const messageId = canonicalUserId(data.messageId)
+  const result = await markMessageDelivered(messageId, receiverId)
+  if (result) io.to(result.senderId).emit('messageDelivered', { messageId, by: receiverId })
 }
 
 /**

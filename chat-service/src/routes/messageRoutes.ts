@@ -6,7 +6,8 @@ import {
   sendMessageValidation,
   fetchConversationValidation,
   getConversationsValidation,
-  markAsReadValidation
+  markAsReadValidation,
+  acknowledgeDeliveryValidation
 } from '../middleware/validation/messageValidation'
 
 const chatServiceRouter = Router()
@@ -38,6 +39,14 @@ chatServiceRouter.put(
   ...markAsReadValidation,
   validateRequest,
   MessageController.markAsRead as RequestHandler
+)
+
+chatServiceRouter.put(
+  '/messages/:messageId/delivered',
+  authMiddleware as RequestHandler,
+  ...acknowledgeDeliveryValidation,
+  validateRequest,
+  MessageController.acknowledgeDelivery as RequestHandler
 )
 
 export default chatServiceRouter
