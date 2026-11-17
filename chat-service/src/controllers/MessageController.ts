@@ -6,6 +6,7 @@ import { parseConversationPagination } from '../middleware/validation/messageVal
 import { Message, AppDataSource } from '../database'
 import { APIError } from '../utils'
 import { MessageSubmissionService } from '../services/MessageSubmissionService'
+import { relayAcceptedMessage } from '../services/websocketRelay'
 import { canonicalUserId, UUID } from '../utils/messageIdentity'
 import { logWarn, logError } from '../utils/logger'
 import { MessageStatus } from '../database/models/MessageModel'
@@ -152,11 +153,13 @@ const sendMessage = async (
     });
     if (!replayed) chatMessagesSentTotal.inc({ channel: "rest" });
 
-    return res.json({
+    const response = res.json({
       status: 200,
       message: "Message sent successfully",
       data: newMessage,
     });
+    if (!replayed) void relayAcceptedMessage(newMessage);
+    return response;
   } catch (error: unknown) {
     next(error);
   }

@@ -42,6 +42,49 @@ describe('MessageController (extra)', () => {
   expect(next.mock.calls[0][0].message).toMatch(/end-to-end encrypted/i)
   })
 
+  test('relays a new durable message and skips replayed or rejected submissions', async () => {
+    const url = 'http://127.0.0.1:8090/internal/messages'
+    const token = 'fixture-bridge-token-for-local-tests'
+    const saved = {
+      id: '11111111-1111-4111-8111-111111111111',
+      senderId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      receiverId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+      message: ' {"__encrypted":true,"body":"QUJD"} ',
+      status: 'NotDelivered',
+      createdAt: new Date('2026-11-17T08:00:00Z'),
+    }
+    const submit = jest.spyOn(MessageSubmissionService.prototype, 'submit')
+      .mockResolvedValueOnce({ message: saved as Message, replayed: false })
+      .mockResolvedValueOnce({ message: saved as Message, replayed: true })
+      .mockRejectedValueOnce(new Error('transaction failed'))
+    const fetch = jest.spyOn(global, 'fetch').mockResolvedValue(new Response(null, { status: 204 }))
+    const env = jest.replaceProperty(process, 'env', {
+      ...process.env, GO_WS_BRIDGE_URL: url, GO_WS_BRIDGE_TOKEN: token,
+    })
+    const req = {
+      body: { receiverId: saved.receiverId, message: saved.message },
+      user: { _id: saved.senderId, email: 'alice@example.test', username: 'alice' },
+    } as Parameters<typeof MessageController.sendMessage>[0]
+    const json = jest.fn()
+    const res = { json } as unknown as Parameters<typeof MessageController.sendMessage>[1]
+    const next = jest.fn()
+    try {
+      await MessageController.sendMessage(req, res, next)
+      expect(json).toHaveBeenCalledWith(expect.objectContaining({ status: 200, data: saved }))
+      expect(fetch).toHaveBeenCalledWith(url, expect.objectContaining({
+        method: 'POST', headers: expect.objectContaining({ authorization: `Bearer ${token}` }),
+        body: JSON.stringify(saved), redirect: 'error',
+      }))
+      expect(submit.mock.invocationCallOrder[0]).toBeLessThan(fetch.mock.invocationCallOrder[0])
+      await MessageController.sendMessage(req, res, next)
+      await MessageController.sendMessage(req, res, next)
+      expect(fetch).toHaveBeenCalledTimes(1)
+      expect(next).toHaveBeenCalledTimes(1)
+    } finally {
+      env.restore()
+    }
+  })
+
   test('sendMessage returns the durable submission result without direct storage or notification', async () => {
     const saved = { id: 1, senderId: 's1', receiverId: 'r1', message: '{"__encrypted":true,"body":"c"}' }
     const repo: any = { save: jest.fn().mockResolvedValue(saved) }
