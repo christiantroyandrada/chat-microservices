@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"regexp"
+	"strings"
 	"sync"
 	"time"
 
@@ -64,18 +65,19 @@ type subscriber struct {
 }
 
 type relay struct {
-	origin, sessionURL string
-	bridgeAuth         [sha256.Size]byte
-	httpClient         *http.Client
-	slots              chan struct{}
-	mu                 sync.Mutex
-	subscribers        map[string]map[*subscriber]struct{}
+	origin, sessionURL, historyURL string
+	bridgeAuth                     [sha256.Size]byte
+	httpClient                     *http.Client
+	slots                          chan struct{}
+	mu                             sync.Mutex
+	subscribers                    map[string]map[*subscriber]struct{}
 }
 
-func newRelay(origin, sessionURL, token string) http.Handler {
+func newRelay(origin, sessionURL, historyURL, token string) http.Handler {
 	r := &relay{
 		origin:      origin,
 		sessionURL:  sessionURL,
+		historyURL:  strings.TrimRight(historyURL, "/"),
 		bridgeAuth:  sha256.Sum256([]byte("Bearer " + token)),
 		slots:       make(chan struct{}, maxConnections),
 		subscribers: make(map[string]map[*subscriber]struct{}),
@@ -93,12 +95,11 @@ func newRelay(origin, sessionURL, token string) http.Handler {
 	return mux
 }
 
-func (r *relay) userID(req *http.Request) (string, int) {
-	cookie, err := req.Cookie("jwt")
-	if err != nil || cookie.Value == "" {
+func (r *relay) userID(ctx context.Context, cookie *http.Cookie) (string, int) {
+	if cookie == nil || cookie.Value == "" {
 		return "", http.StatusUnauthorized
 	}
-	check, err := http.NewRequestWithContext(req.Context(), http.MethodGet, r.sessionURL, nil)
+	check, err := http.NewRequestWithContext(ctx, http.MethodGet, r.sessionURL, nil)
 	if err != nil {
 		return "", http.StatusServiceUnavailable
 	}
@@ -139,7 +140,8 @@ func (r *relay) connect(w http.ResponseWriter, req *http.Request) {
 		http.Error(w, "connection limit", http.StatusServiceUnavailable)
 		return
 	}
-	id, status := r.userID(req)
+	cookie, _ := req.Cookie("jwt")
+	id, status := r.userID(req.Context(), cookie)
 	if status != http.StatusOK {
 		http.Error(w, http.StatusText(status), status)
 		return
@@ -189,7 +191,7 @@ func (r *relay) connect(w http.ResponseWriter, req *http.Request) {
 	}
 	go func() {
 		defer cancel()
-		r.readCommands(ctx, conn, id, sub)
+		r.readCommands(ctx, conn, cookie, id, sub)
 	}()
 	heartbeat := time.NewTicker(25 * time.Second)
 	defer heartbeat.Stop()
@@ -212,7 +214,7 @@ func (r *relay) connect(w http.ResponseWriter, req *http.Request) {
 	}
 }
 
-func (r *relay) readCommands(ctx context.Context, conn *websocket.Conn, userID string, sub *subscriber) {
+func (r *relay) readCommands(ctx context.Context, conn *websocket.Conn, cookie *http.Cookie, userID string, sub *subscriber) {
 	var window time.Time
 	var count int
 	for {
@@ -244,7 +246,7 @@ func (r *relay) readCommands(ctx context.Context, conn *websocket.Conn, userID s
 			}
 			peer := *input.UserID
 			if peer == "" || peer != userID && uuid.MatchString(peer) {
-				r.watchPresence(userID, sub, peer)
+				r.watchPresence(ctx, cookie, userID, sub, peer)
 			}
 		case "typing":
 			if input.UserID != nil || input.IsTyping == nil || input.ReceiverID == userID ||
@@ -259,28 +261,75 @@ func (r *relay) readCommands(ctx context.Context, conn *websocket.Conn, userID s
 	}
 }
 
-func presenceFrame(userID string, online bool) []byte {
+func presenceFrame(userID string, online *bool) []byte {
 	frame, _ := encodeFrame("presence", struct {
 		UserID string `json:"userId"`
-		Online bool   `json:"online"`
+		Online *bool  `json:"online"`
 	}{userID, online})
 	return frame
 }
 
-func (r *relay) watchPresence(owner string, sub *subscriber, peer string) {
+func (r *relay) watchPresence(ctx context.Context, cookie *http.Cookie, owner string, sub *subscriber, peer string) {
+	r.mu.Lock()
+	sub.watch = ""
+	r.mu.Unlock()
+	if peer == "" {
+		return
+	}
+
+	allowed := r.canWatchPresence(ctx, cookie, owner, peer)
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if _, connected := r.subscribers[owner][sub]; !connected {
 		return
 	}
-	sub.watch = peer
-	if peer != "" {
-		sub.enqueue(presenceFrame(peer, len(r.subscribers[peer]) != 0), true)
+	var online *bool
+	if allowed {
+		sub.watch = peer
+		connected := len(r.subscribers[peer]) != 0
+		online = &connected
 	}
+	sub.enqueue(presenceFrame(peer, online), true)
+}
+
+func (r *relay) canWatchPresence(ctx context.Context, cookie *http.Cookie, owner, peer string) bool {
+	check, err := http.NewRequestWithContext(ctx, http.MethodGet, r.historyURL+"/"+peer, nil)
+	if err != nil {
+		return false
+	}
+	query := check.URL.Query()
+	query.Set("expectedUserId", owner)
+	query.Set("limit", "1")
+	check.URL.RawQuery = query.Encode()
+	check.AddCookie(cookie)
+	res, err := r.httpClient.Do(check)
+	if err != nil {
+		return false
+	}
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		return false
+	}
+
+	var history struct {
+		Status int
+		Data   []struct{ SenderID, ReceiverID string }
+	}
+	if !decodeHistory(res.Body, &history) || history.Status != http.StatusOK || len(history.Data) != 1 {
+		return false
+	}
+	m := history.Data[0]
+	return m.SenderID == owner && m.ReceiverID == peer || m.SenderID == peer && m.ReceiverID == owner
+}
+
+func decodeHistory(body io.Reader, dst any) bool {
+	limited := &io.LimitedReader{R: body, N: maxMessageSize + 1}
+	d := json.NewDecoder(limited)
+	return d.Decode(dst) == nil && errors.Is(d.Decode(&struct{}{}), io.EOF) && limited.N > 0
 }
 
 func (r *relay) notifyPresenceLocked(userID string, online bool) {
-	frame := presenceFrame(userID, online)
+	frame := presenceFrame(userID, &online)
 	for _, connections := range r.subscribers {
 		for sub := range connections {
 			if sub.watch == userID {

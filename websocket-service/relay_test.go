@@ -24,6 +24,18 @@ func TestRelay(t *testing.T) {
 	)
 	users := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		cookie, err := r.Cookie("jwt")
+		if err == nil && cookie.Value == "bob" && strings.HasPrefix(r.URL.Path, "/get/") {
+			if r.URL.Query().Get("expectedUserId") != bob || r.URL.Query().Get("limit") != "1" {
+				w.WriteHeader(http.StatusForbidden)
+				return
+			}
+			if r.URL.Path == "/get/"+alice {
+				fmt.Fprintf(w, `{"status":200,"data":[{"senderId":%q,"receiverId":%q}]}`, alice, bob)
+			} else {
+				fmt.Fprint(w, `{"status":200,"data":[]}`)
+			}
+			return
+		}
 		if r.URL.Path != "/me" || err != nil {
 			w.WriteHeader(http.StatusUnauthorized)
 			return
@@ -43,7 +55,7 @@ func TestRelay(t *testing.T) {
 
 	chat := httptest.NewUnstartedServer(nil)
 	origin := "http://" + chat.Listener.Addr().String()
-	chat.Config.Handler = newRelay(origin, users.URL+"/me", token)
+	chat.Config.Handler = newRelay(origin, users.URL+"/me", users.URL+"/get", token)
 	chat.Start()
 	defer chat.Close()
 
@@ -234,5 +246,14 @@ func TestRelay(t *testing.T) {
 	connect("alice")
 	presence(alice, true)
 	watch(carol)
-	presence(carol, true)
+	_, body, err := bobSocket.Read(ctx)
+	want := fmt.Sprintf(`{"type":"presence","data":{"userId":%q,"online":null}}`, carol)
+	if err != nil || string(body) != want {
+		t.Fatalf("unrelated peer frame = %s, %v; want %s", body, err, want)
+	}
+	if err := carolSocket.Close(websocket.StatusNormalClosure, ""); err != nil {
+		t.Fatal(err)
+	}
+	watch(alice)
+	presence(alice, true)
 }

@@ -114,6 +114,7 @@ services:
       GO_WS_ADDR: '0.0.0.0:8090'
       GO_WS_ORIGIN: ${FULLSTACK_ORIGIN:?}
       GO_WS_SESSION_URL: 'http://user:8081/me'
+      GO_WS_CHAT_HISTORY_URL: 'http://chat:8082/get'
       GO_WS_BRIDGE_TOKEN: ${FULLSTACK_GO_WS_BRIDGE_TOKEN:-}
 
   gateway:

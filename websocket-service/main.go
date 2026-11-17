@@ -16,6 +16,7 @@ import (
 func main() {
 	origin := os.Getenv("GO_WS_ORIGIN")
 	sessionURL := os.Getenv("GO_WS_SESSION_URL")
+	historyURL := os.Getenv("GO_WS_CHAT_HISTORY_URL")
 	token := os.Getenv("GO_WS_BRIDGE_TOKEN")
 	site, err := parseHTTPURL(origin)
 	if err != nil || site.Path != "" {
@@ -23,6 +24,9 @@ func main() {
 	}
 	if _, err := parseHTTPURL(sessionURL); err != nil {
 		log.Fatal("GO_WS_SESSION_URL must be the HTTP URL for the user session endpoint")
+	}
+	if _, err := parseHTTPURL(historyURL); err != nil {
+		log.Fatal("GO_WS_CHAT_HISTORY_URL must be the HTTP URL for the chat history endpoint")
 	}
 	if len(token) < 32 {
 		log.Fatal("GO_WS_BRIDGE_TOKEN must contain at least 32 characters")
@@ -36,7 +40,7 @@ func main() {
 	defer stop()
 	server := &http.Server{
 		Addr:              addr,
-		Handler:           newRelay(origin, sessionURL, token),
+		Handler:           newRelay(origin, sessionURL, historyURL, token),
 		ReadHeaderTimeout: 3 * time.Second,
 		ReadTimeout:       5 * time.Second,
 		WriteTimeout:      5 * time.Second,
