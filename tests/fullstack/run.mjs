@@ -334,12 +334,6 @@ async function main() {
       assert.equal(archive.status, 0, 'Candidate archive failed');
       await command(`Extract ${destination} committed build context`, '/usr/bin/tar', ['-xf', '-', '-C', target], { input: archive.stdout });
     }
-    if (goWebSocket) {
-      await command('Build Go relay for the isolated container', 'go', ['build', '-trimpath', '-o', 'relay', '.'], {
-        cwd: join(env.FULLSTACK_SNAPSHOT, 'backend/websocket-service'),
-        env: { ...cleanEnvironment, GOOS: 'linux', GOARCH: 'arm64', CGO_ENABLED: '0' },
-      });
-    }
     const certificates = join(runtime, 'certificates');
     mkdirSync(certificates);
     await command('Generate disposable localhost TLS fixture', 'openssl', ['req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-days', '1', '-subj', '/CN=127.0.0.1', '-addext', 'subjectAltName=IP:127.0.0.1', '-keyout', join(certificates, 'privkey.pem'), '-out', join(certificates, 'fullchain.pem')]);
@@ -399,6 +393,16 @@ async function main() {
     assert.deepEqual(privileges, { inbox_delete: false, cross_table: false, migration_access: false });
     writeFileSync(join(evidence, 'restricted-role-check.json'), JSON.stringify(privileges));
     await composeCommand('Start actual application services', ['up', '-d', '--no-deps', ...application]);
+    if (goWebSocket) {
+      const [relay] = JSON.parse(dockerOutput(['inspect', containerId('go-websocket')]));
+      ownedContainer(relay, owner);
+      assert.equal(relay.Config.User, '65532:65532', 'The relay must run as an unprivileged user');
+      assert.equal(relay.HostConfig.ReadonlyRootfs, true);
+      assert.ok(relay.HostConfig.CapDrop?.includes('ALL'));
+      assert.ok(relay.HostConfig.SecurityOpt?.some(option => /^no-new-privileges[:=]true$/.test(option)));
+      assert.equal(Object.keys(relay.HostConfig.PortBindings ?? {}).length, 0);
+      console.log('Verified Go relay container isolation.');
+    }
     await composeCommand('Start fixture HTTPS gateway', ['up', '-d', '--no-deps', 'gateway']);
     for (const path of ['/user/health', '/chat/health', '/notifications/health', '/login']) {
       await poll(`HTTPS ${path}`, () => new Promise((done, fail) => {

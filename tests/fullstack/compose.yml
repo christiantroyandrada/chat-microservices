@@ -106,12 +106,14 @@ services:
     image: ${FULLSTACK_PROJECT:?}-go-websocket:${FULLSTACK_RUN_ID:?}
     build:
       context: ${FULLSTACK_SNAPSHOT:?}/backend/websocket-service
-      dockerfile: Dockerfile.fixture
       labels: *labels
     platform: linux/arm64
     labels: *labels
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    stop_grace_period: 8s
     environment:
-      GO_WS_ADDR: '0.0.0.0:8090'
       GO_WS_ORIGIN: ${FULLSTACK_ORIGIN:?}
       GO_WS_SESSION_URL: 'http://user:8081/me'
       GO_WS_CHAT_HISTORY_URL: 'http://chat:8082/get'

@@ -28,6 +28,16 @@ To run the isolated test, use the committed frontend and backend worktrees. From
 node tests/fullstack/run.mjs --start-fixture --go-websocket --frontend-dir /path/to/frontend-worktree
 ```
 
+## Container image
+
+Build the relay image from the backend repo.
+
+```sh
+docker build -t chat-websocket:local websocket-service
+```
+
+The container listens on port `8090` as UID and GID `65532`. Use a private application network. Publish only `/ws/v1` through the gateway. Set the environment variables listed above. Run with a read-only root filesystem, drop all capabilities, and allow at least eight seconds for the container to stop. The Colima fixture builds this image from the committed source.
+
 ## Relay limits
 
 The relay accepts up to 128 connections per instance. This count includes handshakes. Each connection has a queue of eight frames. If the queue is full, the relay drops typing frames. It disconnects the client if a message, receipt, or presence frame cannot enter the queue.
@@ -38,6 +48,8 @@ The Go tests verify these limits on loopback. They also stop and restart the rel
 
 ## Before cutover
 
-1. Package the relay from this backend repository.
-2. Measure capacity on staging. Verify account changes, restart, and recovery through the deployed gateway.
-3. Verify rollback before the VPS pilot. Keep the Socket.IO compatibility path until the last legacy client moves to Go.
+1. Verify the image and its digest in staging. Measure capacity through the staging gateway.
+2. Verify account changes, restart, and recovery. Rehearse rollback to the verified prior release.
+3. Run the adversarial review on the final candidate. Review correctness, failure modes, and structure independently. Resolve blocking findings and repeat affected checks before the VPS pilot.
+
+Keep the Socket.IO compatibility path until the last legacy client moves to Go.
