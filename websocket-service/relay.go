@@ -66,6 +66,7 @@ type subscriber struct {
 
 type relay struct {
 	origin, sessionURL, historyURL string
+	sessionKey                     string
 	bridgeAuth                     [sha256.Size]byte
 	httpClient                     *http.Client
 	slots                          chan struct{}
@@ -76,10 +77,11 @@ type relay struct {
 	subscribers                    map[string]map[*subscriber]struct{}
 }
 
-func newRelay(origin, sessionURL, historyURL, token string) *relay {
+func newRelay(origin, sessionURL, historyURL, token, sessionKey string) *relay {
 	r := &relay{
 		origin:      origin,
 		sessionURL:  sessionURL,
+		sessionKey:  sessionKey,
 		historyURL:  strings.TrimRight(historyURL, "/"),
 		bridgeAuth:  sha256.Sum256([]byte("Bearer " + token)),
 		slots:       make(chan struct{}, maxConnections),
@@ -142,6 +144,7 @@ func (r *relay) userID(ctx context.Context, cookie *http.Cookie) (string, int) {
 		return "", http.StatusServiceUnavailable
 	}
 	check.AddCookie(cookie)
+	check.Header.Set("X-Relay-Session-Key", r.sessionKey)
 	res, err := r.httpClient.Do(check)
 	if err != nil {
 		return "", http.StatusServiceUnavailable

@@ -17,12 +17,14 @@ import (
 )
 
 const testAccount = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+const testSessionKey = "fixture-session-key-for-tests-only"
 
 func fixtureSessions(t *testing.T) string {
 	t.Helper()
 	sessions := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		cookie, err := r.Cookie("jwt")
-		if err != nil || cookie.Value != "fixture-session" || r.URL.Path != "/me" {
+		if err != nil || cookie.Value != "fixture-session" || r.URL.Path != "/internal/ws/session" ||
+			r.Header.Get("X-Relay-Session-Key") != testSessionKey {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
@@ -52,7 +54,7 @@ func TestRelayCapacity(t *testing.T) {
 	sessions := fixtureSessions(t)
 	server := httptest.NewUnstartedServer(nil)
 	site := "http://" + server.Listener.Addr().String()
-	server.Config.Handler = newRelay(site, sessions+"/me", sessions+"/get", strings.Repeat("x", 32))
+	server.Config.Handler = newRelay(site, sessions+"/internal/ws/session", sessions+"/get", strings.Repeat("x", 32), testSessionKey)
 	server.Start()
 	t.Cleanup(server.Close)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -151,7 +153,8 @@ func TestRelayProcessRestart(t *testing.T) {
 			"CHAT_TEST_RELAY_CHILD=1",
 			"GO_WS_ADDR="+addr,
 			"GO_WS_ORIGIN="+site,
-			"GO_WS_SESSION_URL="+sessions+"/me",
+			"GO_WS_SESSION_URL="+sessions+"/internal/ws/session",
+			"GO_WS_SESSION_KEY="+testSessionKey,
 			"GO_WS_CHAT_HISTORY_URL="+sessions+"/get",
 			"GO_WS_BRIDGE_TOKEN="+strings.Repeat("x", 32),
 		)

@@ -317,6 +317,7 @@ async function main() {
   env.FULLSTACK_GO_WS = String(goWebSocket);
   if (goWebSocket) {
     env.FULLSTACK_GO_WS_BRIDGE_TOKEN = randomUUID() + randomUUID();
+    env.FULLSTACK_GO_WS_SESSION_KEY = randomUUID() + randomUUID();
     env.FULLSTACK_GO_WS_BRIDGE_URL = 'http://go-websocket:8090/internal/messages';
   }
   writeFileSync(join(runtime, 'empty.env'), '');
@@ -329,15 +330,16 @@ async function main() {
   const database = new Client({ connectionString: databaseUrl, connectionTimeoutMillis: 5000, query_timeout: 5000, statement_timeout: 5000 });
   database.on('error', error => { process.exitCode = 1; console.error(`Fixture database connection failed: ${error.message}`); });
   const query = (...args) => databaseCall(database, () => database.query(...args), 'Fixture database query');
-  const waitForHTTPS = path => poll(`HTTPS ${path}`, () => new Promise((done, fail) => {
-    const probe = request(env.FULLSTACK_ORIGIN + path, { rejectUnauthorized: false }, response => {
+  const httpsStatus = (path, headers) => new Promise((done, fail) => {
+    const probe = request(env.FULLSTACK_ORIGIN + path, { rejectUnauthorized: false, headers }, response => {
       response.resume();
-      done(response.statusCode === 200);
+      done(response.statusCode);
     });
     probe.setTimeout(3000, () => probe.destroy(new Error('Fixture HTTPS timeout')));
     probe.on('error', fail);
     probe.end();
-  }));
+  });
+  const waitForHTTPS = path => poll(`HTTPS ${path}`, async () => (await httpsStatus(path)) === 200);
   let databaseIdentity;
   let primaryFailure;
   try {
@@ -369,7 +371,7 @@ async function main() {
       appendFileSync(join(evidence, 'images.jsonl'), JSON.stringify({ id: detail.Id, digests: detail.RepoDigests, os: detail.Os, architecture: detail.Architecture }) + '\n');
     }
     await composeCommand('Validate isolated topology', ['config', '--quiet']);
-    const topology = JSON.parse(await composeCommand('Resolve gateway bind sources', ['config', '--format', 'json']));
+    const topology = JSON.parse(await composeCommand('Resolve gateway bind sources', ['config', '--format', 'json'], { log: undefined }));
     gatewayBinds(topology.services.gateway.volumes, runtime);
     assert.equal(topology.networks.default.internal, true);
     assert.equal(topology.networks.loopback.internal ?? false, false);
@@ -424,6 +426,26 @@ async function main() {
     await composeCommand('Start fixture HTTPS gateway', ['up', '-d', '--no-deps', 'gateway']);
     for (const path of ['/user/health', '/chat/health', '/notifications/health', '/login']) {
       await waitForHTTPS(path);
+    }
+    if (goWebSocket) {
+      await composeCommand('Verify the internal session endpoint requires both credentials', ['exec', '-T', 'user', 'node', '-e', `
+        const assert = require('node:assert/strict');
+        const url = 'http://localhost:8081/internal/ws/session';
+        (async () => {
+          for (const [headers, status] of [
+            [{}, 404],
+            [{ 'X-Relay-Session-Key': 'invalid' }, 404],
+            [{ 'X-Relay-Session-Key': process.env.GO_WS_SESSION_KEY }, 401]
+          ]) {
+            const response = await fetch(url, { headers, signal: AbortSignal.timeout(3000) });
+            assert.equal(response.status, status);
+          }
+        })().catch(error => { console.error(error.message); process.exitCode = 1; });
+      `]);
+      for (const path of ['/user/internal/ws/session', '/api/user/internal/ws/session']) {
+        const status = await httpsStatus(path, { 'X-Relay-Session-Key': env.FULLSTACK_GO_WS_SESSION_KEY });
+        assert.equal(status, 404, `Gateway exposed ${path}`);
+      }
     }
     const browserFlow = (title, testArgs, evidencePath = evidence) => command(title, process.execPath,
       [join(frontend, 'node_modules/@playwright/test/cli.js'), 'test', ...testArgs, '--config', join(frontend, 'playwright.fullstack.config.ts')],

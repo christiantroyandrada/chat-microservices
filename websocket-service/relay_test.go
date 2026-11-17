@@ -25,6 +25,11 @@ func TestRelay(t *testing.T) {
 	users := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		cookie, err := r.Cookie("jwt")
 		if err == nil && cookie.Value == "bob" && strings.HasPrefix(r.URL.Path, "/get/") {
+			if r.Header.Get("X-Relay-Session-Key") != "" {
+				t.Error("session key was sent to chat history")
+				w.WriteHeader(http.StatusForbidden)
+				return
+			}
 			if r.URL.Query().Get("expectedUserId") != bob || r.URL.Query().Get("limit") != "1" {
 				w.WriteHeader(http.StatusForbidden)
 				return
@@ -36,7 +41,7 @@ func TestRelay(t *testing.T) {
 			}
 			return
 		}
-		if r.URL.Path != "/me" || err != nil {
+		if r.URL.Path != "/internal/ws/session" || r.Header.Get("X-Relay-Session-Key") != testSessionKey || err != nil {
 			w.WriteHeader(http.StatusUnauthorized)
 			return
 		}
@@ -55,7 +60,7 @@ func TestRelay(t *testing.T) {
 
 	chat := httptest.NewUnstartedServer(nil)
 	origin := "http://" + chat.Listener.Addr().String()
-	chat.Config.Handler = newRelay(origin, users.URL+"/me", users.URL+"/get", token)
+	chat.Config.Handler = newRelay(origin, users.URL+"/internal/ws/session", users.URL+"/get", token, testSessionKey)
 	chat.Start()
 	defer chat.Close()
 

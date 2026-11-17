@@ -5,8 +5,11 @@ import helmet from 'helmet'
 import rateLimit from 'express-rate-limit'
 import cookieParser from 'cookie-parser'
 import swaggerUi from 'swagger-ui-express'
+import { createHash, timingSafeEqual } from 'node:crypto'
 import { Server } from 'node:http'
 import userServiceRouter from './routes/userServiceRouter'
+import AuthController from './controllers/AuthController'
+import { authenticated } from './middleware/auth'
 import { errorMiddleware, errorHandler } from './middleware'
 import { requestLogger } from './middleware/requestLogger'
 import { connectDB } from './database'
@@ -16,6 +19,9 @@ import { logInfo, logWarn, logError } from './utils/logger'
 import { getMetrics, getContentType } from './utils/metrics'
 import openapiSpec from './openapi'
 
+const sessionKey = process.env.GO_WS_SESSION_KEY
+const sessionKeyDigest = sessionKey ? createHash('sha256').update(sessionKey).digest() : undefined
+
 // Validate required environment variables on startup
 const validateEnv = () => {
   const required = ['JWT_SECRET', 'DATABASE_URL', 'PORT', 'MESSAGE_BROKER_URL']
@@ -24,6 +30,9 @@ const validateEnv = () => {
   if (missing.length > 0) {
     logError(`[user-service] FATAL: Missing required environment variables: ${missing.join(', ')}`)
     throw new Error('Required environment variables are missing')
+  }
+  if (sessionKey && Buffer.byteLength(sessionKey) < 32) {
+    throw new Error('GO_WS_SESSION_KEY must contain at least 32 bytes')
   }
   
   // Fail hard on default/weak secrets in production
@@ -104,6 +113,18 @@ app.use(cookieParser())
 // Parse JSON request bodies
 app.use(express.json({ limit: '100kb' }))
 app.use(express.urlencoded({ extended: true, parameterLimit: 1000 }))
+
+app.get('/internal/ws/session', (req, res, next) => {
+  const key = req.get('X-Relay-Session-Key')
+  if (!sessionKeyDigest || !key || !timingSafeEqual(sessionKeyDigest, createHash('sha256').update(key).digest())) {
+    return res.sendStatus(404)
+  }
+  if (!req.cookies?.jwt || req.headers.authorization) {
+    return res.sendStatus(401)
+  }
+  res.set('Cache-Control', 'no-store')
+  return next()
+}, authenticated, AuthController.getCurrentUser)
 
 const globalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,

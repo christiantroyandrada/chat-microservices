@@ -53,6 +53,7 @@ services:
     environment:
       <<: *app-environment
       PORT: '8081'
+      GO_WS_SESSION_KEY: ${FULLSTACK_GO_WS_SESSION_KEY:-}
       DATABASE_URL: postgres://user_svc:FixtureUserOnly2026@postgres:5432/${FULLSTACK_DATABASE:?}
 
   chat:
@@ -117,7 +118,8 @@ services:
     stop_grace_period: 8s
     environment:
       GO_WS_ORIGIN: ${FULLSTACK_ORIGIN:?}
-      GO_WS_SESSION_URL: 'http://user:8081/me'
+      GO_WS_SESSION_URL: 'http://user:8081/internal/ws/session'
+      GO_WS_SESSION_KEY: ${FULLSTACK_GO_WS_SESSION_KEY:-}
       GO_WS_CHAT_HISTORY_URL: 'http://chat:8082/get'
       GO_WS_BRIDGE_TOKEN: ${FULLSTACK_GO_WS_BRIDGE_TOKEN:-}
 

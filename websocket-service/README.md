@@ -9,12 +9,15 @@ Use Go 1.26 or later. From this directory, run `go test -race ./...`. Set these 
 | Variable | Value |
 | --- | --- |
 | `GO_WS_ORIGIN` | Exact browser origin, without a trailing slash |
-| `GO_WS_SESSION_URL` | URL of the user service's `/me` endpoint |
+| `GO_WS_SESSION_URL` | Private URL of the user service's `/internal/ws/session` endpoint |
+| `GO_WS_SESSION_KEY` | Shared secret of at least 32 bytes. Set it on the relay and the user service. |
 | `GO_WS_CHAT_HISTORY_URL` | URL of the chat service's `/get` endpoint, without a user ID |
 | `GO_WS_BRIDGE_TOKEN` | Shared secret of at least 32 bytes |
 | `GO_WS_ADDR` | Listen address. Default is `127.0.0.1:8090` |
 
 Set the same bridge token in the chat service. Set `GO_WS_BRIDGE_URL` there to the relay's `/internal/messages` endpoint. Keep that endpoint private.
+
+Use a separate secret for session checks. The user service still validates the browser's session cookie. Keep its internal session endpoint off the public gateway.
 
 Connect to `/ws/v1?expectedUserId=<id>` with the matching `jwt` session cookie. The relay sends a `ready` frame, then sends `message` frames for the authenticated recipient.
 
@@ -50,7 +53,6 @@ The Go tests verify these limits on loopback. They also stop and restart the rel
 
 Add `--check-relay-capacity` to the isolated fixture command to check the cap through NGINX. The check opens 128 authenticated connections, verifies that the next connection receives HTTP 503, and confirms that closing one connection frees a slot.
 
-This check currently fails before the relay reaches 128 connections. Each upgrade calls the user service's `/me` endpoint from the relay's IP. Those calls share the user service's limit of 100 requests per IP per 15 minutes. Resolve the shared session-check limit before the pilot. Keep the limits on public routes.
 
 ## Before cutover
 
