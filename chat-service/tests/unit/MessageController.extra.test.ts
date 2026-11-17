@@ -73,7 +73,7 @@ describe('MessageController (extra)', () => {
       expect(json).toHaveBeenCalledWith(expect.objectContaining({ status: 200, data: saved }))
       expect(fetch).toHaveBeenCalledWith(url, expect.objectContaining({
         method: 'POST', headers: expect.objectContaining({ authorization: `Bearer ${token}` }),
-        body: JSON.stringify(saved), redirect: 'error',
+        body: JSON.stringify({ ...saved, senderUsername: 'alice' }), redirect: 'error',
       }))
       expect(submit.mock.invocationCallOrder[0]).toBeLessThan(fetch.mock.invocationCallOrder[0])
       await MessageController.sendMessage(req, res, next)

@@ -28,6 +28,7 @@ var uuid = regexp.MustCompile(`^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-
 type message struct {
 	ID              string    `json:"id"`
 	SenderID        string    `json:"senderId"`
+	SenderUsername  string    `json:"senderUsername,omitempty"`
 	ReceiverID      string    `json:"receiverId"`
 	Ciphertext      string    `json:"message"`
 	Status          string    `json:"status"`
@@ -138,6 +139,11 @@ func (r *relay) connect(w http.ResponseWriter, req *http.Request) {
 	id, status := r.userID(req)
 	if status != http.StatusOK {
 		http.Error(w, http.StatusText(status), status)
+		return
+	}
+	expectedOwners := req.URL.Query()["expectedUserId"]
+	if len(expectedOwners) != 1 || expectedOwners[0] != id {
+		http.Error(w, "session does not match the expected user", http.StatusForbidden)
 		return
 	}
 	conn, err := websocket.Accept(w, req, &websocket.AcceptOptions{OriginPatterns: []string{r.origin}})

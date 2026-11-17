@@ -46,24 +46,26 @@ func TestRelay(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	dial := func(cookie, site string) (*websocket.Conn, *http.Response, error) {
+	dial := func(cookie, site, owner string) (*websocket.Conn, *http.Response, error) {
 		header := http.Header{"Origin": {site}}
 		if cookie != "" {
 			header.Set("Cookie", "jwt="+cookie)
 		}
-		return websocket.Dial(ctx, "ws"+strings.TrimPrefix(chat.URL, "http")+"/ws/v1",
+		return websocket.Dial(ctx, "ws"+strings.TrimPrefix(chat.URL, "http")+"/ws/v1?expectedUserId="+owner,
 			&websocket.DialOptions{HTTPHeader: header})
 	}
 	for _, tt := range []struct {
-		cookie, origin string
-		status         int
+		cookie, origin, owner string
+		status                int
 	}{
-		{"", origin, http.StatusUnauthorized},
-		{"unknown", origin, http.StatusUnauthorized},
-		{"bob", "", http.StatusForbidden},
-		{"bob", "https://other.example", http.StatusForbidden},
+		{"", origin, bob, http.StatusUnauthorized},
+		{"unknown", origin, bob, http.StatusUnauthorized},
+		{"bob", "", bob, http.StatusForbidden},
+		{"bob", "https://other.example", bob, http.StatusForbidden},
+		{"bob", origin, carol, http.StatusForbidden},
+		{"bob", origin, "", http.StatusForbidden},
 	} {
-		c, res, err := dial(tt.cookie, tt.origin)
+		c, res, err := dial(tt.cookie, tt.origin, tt.owner)
 		if c != nil {
 			c.CloseNow()
 		}
@@ -73,7 +75,8 @@ func TestRelay(t *testing.T) {
 	}
 	connect := func(user string) *websocket.Conn {
 		t.Helper()
-		c, _, err := dial(user, origin)
+		owner := map[string]string{"bob": bob, "carol": carol}[user]
+		c, _, err := dial(user, origin, owner)
 		if err != nil {
 			t.Fatal(err)
 		}

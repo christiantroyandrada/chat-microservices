@@ -65,6 +65,8 @@ services:
     environment:
       <<: *app-environment
       PORT: '8082'
+      GO_WS_BRIDGE_URL: ${FULLSTACK_GO_WS_BRIDGE_URL:-}
+      GO_WS_BRIDGE_TOKEN: ${FULLSTACK_GO_WS_BRIDGE_TOKEN:-}
       DATABASE_URL: postgres://chat_svc:FixtureChatOnly2026@postgres:5432/${FULLSTACK_DATABASE:?}
 
   notification:
@@ -97,6 +99,22 @@ services:
       ORIGIN: ${FULLSTACK_ORIGIN:?}
       PUBLIC_API_URL: ${FULLSTACK_ORIGIN:?}
       PUBLIC_WS_URL: ${FULLSTACK_ORIGIN:?}
+      PUBLIC_GO_WS_ENABLED: ${FULLSTACK_GO_WS:-false}
+
+  go-websocket:
+    profiles: [go-websocket]
+    image: ${FULLSTACK_PROJECT:?}-go-websocket:${FULLSTACK_RUN_ID:?}
+    build:
+      context: ${FULLSTACK_SNAPSHOT:?}/backend/websocket-service
+      dockerfile: Dockerfile.fixture
+      labels: *labels
+    platform: linux/arm64
+    labels: *labels
+    environment:
+      GO_WS_ADDR: '0.0.0.0:8090'
+      GO_WS_ORIGIN: ${FULLSTACK_ORIGIN:?}
+      GO_WS_SESSION_URL: 'http://user:8081/me'
+      GO_WS_BRIDGE_TOKEN: ${FULLSTACK_GO_WS_BRIDGE_TOKEN:-}
 
   gateway:
     image: ${FULLSTACK_PROJECT:?}-gateway:${FULLSTACK_RUN_ID:?}

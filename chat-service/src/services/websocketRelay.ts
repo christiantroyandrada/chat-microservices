@@ -3,7 +3,7 @@ import { logWarn } from '../utils/logger'
 
 let active = 0
 
-export async function relayAcceptedMessage(message: Message): Promise<void> {
+export async function relayAcceptedMessage(message: Message, senderUsername: string): Promise<void> {
   const url = process.env.GO_WS_BRIDGE_URL
   const token = process.env.GO_WS_BRIDGE_TOKEN
   if (!url || !token || active >= 32) return
@@ -14,7 +14,7 @@ export async function relayAcceptedMessage(message: Message): Promise<void> {
     const response = await fetch(url, {
       method: 'POST',
       headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
-      body: JSON.stringify({ id, senderId, receiverId, message: message.message, status, createdAt, clientMessageId }),
+      body: JSON.stringify({ id, senderId, receiverId, message: message.message, status, createdAt, clientMessageId, senderUsername }),
       redirect: 'error',
       signal: AbortSignal.timeout(750),
     })

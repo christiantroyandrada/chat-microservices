@@ -13,7 +13,7 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const options = new Map();
 for (let index = 2; index < process.argv.length; index++) {
   const argument = process.argv[index];
-  if (argument === '--check' || argument === '--start-fixture') options.set(argument, true);
+  if (['--check', '--start-fixture', '--go-websocket'].includes(argument)) options.set(argument, true);
   else {
     assert.equal(argument, '--frontend-dir', 'Unknown fixture argument');
     options.set(argument, process.argv[++index]);
@@ -31,7 +31,9 @@ const composePrefix = macOS ? [] : ['--context', context, 'compose'];
 const runId = `fullstack-${randomUUID().replaceAll('-', '').slice(0, 12)}`;
 const project = runId;
 const databaseName = `fullstack_${runId.slice(10)}`;
+const goWebSocket = options.has('--go-websocket');
 const services = new Set(['postgres', 'rabbitmq', 'user', 'chat', 'notification', 'frontend', 'gateway']);
+if (goWebSocket) services.add('go-websocket');
 const cleanEnvironment = Object.fromEntries(['HOME', 'PATH', 'TMPDIR', 'USER'].filter(key => process.env[key]).map(key => [key, process.env[key]]));
 cleanEnvironment.DOCKER_CONTEXT = context;
 const require = createRequire(join(root, 'user-service/package.json'));
@@ -308,8 +310,14 @@ async function main() {
     FULLSTACK_TLS_PORT: String(await freePort()), FULLSTACK_PG_PORT: String(await freePort()) };
   assert.notEqual(env.FULLSTACK_PG_PORT, env.FULLSTACK_TLS_PORT, 'Fixture PostgreSQL and TLS ports must differ');
   env.FULLSTACK_ORIGIN = `https://127.0.0.1:${env.FULLSTACK_TLS_PORT}`;
+  env.FULLSTACK_GO_WS = String(goWebSocket);
+  if (goWebSocket) {
+    env.FULLSTACK_GO_WS_BRIDGE_TOKEN = randomUUID() + randomUUID();
+    env.FULLSTACK_GO_WS_BRIDGE_URL = 'http://go-websocket:8090/internal/messages';
+  }
   writeFileSync(join(runtime, 'empty.env'), '');
   const composeArgs = ['--env-file', join(runtime, 'empty.env'), '--project-directory', runtime, '-p', project, '-f', join(root, 'tests/fullstack/compose.yml')];
+  if (goWebSocket) composeArgs.push('--profile', 'go-websocket');
   const command = (title, executable, args, extra = {}) => runCommand(title, executable, args, { cwd: root, env, log, ...extra });
   const composeCommand = (title, args, extra) => command(title, compose, [...composePrefix, ...composeArgs, ...args], extra);
   const dockerOutput = args => output(docker, ['--context', context, ...args]);
@@ -319,12 +327,18 @@ async function main() {
   let databaseIdentity;
   let primaryFailure;
   try {
-    for (const [directory, commit, destination, paths] of [[root, backendCommit, 'backend', ['user-service', 'chat-service', 'notification-service', 'nginx']], [frontend, frontendCommit, 'frontend', []]]) {
+    for (const [directory, commit, destination, paths] of [[root, backendCommit, 'backend', ['user-service', 'chat-service', 'notification-service', 'nginx', ...(goWebSocket ? ['websocket-service'] : [])]], [frontend, frontendCommit, 'frontend', []]]) {
       const target = join(env.FULLSTACK_SNAPSHOT, destination);
       mkdirSync(target, { recursive: true });
       const archive = spawnSync('/usr/bin/git', ['archive', '--format=tar', commit, ...paths], { cwd: directory, env: cleanEnvironment, maxBuffer: 64 * 1024 * 1024 });
       assert.equal(archive.status, 0, 'Candidate archive failed');
       await command(`Extract ${destination} committed build context`, '/usr/bin/tar', ['-xf', '-', '-C', target], { input: archive.stdout });
+    }
+    if (goWebSocket) {
+      await command('Build Go relay for the isolated container', 'go', ['build', '-trimpath', '-o', 'relay', '.'], {
+        cwd: join(env.FULLSTACK_SNAPSHOT, 'backend/websocket-service'),
+        env: { ...cleanEnvironment, GOOS: 'linux', GOARCH: 'arm64', CGO_ENABLED: '0' },
+      });
     }
     const certificates = join(runtime, 'certificates');
     mkdirSync(certificates);
@@ -332,7 +346,14 @@ async function main() {
     chmodSync(join(certificates, 'privkey.pem'), 0o644);
     const gateway = readFileSync(join(env.FULLSTACK_SNAPSHOT, 'backend/nginx/nginx.conf'), 'utf8');
     assert.equal((gateway.match(/listen 8080;/g) ?? []).length, 1);
-    writeFileSync(join(runtime, 'nginx.conf'), gateway.replace('listen 8080;', 'listen 8443 ssl;\n    ssl_certificate /fixture-certificates/fullchain.pem;\n    ssl_certificate_key /fixture-certificates/privkey.pem;'));
+    const upgrade = goWebSocket ? `
+    location = /ws/v1 {
+        proxy_pass http://go-websocket:8090;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection Upgrade;
+    }` : '';
+    writeFileSync(join(runtime, 'nginx.conf'), gateway.replace('listen 8080;', 'listen 8443 ssl;\n    ssl_certificate /fixture-certificates/fullchain.pem;\n    ssl_certificate_key /fixture-certificates/privkey.pem;' + upgrade));
     for (const image of ['postgres@sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24', 'rabbitmq@sha256:6931816af1a943f471c038b278835d36692d55dec769232739296bb91b7de0f5']) {
       const [detail] = JSON.parse(dockerOutput(['image', 'inspect', image]));
       assert.equal(detail.Os, 'linux');
@@ -348,7 +369,8 @@ async function main() {
       const attached = Object.keys(topology.services[service].networks).sort();
       assert.deepEqual(attached, ['postgres', 'gateway'].includes(service) ? ['default', 'loopback'] : ['default']);
     }
-    for (const service of ['user', 'chat', 'notification', 'frontend', 'gateway']) {
+    const application = [...services].filter(service => !['postgres', 'rabbitmq', 'gateway'].includes(service));
+    for (const service of [...application, 'gateway']) {
       await composeCommand(`Build actual ${service} image`, ['build', service], { timeout: 600_000 });
     }
     await composeCommand('Start owned PostgreSQL and RabbitMQ', ['up', '-d', 'postgres', 'rabbitmq']);
@@ -376,7 +398,8 @@ async function main() {
     const privileges = (await query("SELECT has_table_privilege('notif_svc','notification_inbox','DELETE') AS inbox_delete, has_table_privilege('chat_svc','users','SELECT') AS cross_table, has_table_privilege('user_svc','typeorm_migrations_user','SELECT') AS migration_access")).rows[0];
     assert.deepEqual(privileges, { inbox_delete: false, cross_table: false, migration_access: false });
     writeFileSync(join(evidence, 'restricted-role-check.json'), JSON.stringify(privileges));
-    await composeCommand('Start actual application services', ['up', '-d', '--no-deps', 'user', 'chat', 'notification', 'frontend', 'gateway']);
+    await composeCommand('Start actual application services', ['up', '-d', '--no-deps', ...application]);
+    await composeCommand('Start fixture HTTPS gateway', ['up', '-d', '--no-deps', 'gateway']);
     for (const path of ['/user/health', '/chat/health', '/notifications/health', '/login']) {
       await poll(`HTTPS ${path}`, () => new Promise((done, fail) => {
         const probe = request(env.FULLSTACK_ORIGIN + path, { rejectUnauthorized: false }, response => { response.resume(); done(response.statusCode === 200); });
@@ -385,7 +408,7 @@ async function main() {
         probe.end();
       }));
     }
-    await command('Real two-context browser and database flow', process.execPath, [join(frontend, 'node_modules/@playwright/test/cli.js'), 'test', '--config', join(frontend, 'playwright.fullstack.config.ts')], { cwd: frontend, timeout: 180_000, env: { ...cleanEnvironment, FULLSTACK_ORIGIN: env.FULLSTACK_ORIGIN, FULLSTACK_EVIDENCE: evidence, FULLSTACK_RUN_ID: runId, FULLSTACK_BACKEND_ROOT: root, FULLSTACK_DATABASE_URL: `postgres://fixture_admin:FixtureAdminOnly2026@127.0.0.1:${env.FULLSTACK_PG_PORT}/${databaseName}`, FULLSTACK_DATABASE_ID: databaseIdentity.system } });
+    await command('Real two-context browser and database flow', process.execPath, [join(frontend, 'node_modules/@playwright/test/cli.js'), 'test', goWebSocket ? 'go-websocket.spec.ts' : 'chat.spec.ts', '--config', join(frontend, 'playwright.fullstack.config.ts')], { cwd: frontend, timeout: 180_000, env: { ...cleanEnvironment, FULLSTACK_ORIGIN: env.FULLSTACK_ORIGIN, FULLSTACK_EVIDENCE: evidence, FULLSTACK_RUN_ID: runId, FULLSTACK_BACKEND_ROOT: root, FULLSTACK_DATABASE_URL: `postgres://fixture_admin:FixtureAdminOnly2026@127.0.0.1:${env.FULLSTACK_PG_PORT}/${databaseName}`, FULLSTACK_DATABASE_ID: databaseIdentity.system } });
   } catch (error) {
     primaryFailure = error;
     process.exitCode = 1;

@@ -15,4 +15,14 @@ Use Go 1.26 or later. From this directory, run `go test -race ./...`. Set these 
 
 Set the same bridge token in the chat service. Set `GO_WS_BRIDGE_URL` there to the relay's `/internal/messages` endpoint. Keep that endpoint private.
 
-Connect to `/ws/v1` with a valid `jwt` session cookie. The relay sends a `ready` frame, then sends `message` frames for the authenticated recipient. Reconnect after the five-minute connection limit. Fetch missed messages through the chat API. The app still uses Socket.IO.
+Connect to `/ws/v1?expectedUserId=<id>` with the matching `jwt` session cookie. The relay sends a `ready` frame, then sends `message` frames for the authenticated recipient.
+
+## Browser pilot
+
+Set `PUBLIC_GO_WS_ENABLED=true` in the frontend runtime. Forward the same-origin `/ws/v1` path to the relay. The browser uses Socket.IO for typing, presence, and receipts. After reconnect, it refreshes the conversation list and fetches the latest 50 messages in the open conversation.
+
+To run the isolated test, use the committed frontend and backend worktrees. From the backend worktree, run:
+
+```sh
+node tests/fullstack/run.mjs --start-fixture --go-websocket --frontend-dir /path/to/frontend-worktree
+```

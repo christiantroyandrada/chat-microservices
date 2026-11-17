@@ -158,7 +158,7 @@ const sendMessage = async (
       message: "Message sent successfully",
       data: newMessage,
     });
-    if (!replayed) void relayAcceptedMessage(newMessage);
+    if (!replayed) void relayAcceptedMessage(newMessage, username);
     return response;
   } catch (error: unknown) {
     next(error);
