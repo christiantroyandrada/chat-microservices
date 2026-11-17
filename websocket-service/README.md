@@ -19,7 +19,7 @@ Connect to `/ws/v1?expectedUserId=<id>` with the matching `jwt` session cookie. 
 
 ## Browser pilot
 
-Set `PUBLIC_GO_WS_ENABLED=true` in the frontend runtime. Forward the same-origin `/ws/v1` path to the relay. The browser uses Socket.IO for typing, presence, and receipts. After reconnect, it refreshes the conversation list and fetches the latest 50 messages in the open conversation.
+Set `PUBLIC_GO_WS_ENABLED=true` in the frontend runtime. Forward the same-origin `/ws/v1` path to the relay. The browser receives messages and receipt events through Go. Receipt events cause the browser to read current status from the chat API. Socket.IO still handles typing, presence, and delivery acknowledgements. After reconnect, it refreshes the conversation list and fetches the latest 50 messages in the open conversation.
 
 To run the isolated test, use the committed frontend and backend worktrees. From the backend worktree, run:
 

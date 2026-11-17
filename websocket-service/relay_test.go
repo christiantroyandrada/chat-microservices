@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -89,16 +90,13 @@ func TestRelay(t *testing.T) {
 	}
 	bobSocket := connect("bob")
 	carolSocket := connect("carol")
-	post := func(secret, recipient, id, ciphertext string, want int) {
+	postJSON := func(path, secret string, body map[string]string, want int) {
 		t.Helper()
-		body, err := json.Marshal(map[string]string{
-			"id": id, "senderId": alice, "receiverId": recipient, "message": ciphertext,
-			"status": "NotDelivered", "createdAt": "2026-11-17T08:00:00Z",
-		})
+		encoded, err := json.Marshal(body)
 		if err != nil {
 			t.Fatal(err)
 		}
-		req, err := http.NewRequestWithContext(ctx, http.MethodPost, chat.URL+"/internal/messages", bytes.NewReader(body))
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, chat.URL+path, bytes.NewReader(encoded))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -111,6 +109,13 @@ func TestRelay(t *testing.T) {
 		if res.StatusCode != want {
 			t.Fatalf("post returned %d, want %d", res.StatusCode, want)
 		}
+	}
+	post := func(secret, recipient, id, ciphertext string, want int) {
+		t.Helper()
+		postJSON("/internal/messages", secret, map[string]string{
+			"id": id, "senderId": alice, "receiverId": recipient, "message": ciphertext,
+			"status": "NotDelivered", "createdAt": "2026-11-17T08:00:00Z",
+		}, want)
 	}
 	const ciphertext = " { \"__encrypted\": true, \"body\": \"QUJD\" } "
 	const first = "11111111-1111-4111-8111-111111111111"
@@ -143,4 +148,31 @@ func TestRelay(t *testing.T) {
 	}
 	read(bobSocket, first, bob)
 	read(carolSocket, second, carol)
+
+	delivered := map[string]string{"type": "delivered", "userId": bob, "by": alice, "messageId": first}
+	seen := map[string]string{"type": "read", "userId": carol, "by": alice}
+	invalid := map[string]string{"type": "delivered", "userId": carol, "by": alice}
+	postJSON("/internal/receipts", "wrong", delivered, http.StatusUnauthorized)
+	postJSON("/internal/receipts", token, invalid, http.StatusBadRequest)
+	postJSON("/internal/receipts", token, delivered, http.StatusNoContent)
+	postJSON("/internal/receipts", token, seen, http.StatusNoContent)
+	for _, tt := range []struct {
+		socket *websocket.Conn
+		want   map[string]string
+	}{{bobSocket, delivered}, {carolSocket, seen}} {
+		_, body, err := tt.socket.Read(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var frame struct {
+			Type string
+			Data map[string]string
+		}
+		if err := json.Unmarshal(body, &frame); err != nil {
+			t.Fatal(err)
+		}
+		if frame.Type != "receipt" || !maps.Equal(frame.Data, tt.want) {
+			t.Fatalf("unexpected receipt: %s", body)
+		}
+	}
 }

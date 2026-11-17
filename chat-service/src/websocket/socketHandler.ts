@@ -4,6 +4,8 @@ import { MessageStatus } from '../database/models/MessageModel'
 import { APIError } from '../utils/apiError'
 import { canonicalUserId, UUID } from '../utils/messageIdentity'
 import { MessageSubmissionService } from '../services/MessageSubmissionService'
+import { markConversationSeen } from '../services/messageReceipts'
+import { relayReceipt } from '../services/websocketRelay'
 import { logDebug, logInfo, logWarn, logError } from '../utils/logger'
 import type { IPresenceStore } from '../services/PresenceStore'
 import { chatMessagesSentTotal, chatPresenceChangesTotal } from '../utils/metrics'
@@ -238,10 +240,13 @@ export async function handleMessageDelivered(
   if (!existing || existing.receiverId !== userId) return
 
   if (existing.status === MessageStatus.NotDelivered) {
-    await messageRepo.update(
+    const result = await messageRepo.update(
       { id: existing.id, receiverId: userId, status: MessageStatus.NotDelivered },
       { status: MessageStatus.Delivered },
     )
+    if ((result.affected ?? 0) > 0) {
+      void relayReceipt({ type: 'delivered', userId: existing.senderId, by: userId, messageId: existing.id })
+    }
   }
   io.to(existing.senderId).emit('messageDelivered', { messageId: data.messageId, by: userId })
 }
@@ -256,18 +261,10 @@ export async function handleMarkRead(
   userId: string | undefined,
   data: { senderId: string },
 ): Promise<void> {
-  if (!userId || !data?.senderId) return
+  if (!userId || typeof data?.senderId !== 'string' || !UUID.test(data.senderId)) return
   userId = canonicalUserId(userId)
   const senderId = canonicalUserId(data.senderId)
-  const messageRepo = AppDataSource.getRepository(Message)
-  await messageRepo
-    .createQueryBuilder()
-    .update(Message)
-    .set({ status: MessageStatus.Seen })
-    .where('senderId = :senderId', { senderId })
-    .andWhere('receiverId = :receiverId', { receiverId: userId })
-    .andWhere('status != :status', { status: MessageStatus.Seen })
-    .execute()
+  await markConversationSeen(senderId, userId)
   io.to(senderId).emit('messageRead', { by: userId })
 }
 

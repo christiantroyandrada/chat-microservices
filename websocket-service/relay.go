@@ -86,7 +86,8 @@ func newRelay(origin, sessionURL, token string) http.Handler {
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /ws/v1", r.connect)
-	mux.HandleFunc("POST /internal/messages", r.publish)
+	mux.HandleFunc("POST /internal/messages", r.bridge(r.publishMessage))
+	mux.HandleFunc("POST /internal/receipts", r.bridge(r.publishReceipt))
 	return mux
 }
 
@@ -201,29 +202,62 @@ func (r *relay) connect(w http.ResponseWriter, req *http.Request) {
 	}
 }
 
-func (r *relay) publish(w http.ResponseWriter, req *http.Request) {
-	auth := sha256.Sum256([]byte(req.Header.Get("Authorization")))
-	if subtle.ConstantTimeCompare(auth[:], r.bridgeAuth[:]) != 1 {
-		http.Error(w, "bridge authorization required", http.StatusUnauthorized)
-		return
+type receipt struct {
+	Type      string `json:"type"`
+	UserID    string `json:"userId"`
+	By        string `json:"by"`
+	MessageID string `json:"messageId,omitempty"`
+}
+
+func (r *relay) bridge(publish http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, req *http.Request) {
+		auth := sha256.Sum256([]byte(req.Header.Get("Authorization")))
+		if subtle.ConstantTimeCompare(auth[:], r.bridgeAuth[:]) != 1 {
+			http.Error(w, "bridge authorization required", http.StatusUnauthorized)
+			return
+		}
+		publish(w, req)
 	}
-	var m message
+}
+
+func decode(w http.ResponseWriter, req *http.Request, dst any) bool {
 	d := json.NewDecoder(http.MaxBytesReader(w, req.Body, maxMessageSize))
 	d.DisallowUnknownFields()
-	if err := d.Decode(&m); err != nil || !m.valid() || !errors.Is(d.Decode(&struct{}{}), io.EOF) {
+	return d.Decode(dst) == nil && errors.Is(d.Decode(&struct{}{}), io.EOF)
+}
+
+func (r *relay) publishMessage(w http.ResponseWriter, req *http.Request) {
+	var m message
+	if !decode(w, req, &m) || !m.valid() {
 		http.Error(w, "invalid message", http.StatusBadRequest)
 		return
 	}
+	r.publish(w, m.ReceiverID, "message", m)
+}
+
+func (r *relay) publishReceipt(w http.ResponseWriter, req *http.Request) {
+	var event receipt
+	if !decode(w, req, &event) || !uuid.MatchString(event.UserID) ||
+		!uuid.MatchString(event.By) || event.UserID == event.By ||
+		!(event.Type == "read" && event.MessageID == "" ||
+			event.Type == "delivered" && uuid.MatchString(event.MessageID)) {
+		http.Error(w, "invalid receipt", http.StatusBadRequest)
+		return
+	}
+	r.publish(w, event.UserID, "receipt", event)
+}
+
+func (r *relay) publish(w http.ResponseWriter, userID, kind string, data any) {
 	frame, err := json.Marshal(struct {
-		Type string  `json:"type"`
-		Data message `json:"data"`
-	}{"message", m})
+		Type string `json:"type"`
+		Data any    `json:"data"`
+	}{kind, data})
 	if err != nil {
-		http.Error(w, "invalid message", http.StatusBadRequest)
+		http.Error(w, "invalid event", http.StatusBadRequest)
 		return
 	}
 	r.mu.Lock()
-	for sub := range r.subscribers[m.ReceiverID] {
+	for sub := range r.subscribers[userID] {
 		select {
 		case sub.queue <- frame:
 		default:

@@ -9,7 +9,7 @@ import { MessageSubmissionService } from '../services/MessageSubmissionService'
 import { relayAcceptedMessage } from '../services/websocketRelay'
 import { canonicalUserId, UUID } from '../utils/messageIdentity'
 import { logWarn, logError } from '../utils/logger'
-import { MessageStatus } from '../database/models/MessageModel'
+import { markConversationSeen } from '../services/messageReceipts'
 import { chatMessagesSentTotal, chatMessagesReadTotal } from '../utils/metrics'
 import { rabbitMQService } from '../services/RabbitMQService'
 
@@ -331,22 +331,10 @@ const markAsRead = async (
     const { senderId: requestedSenderId } = req.params;
     const receiverId = canonicalUserId(req.user._id);
 
-    if (!requestedSenderId) {
+    if (typeof requestedSenderId !== 'string' || !requestedSenderId) {
       throw new APIError(400, "Sender ID is required");
     }
-    const senderId = typeof requestedSenderId === 'string' ? canonicalUserId(requestedSenderId) : requestedSenderId;
-
-    const messageRepo = AppDataSource.getRepository(Message);
-
-    // Mark all messages from senderId to the current user as read (Seen)
-    const result = await messageRepo
-      .createQueryBuilder()
-      .update(Message)
-      .set({ status: MessageStatus.Seen })
-      .where("senderId = :senderId", { senderId })
-      .andWhere("receiverId = :receiverId", { receiverId })
-      .andWhere("status != :status", { status: MessageStatus.Seen })
-      .execute();
+    const modifiedCount = await markConversationSeen(canonicalUserId(requestedSenderId), receiverId);
 
     chatMessagesReadTotal.inc();
 
@@ -354,7 +342,7 @@ const markAsRead = async (
       status: 200,
       message: "Messages marked as read",
       data: {
-        modifiedCount: result.affected || 0,
+        modifiedCount,
       },
     });
   } catch (error: unknown) {
