@@ -50,7 +50,7 @@ export function registerSocketHandlers(
       logError('[chat-service] Socket disconnect failed'),
     )
   })
-  socket.on('typing', (data: { receiverId: string; isTyping: boolean }) => {
+  socket.on('typing', (data: { receiverId: string; isTyping: boolean; mirrored?: boolean }) => {
     if (userId && typeof data?.receiverId === 'string' && typeof data.isTyping === 'boolean') {
       handleTyping(io, userId, data)
     }
@@ -134,9 +134,10 @@ async function handleDisconnect(
 function handleTyping(
   io: SocketIOServer,
   userId: string,
-  data: { receiverId: string; isTyping: boolean },
+  data: { receiverId: string; isTyping: boolean; mirrored?: boolean },
 ): void {
   const { isTyping } = data
+  const event = { userId, isTyping, ...(data.mirrored === true ? { mirrored: true } : {}) }
   const receiverId = canonicalUserId(data.receiverId)
   logDebug('[chat-service] Typing event:', { userId, receiverId, isTyping })
 
@@ -146,18 +147,18 @@ function handleTyping(
   }
 
   if (isTyping) {
-    io.to(receiverId).emit('typing', { userId, isTyping: true })
+    io.to(receiverId).emit('typing', event)
 
     const timeout = setTimeout(() => {
       logDebug('[chat-service] Typing timeout for user:', userId)
-      io.to(receiverId).emit('typing', { userId, isTyping: false })
+      io.to(receiverId).emit('typing', { ...event, isTyping: false })
       typingTimeouts.delete(userId)
     }, 3000)
     timeout.unref?.()
 
     typingTimeouts.set(userId, timeout)
   } else {
-    io.to(receiverId).emit('typing', { userId, isTyping: false })
+    io.to(receiverId).emit('typing', event)
   }
 }
 

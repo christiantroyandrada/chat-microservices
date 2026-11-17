@@ -20,7 +20,7 @@ Connect to `/ws/v1?expectedUserId=<id>` with the matching `jwt` session cookie. 
 
 ## Browser pilot
 
-Set `PUBLIC_GO_WS_ENABLED=true` in the frontend runtime. Forward the same-origin `/ws/v1` path to the relay. The browser receives messages and receipt events through Go. Receipt events cause the browser to read current status from the chat API. The browser acknowledges delivery through the chat API. Go pilot clients exchange typing indicators with other Go pilot clients. The browser clears a typing indicator after three seconds without a refresh. Go pilot clients see online status after the chat API confirms a stored message between the accounts. Status covers Go tabs on the same relay instance. It shows as unavailable while the connection reconnects. Legacy clients still receive Socket.IO receipts. After reconnect, it refreshes the conversation list and fetches the latest 50 messages in the open conversation.
+Set `PUBLIC_GO_WS_ENABLED=true` in the frontend runtime. Forward the same-origin `/ws/v1` path to the relay. The browser receives messages and receipt events through Go. Receipt events cause the browser to read current status from the chat API. The browser acknowledges delivery through the chat API. Go pilot clients exchange typing with Go and Socket.IO clients. During rollout, the browser mirrors Go typing to Socket.IO and ignores mirrored copies in Go mode. The browser clears a typing indicator after three seconds without a refresh. Go pilot clients see online status after the chat API confirms a stored message between the accounts. Status includes Go tabs on the same relay instance and Socket.IO clients. Go presence authorization applies before the browser displays either source. It shows as unavailable while the connection reconnects. Legacy clients still receive Socket.IO receipts. After reconnect, it refreshes the conversation list and fetches the latest 50 messages in the open conversation.
 
 To run the isolated test, use the committed frontend and backend worktrees. From the backend worktree, run:
 
@@ -30,6 +30,6 @@ node tests/fullstack/run.mjs --start-fixture --go-websocket --frontend-dir /path
 
 ## Before cutover
 
-1. Verify mixed-client typing and presence. Remove the pilot's remaining Socket.IO dependencies.
+1. Keep the Socket.IO compatibility path during the rollout. Remove it after the last legacy client moves to Go.
 2. Measure connection capacity and test restart, account change, and slow clients. Use the results to set pilot limits.
 3. Package the service from this backend repository. Test a limited rollout and rollback before making Go the default.
