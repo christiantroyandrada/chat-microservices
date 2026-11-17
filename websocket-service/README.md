@@ -30,10 +30,10 @@ node tests/fullstack/run.mjs --start-fixture --go-websocket --frontend-dir /path
 
 ## Container image
 
-Build the relay image from the backend repo.
+Use Docker Buildx to build the relay image from the backend repo. The build runs the Go compiler on the build host's architecture.
 
 ```sh
-docker build -t chat-websocket:local websocket-service
+docker buildx build --load -t chat-websocket:local websocket-service
 ```
 
 The container listens on port `8090` as UID and GID `65532`. Use a private application network. Publish only `/ws/v1` through the gateway. Set the environment variables listed above. Run with a read-only root filesystem, drop all capabilities, and allow at least eight seconds for the container to stop. The Colima fixture builds this image from the committed source.

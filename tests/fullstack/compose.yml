@@ -106,6 +106,8 @@ services:
     image: ${FULLSTACK_PROJECT:?}-go-websocket:${FULLSTACK_RUN_ID:?}
     build:
       context: ${FULLSTACK_SNAPSHOT:?}/backend/websocket-service
+      args:
+        BUILDPLATFORM: linux/arm64
       labels: *labels
     platform: linux/arm64
     labels: *labels
