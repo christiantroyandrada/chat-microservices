@@ -136,20 +136,26 @@ func (r *relay) admitConnection() bool {
 }
 
 func (r *relay) userID(ctx context.Context, cookie *http.Cookie) (string, int) {
-	if cookie == nil || cookie.Value == "" {
-		return "", http.StatusUnauthorized
-	}
 	check, err := http.NewRequestWithContext(ctx, http.MethodGet, r.sessionURL, nil)
 	if err != nil {
 		return "", http.StatusServiceUnavailable
 	}
-	check.AddCookie(cookie)
+	if cookie != nil && cookie.Value != "" {
+		check.AddCookie(cookie)
+	}
 	check.Header.Set("X-Relay-Session-Key", r.sessionKey)
 	res, err := r.httpClient.Do(check)
 	if err != nil {
 		return "", http.StatusServiceUnavailable
 	}
 	defer res.Body.Close()
+
+	if cookie == nil || cookie.Value == "" {
+		if res.StatusCode == http.StatusUnauthorized {
+			return "", http.StatusUnauthorized
+		}
+		return "", http.StatusServiceUnavailable
+	}
 
 	switch res.StatusCode {
 	case http.StatusUnauthorized, http.StatusForbidden, http.StatusNotFound:

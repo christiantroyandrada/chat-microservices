@@ -98,6 +98,31 @@ func TestRelayCapacity(t *testing.T) {
 	}
 }
 
+func TestAnonymousReadinessRequiresSessionDependency(t *testing.T) {
+	for _, status := range []int{http.StatusUnauthorized, http.StatusNotFound, http.StatusOK, http.StatusServiceUnavailable} {
+		t.Run(fmt.Sprint(status), func(t *testing.T) {
+			session := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+				if req.Header.Get("X-Relay-Session-Key") != testSessionKey {
+					t.Error("readiness did not send the private session key")
+				}
+				w.WriteHeader(status)
+			}))
+			defer session.Close()
+			relay := newRelay("http://fixture", session.URL+"/internal/ws/session", session.URL+"/get", strings.Repeat("x", 32), testSessionKey)
+			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+			defer cancel()
+			_, got := relay.userID(ctx, nil)
+			want := http.StatusServiceUnavailable
+			if status == http.StatusUnauthorized {
+				want = http.StatusUnauthorized
+			}
+			if got != want {
+				t.Fatalf("readiness = %d, want %d for session status %d", got, want, status)
+			}
+		})
+	}
+}
+
 func TestSlowSubscriber(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

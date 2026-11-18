@@ -23,8 +23,8 @@ func main() {
 	if err != nil || site.Path != "" {
 		log.Fatal("GO_WS_ORIGIN must be an HTTP origin without a trailing slash")
 	}
-	if _, err := parseHTTPURL(sessionURL); err != nil {
-		log.Fatal("GO_WS_SESSION_URL must be the HTTP URL for the user session endpoint")
+	if endpoint, err := parseHTTPURL(sessionURL); err != nil || endpoint.Path != "/internal/ws/session" {
+		log.Fatal("GO_WS_SESSION_URL must be the private HTTP URL for /internal/ws/session")
 	}
 	if len(sessionKey) < 32 {
 		log.Fatal("GO_WS_SESSION_KEY must contain at least 32 bytes")

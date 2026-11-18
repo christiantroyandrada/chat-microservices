@@ -62,8 +62,12 @@ The backend workflow leaves the relay off by default. Set the backend repository
 
 The backend release records the relay's registry digest. If a candidate fails, the release restores the recorded relay digest or removes the relay if the prior release used Socket.IO alone. The backend switch does not enable the browser pilot.
 
+After the backend release passes, set `GO_WS_PILOT=true` in the frontend repository to enable the browser pilot on its next release. The frontend release requires the recorded backend relay and a ready gateway. It records the flag with each frontend image and restores the prior flag if replacement fails. Set the frontend variable to `false` and release the frontend before disabling the backend relay.
+
 1. Verify the image and its digest in staging. Measure capacity through the staging gateway.
 2. Verify account changes, restart, and recovery. Rehearse rollback to the verified prior release.
 3. Run the adversarial review on the final candidate. Review correctness, failure modes, and structure independently. Resolve blocking findings and repeat affected checks before the VPS pilot.
 
 Keep the Socket.IO compatibility path until the last legacy client moves to Go.
+
+During a relay outage, pilot clients recover missed messages through the chat API after reconnect. Live delivery waits for Go recovery.

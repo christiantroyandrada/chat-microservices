@@ -62,6 +62,12 @@ test('image publication waits for integration tests and the security audit', () 
 	assert.ok(Array.isArray(dependencies));
 	assert.ok(dependencies.includes('integration-tests'));
 	assert.ok(dependencies.includes('security-audit'));
+	assert.ok(dependencies.includes('relay-tests'));
+	const relayTests = ci.jobs['relay-tests'];
+	assert.match(step(relayTests, 'Use Go 1.27.4').uses, /^actions\/setup-go@[a-f0-9]{40}$/);
+	assert.equal(step(relayTests, 'Verify Go relay')['working-directory'], 'websocket-service');
+	assert.match(step(relayTests, 'Verify Go relay').run, /go test -race \.\/\.\.\./);
+	assert.match(step(relayTests, 'Verify Go relay').run, /go vet \.\/\.\.\./);
 });
 
 test('every published backend image is built once and scanned before any registry push', () => {

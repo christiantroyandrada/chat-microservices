@@ -20,6 +20,24 @@ env:
   IMAGE_RELAY: ghcr.io/${{ github.repository_owner }}/chat-websocket
 
 jobs:
+  relay-tests:
+    name: Go relay tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Use Go 1.27.4
+        uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
+        with:
+          go-version: '1.27.4'
+          cache-dependency-path: websocket-service/go.sum
+      - name: Verify Go relay
+        working-directory: websocket-service
+        run: |
+          go test -race ./...
+          go vet ./...
+
   build:
     name: Build & Audit — ${{ matrix.service }}
     runs-on: ubuntu-latest
@@ -123,7 +141,7 @@ jobs:
   # Build and push Docker images to GitHub Container Registry
   docker-build:
     name: Build & Push Docker Images
-    needs: [integration-tests, security-audit]
+    needs: [integration-tests, security-audit, relay-tests]
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 20
