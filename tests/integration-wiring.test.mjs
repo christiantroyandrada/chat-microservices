@@ -17,7 +17,7 @@ test('the dashboard contains valid panels without the retired Socket.IO gauge', 
   const dashboard = JSON.parse(read('observability/grafana/provisioning/dashboards/chat-app.json'));
   assert.ok(dashboard.panels.length > 0);
   for (const panel of dashboard.panels) {
-    for (const target of panel.targets ?? []) assert.ok(!target.expr?.includes('socket_connections_active'));
+    for (const target of panel.targets ?? []) assert.doesNotMatch(target.expr ?? '', /socket_connections_active|redis_adapter_connected|chat_presence_changes_total/);
   }
 });
 
