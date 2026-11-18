@@ -8,6 +8,11 @@
  * since OpenAPI 3.0 does not natively support WebSocket/event-driven APIs.
  */
 
+const jsonResponse = (description: string, schemaName: string) => ({
+  description,
+  content: { 'application/json': { schema: { $ref: `#/components/schemas/${schemaName}` } } },
+})
+
 const spec = {
   openapi: '3.0.3',
   info: {
@@ -251,11 +256,11 @@ const spec = {
           { name: 'expectedUserId', in: 'query' as const, required: true, schema: { type: 'string' as const, format: 'uuid' } },
         ],
         responses: {
-          '200': { description: 'Delivery acknowledged. modifiedCount is 0 if the status did not change.', content: { 'application/json': { schema: { $ref: '#/components/schemas/MarkReadResponse' } } } },
-          '400': { description: 'Invalid message ID or account precondition', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
+          '200': jsonResponse('Delivery acknowledged. modifiedCount is 0 if the status did not change.', 'MarkReadResponse'),
+          '400': jsonResponse('Invalid message ID or account precondition', 'Error'),
           '401': { description: 'Authentication required' },
-          '403': { description: 'Expected user does not match authenticated user', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
-          '404': { description: 'Message not found for this recipient', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
+          '403': jsonResponse('Expected user does not match authenticated user', 'Error'),
+          '404': jsonResponse('Message not found for this recipient', 'Error'),
         },
       },
     },

@@ -1,5 +1,22 @@
 import { validationResult } from 'express-validator'
-import { sendMessageValidation, fetchConversationValidation, getConversationsValidation, markAsReadValidation } from '../../src/middleware/validation/messageValidation'
+import { sendMessageValidation, fetchConversationValidation, getConversationsValidation, markAsReadValidation, acknowledgeDeliveryValidation } from '../../src/middleware/validation/messageValidation'
+
+describe('delivery acknowledgement validation', () => {
+  const user = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+  const message = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
+  it.each([
+    [{ expectedUserId: user }, { messageId: message }, true],
+    [{ expectedUserId: user.toUpperCase() }, { messageId: message.toUpperCase() }, true],
+    [{}, { messageId: message }, false],
+    [{ expectedUserId: [user] }, { messageId: message }, false],
+    [{ expectedUserId: user }, { messageId: 'invalid' }, false],
+    [{ expectedUserId: user }, {}, false],
+  ])('validates the account and message together', async (query, params, valid) => {
+    const req = { query, params }
+    for (const chain of acknowledgeDeliveryValidation) await chain.run(req)
+    expect(validationResult(req).isEmpty()).toBe(valid)
+  })
+})
 
 describe.each([['history', fetchConversationValidation], ['conversations', getConversationsValidation], ['markAsRead', markAsReadValidation]] as const)('%s expectedUserId validation', (_name, chains) => {
   it.each([null, [], ['aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'], '', 7, 'invalid', ' aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa '])('rejects malformed expectedUserId %p', async expectedUserId => {
