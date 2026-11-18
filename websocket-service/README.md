@@ -21,9 +21,13 @@ Use a separate secret for session checks. The user service still validates the b
 
 Connect to `/ws/v1?expectedUserId=<id>` with the matching `jwt` session cookie. The relay sends a `ready` frame, then sends `message` frames for the authenticated recipient.
 
-## Browser pilot
+## Browser transport
 
-Set `PUBLIC_GO_WS_ENABLED=true` in the frontend runtime. Forward the same-origin `/ws/v1` path to the relay. The browser receives messages and receipt events through Go. Receipt events cause the browser to read current status from the chat API. The browser acknowledges delivery through the chat API. Go pilot clients exchange typing with Go and Socket.IO clients. During rollout, the browser mirrors Go typing to Socket.IO and ignores mirrored copies in Go mode. The browser clears a typing indicator after three seconds without a refresh. Go pilot clients see online status after the chat API confirms a stored message between the accounts. Status includes Go tabs on the same relay instance and Socket.IO clients. Go presence authorization applies before the browser displays either source. It shows as unavailable while the connection reconnects. Legacy clients still receive Socket.IO receipts. After reconnect, it refreshes the conversation list and fetches the latest 50 messages in the open conversation.
+Go is the browser's only live transport. Forward the same-origin `/ws/v1` path to the relay. Messages and receipts remain authenticated REST commands. Receipt events prompt a status refresh from the chat API. After reconnect, the browser refreshes conversations and the latest 50 messages in the open conversation.
+
+Typing and presence use Go. Presence requires a stored conversation between the accounts and counts tabs on the same relay instance. It shows as unavailable during reconnect. Typing expires after three seconds without a refresh.
+
+Old Socket.IO tabs require one refresh after cutover. The retired endpoint returns 404.
 
 To run the isolated test, use the committed frontend and backend worktrees. From the backend worktree, run:
 
@@ -31,9 +35,9 @@ To run the isolated test, use the committed frontend and backend worktrees. From
 node tests/fullstack/run.mjs --start-fixture --go-websocket --frontend-dir /path/to/frontend-worktree
 ```
 
-Add `--rehearse-rollback` to restart the relay before the Go browser test. The fixture then stops Go, disables the frontend flag, and runs the Socket.IO browser test against the same database. It waits one minute between flows for the shared prekey rate limit to reset and checks that the stored Go messages survive the switch.
+Add `--rehearse-rollback` to restart Go before the browser test. The fixture restores the prior Go-compatible frontend while Go stays running. It waits one minute between flows for the shared prekey rate limit and checks that stored ciphertext remains unchanged.
 
-Add `--rollback-frontend-sha <full-commit-sha>` to restore a prior frontend image during the rehearsal. The fixture builds the prior image before the test and starts it by local image ID. It records both image IDs after Socket.IO delivery and database checks pass.
+Add `--rollback-frontend-sha <full-commit-sha>` to restore a prior frontend image during the rehearsal. The fixture builds the prior image before the test and starts it by local image ID. It records both image IDs after Go delivery and database checks pass.
 
 ## Container image
 
@@ -56,18 +60,12 @@ The Go tests verify these limits on loopback. They also stop and restart the rel
 Add `--check-relay-capacity` to the isolated fixture command to check the cap through NGINX. The check opens 128 authenticated connections, verifies that the next connection receives HTTP 503, and confirms that closing one connection frees a slot.
 
 
-## Before cutover
+## Release and rollback
 
-The backend workflow leaves the relay off by default. Set the backend repository variable `GO_WS_PILOT` to `true` to build, scan, and deploy it with the next backend release. Put distinct `GO_WS_SESSION_KEY` and `GO_WS_BRIDGE_TOKEN` values in the production Infisical environment first. Keep both keys available during rollback to a release that used the relay.
+Both workflows require Go. Configure distinct `GO_WS_SESSION_KEY` and `GO_WS_BRIDGE_TOKEN` values in production Infisical. Keep them available during rollback.
 
-The backend release records the relay's registry digest. If a candidate fails, the release restores the recorded relay digest or removes the relay if the prior release used Socket.IO alone. The backend switch does not enable the browser pilot.
+The backend records the relay's immutable digest. It cannot remove Go while the current frontend requires it. The frontend release checks the recorded relay and gateway before replacement. Recorded image and flag metadata remain available for automatic rollback to a verified prior image.
 
-After the backend release passes, set `GO_WS_PILOT=true` in the frontend repository to enable the browser pilot on its next release. The frontend release requires the recorded backend relay and a ready gateway. It records the flag with each frontend image and restores the prior flag if replacement fails. Set the frontend variable to `false` and release the frontend before disabling the backend relay.
+Before release, verify encrypted delivery, account changes, restart, capacity, and recovery. Rehearse rollback with a Go-compatible frontend. Run independent correctness, failure, and structure reviews on the final candidate.
 
-1. Verify the image and its digest in staging. Measure capacity through the staging gateway.
-2. Verify account changes, restart, and recovery. Rehearse rollback to the verified prior release.
-3. Run the adversarial review on the final candidate. Review correctness, failure modes, and structure independently. Resolve blocking findings and repeat affected checks before the VPS pilot.
-
-Keep the Socket.IO compatibility path until the last legacy client moves to Go.
-
-During a relay outage, pilot clients recover missed messages through the chat API after reconnect. Live delivery waits for Go recovery.
+During a Go outage, live delivery waits for recovery. REST message acceptance remains available. The browser retrieves missed messages after reconnect.

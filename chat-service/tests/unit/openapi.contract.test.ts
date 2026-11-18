@@ -11,6 +11,12 @@ function requestRef(path: string, method: 'post'): string | undefined {
 }
 
 describe('chat-service OpenAPI contract', () => {
+  it('describes the Go and REST boundary without advertising retired Socket.IO events', () => {
+    expect(spec).not.toHaveProperty('x-socket-events')
+    expect(spec.info.description).not.toMatch(/Socket\.IO/)
+    expect(spec.info.description).toContain('Go WebSocket service')
+    expect(spec.info.description).toContain('REST endpoints')
+  })
   it.each([['/conversations', 'get'], ['/get/{receiverId}', 'get'], ['/messages/read/{senderId}', 'put']])('publishes optional expectedUserId and rejection contracts for %s', (path, method) => {
     const operation = (spec.paths as Record<string, Record<string, any>>)[path][method]
     expect(operation.parameters).toContainEqual({ name: 'expectedUserId', in: 'query', required: false, schema: { type: 'string', format: 'uuid' }, description: 'Optional account precondition. A mismatch with the authenticated user returns 403 before data access.' })

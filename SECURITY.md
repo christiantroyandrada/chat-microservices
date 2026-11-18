@@ -2,8 +2,9 @@
 
 This document describes security measures in the chat-microservices stack. It gives guidance for secure development and production environments.
 
-Historical audit results below do not give current release approval. Current hardening is incomplete.
-Task6A is approved. Task6B has five Important findings that need correction.
+Historical audit results below do not give current release approval.
+The Socket.IO entries record the retired transport.
+See the [Go service guide](websocket-service/README.md) for current authentication boundaries and release checks.
 
 ## Security Principles
 

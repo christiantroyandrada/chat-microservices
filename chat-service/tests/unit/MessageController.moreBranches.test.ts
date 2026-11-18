@@ -9,7 +9,7 @@ describe('MessageController more branch exercises', () => {
   it('sendMessage rejects when message is not a string', async () => {
   const { mockRepoWith } = require('../utils/dbMock')
   mockRepoWith()
-  jest.doMock('../../src/utils', () => ({ APIError: class APIError extends Error { constructor(public statusCode:number, public message:string){ super(message) } }, handleMessageReceived: jest.fn() }))
+  jest.doMock('../../src/utils', () => ({ APIError: class APIError extends Error { constructor(public statusCode:number, public message:string){ super(message) } } }))
   const { requireControllerAfterMocks } = require('../utils/testHelpers')
   const { controller } = requireControllerAfterMocks('../../src/controllers/MessageController')
   const MC = controller.default || controller
@@ -23,7 +23,7 @@ describe('MessageController more branch exercises', () => {
   it('sendMessage rejects when message is only whitespace', async () => {
   const { mockRepoWith } = require('../utils/dbMock')
   mockRepoWith()
-  jest.doMock('../../src/utils', () => ({ APIError: class APIError extends Error { constructor(public statusCode:number, public message:string){ super(message) } }, handleMessageReceived: jest.fn() }))
+  jest.doMock('../../src/utils', () => ({ APIError: class APIError extends Error { constructor(public statusCode:number, public message:string){ super(message) } } }))
   const { requireControllerAfterMocks } = require('../utils/testHelpers')
   const { controller } = requireControllerAfterMocks('../../src/controllers/MessageController')
   const MC = controller.default || controller

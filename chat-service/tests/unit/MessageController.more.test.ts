@@ -13,7 +13,6 @@ describe('MessageController additional sendMessage validations', () => {
           super(message)
         }
       },
-      handleMessageReceived: jest.fn().mockResolvedValue(undefined)
     }))
 
   const { requireControllerAfterMocks } = require('../utils/testHelpers')
@@ -44,7 +43,6 @@ describe('MessageController additional sendMessage validations', () => {
           super(message)
         }
       },
-      handleMessageReceived: jest.fn().mockResolvedValue(undefined)
     }))
 
   const { requireControllerAfterMocks } = require('../utils/testHelpers')
@@ -75,7 +73,6 @@ describe('MessageController additional sendMessage validations', () => {
           super(message)
         }
       },
-      handleMessageReceived: jest.fn().mockResolvedValue(undefined)
     }))
 
   const { requireControllerAfterMocks } = require('../utils/testHelpers')

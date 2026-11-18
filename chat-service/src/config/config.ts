@@ -12,7 +12,6 @@ const {
   JWT_SECRET,
   MESSAGE_BROKER_URL,
   NODE_ENV,
-  REDIS_URL,
 } = process.env
 
 const queue = { notifications: 'NOTIFICATIONS' }
@@ -24,7 +23,4 @@ export default {
   msgBrokerURL: MESSAGE_BROKER_URL,
   env: NODE_ENV,
   queue,
-  // Optional — when set, enables Redis adapter for horizontal scaling (12-factor VI).
-  // When absent, chat-service runs in single-node in-memory mode.
-  redisUrl: REDIS_URL,
 }

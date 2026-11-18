@@ -64,21 +64,6 @@ services:
       driver: "json-file"
       options: { max-size: "10m", max-file: "3" }
 
-  redis:
-    image: redis:7-alpine
-    restart: unless-stopped
-    expose:
-      - "6379"
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 5s
-    logging:
-      driver: "json-file"
-      options: { max-size: "10m", max-file: "3" }
-
   # Web UI for PostgreSQL - pgAdmin
   pgadmin:
     image: dpage/pgadmin4:latest
@@ -163,6 +148,7 @@ services:
       # For local development use 'development', for production deployment use 'production'
       NODE_ENV: development
       AUTH_RATE_LIMIT_MAX: ${AUTH_RATE_LIMIT_MAX:-10}
+      GO_WS_SESSION_KEY: ${GO_WS_SESSION_KEY:?GO_WS_SESSION_KEY is required}
     depends_on:
       setup:
         condition: service_completed_successfully
@@ -192,7 +178,8 @@ services:
       DATABASE_URL: postgresql://chat_svc:${DB_CHAT_SVC_PASS}@postgres:5432/chat_db
       NODE_ENV: development
       USER_SERVICE_URL: http://user:8081
-      REDIS_URL: redis://redis:6379
+      GO_WS_BRIDGE_URL: http://go-websocket:8090/internal/messages
+      GO_WS_BRIDGE_TOKEN: ${GO_WS_BRIDGE_TOKEN:?GO_WS_BRIDGE_TOKEN is required}
     depends_on:
       setup:
         condition: service_completed_successfully
@@ -200,14 +187,34 @@ services:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
-      redis:
-        condition: service_healthy
     healthcheck:
       test: ["CMD", "/nodejs/bin/node", "-e", "const http=require('http'); const req=http.get('http://localhost:8082/health', res=>{process.exit(res.statusCode===200?0:1)}); req.on('error',()=>process.exit(1)); setTimeout(()=>process.exit(1),2000);"]
       interval: 10s
       timeout: 5s
       retries: 3
       start_period: 15s
+    logging:
+      driver: "json-file"
+      options: { max-size: "10m", max-file: "3" }
+
+  go-websocket:
+    build: ./websocket-service
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    stop_grace_period: 8s
+    environment:
+      GO_WS_ORIGIN: ${GO_WS_ORIGIN:-http://localhost}
+      GO_WS_SESSION_URL: http://user:8081/internal/ws/session
+      GO_WS_SESSION_KEY: ${GO_WS_SESSION_KEY:?GO_WS_SESSION_KEY is required}
+      GO_WS_CHAT_HISTORY_URL: http://chat:8082/get
+      GO_WS_BRIDGE_TOKEN: ${GO_WS_BRIDGE_TOKEN:?GO_WS_BRIDGE_TOKEN is required}
+    depends_on:
+      user:
+        condition: service_healthy
+      chat:
+        condition: service_healthy
     logging:
       driver: "json-file"
       options: { max-size: "10m", max-file: "3" }
@@ -292,6 +299,8 @@ services:
     # For local development, nginx runs HTTP-only (no volumes needed)
     # For production, use: docker compose -f docker-compose.yml -f docker-compose.prod.yml up
     depends_on:
+      go-websocket:
+        condition: service_started
       user:
         condition: service_healthy
       chat:

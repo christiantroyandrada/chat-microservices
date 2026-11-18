@@ -177,7 +177,31 @@ test('relay accepts only an owned digest and distinct keys before Docker mutatio
   }
 });
 
-test('opt-in relay is staged by digest with private configuration and enters release state', async () => {
+test('Go-only releases always build, scan, publish, and require the relay digest', async () => {
+  const ci = yaml.load(await readFile(path.join(repo, '.github/workflows/ci-main.yml'), 'utf8'));
+  const steps = ci.jobs['docker-build'].steps;
+  for (const name of ['Build Go relay for security scan', 'Scan Go relay release image', 'Publish Go relay']) {
+    const step = steps.find(step => step.name === name);
+    assert.ok(step, name);
+    assert.equal(step.if, undefined, name + ' must be unconditional');
+  }
+  const deploy = yaml.load(await readFile(path.join(repo, '.github/workflows/deploy.yml'), 'utf8'));
+  assert.equal(deploy.on.workflow_call.inputs.relay_digest.required, true);
+});
+
+test('backend cannot remove Go while the recorded frontend requires it', async () => {
+  const state = stateFor() + 'frontend.go_ws.current=true\n';
+  const h = await harness({ state });
+  const result = run(h.env);
+  assert.notEqual(result.status, 0, result.stderr);
+  assert.match(result.stderr, /frontend requires.*relay/i);
+  assert.equal(await readFile(h.log, 'utf8').catch(() => ''), '');
+  assert.equal(await readFile(path.join(h.root, 'release-state.env'), 'utf8'), state);
+  assert.equal(await readFile(path.join(h.root, '.jwt_secret'), 'utf8').catch(() => ''), '');
+  assert.equal(await readFile(path.join(h.root, 'chat-microservices/backend.compose.yml'), 'utf8').catch(() => ''), '');
+});
+
+test('relay is staged by digest with private configuration and enters release state', async () => {
   const h = await harness({ state: stateFor(), extraEnv: relayEnv });
   const result = run(h.env);
   assert.equal(result.status, 0, result.stderr);

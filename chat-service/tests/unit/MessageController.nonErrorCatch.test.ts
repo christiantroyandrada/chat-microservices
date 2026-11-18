@@ -11,7 +11,6 @@ jest.mock('../../src/utils', () => ({
       super(message)
     }
   },
-  handleMessageReceived: jest.fn().mockResolvedValue(undefined)
 }))
 
 import MessageController from '../../src/controllers/MessageController'

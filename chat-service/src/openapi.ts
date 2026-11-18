@@ -4,8 +4,7 @@
  * This file IS the contract.  Route handlers must conform to these schemas.
  * The spec is served at /api-docs.json (always) and /api-docs (dev-only UI).
  *
- * Socket.IO events are documented under x-socket-events (non-standard extension)
- * since OpenAPI 3.0 does not natively support WebSocket/event-driven APIs.
+ * The separate Go WebSocket service owns live delivery, typing, and presence.
  */
 
 const jsonResponse = (description: string, schemaName: string) => ({
@@ -20,7 +19,9 @@ const spec = {
     version: '1.0.0',
     description:
       'End-to-end encrypted real-time messaging service.  ' +
-      'REST endpoints for message CRUD; Socket.IO for real-time delivery, typing indicators, and presence.  ' +
+      'REST endpoints accept encrypted message commands, history reads, and delivery receipts.  ' +
+      'The Go WebSocket service provides live delivery, typing indicators, and presence.  ' +
+      'Live relay failures do not reject stored commands.  ' +
       'All message payloads must be Signal-protocol encrypted envelopes (`{ __encrypted: true, body: "<base64>" }`).',
     contact: { name: 'Chat App Team' },
     license: { name: 'MIT' },
@@ -287,39 +288,6 @@ const spec = {
     },
   },
 
-  // ── Socket.IO events (non-standard extension) ────────────────────────────
-  'x-socket-events': {
-    namespace: '/',
-    authentication: 'JWT via httpOnly cookie (handshake) or socket.handshake.auth.token',
-    events: {
-      'sendMessage': {
-        direction: 'client → server',
-        payload: '{ senderId, receiverId, message, _id?, clientMessageId? }',
-        ack: '{ ok: boolean, id?: string, error?: string }',
-        description: 'Send an E2EE message via WebSocket. Server validates, persists, and broadcasts to receiver room.',
-      },
-      'receiveMessage': {
-        direction: 'server → client',
-        payload: '{ _id, id, senderId, senderUsername, receiverId, content, message, timestamp, createdAt, updatedAt, status, isEncrypted, clientMessageId, read, isRead }',
-        description: 'Delivered to the receiver when a new message arrives.',
-      },
-      'typing': {
-        direction: 'bidirectional',
-        payload: '{ userId, isTyping: boolean }',
-        description: 'Client emits to server with { receiverId, isTyping }; server forwards to the receiver room.',
-      },
-      'presence': {
-        direction: 'server → client',
-        payload: '{ userId, online: boolean, lastSeen?: string }',
-        description: 'Broadcast when a user goes online or offline.',
-      },
-      'presenceBulk': {
-        direction: 'server → client',
-        payload: '{ onlineUserIds: string[] }',
-        description: 'Sent once on connection with all currently online user IDs.',
-      },
-    },
-  },
 }
 
 export default spec

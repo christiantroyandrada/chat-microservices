@@ -362,9 +362,6 @@ const acknowledgeDelivery = async (req: AuthenticatedRequest, res: Response, nex
     const receiverId = canonicalUserId(req.user._id)
     const result = await markMessageDelivered(id, receiverId)
     if (!result) throw new APIError(404, 'Message not found')
-    if (result.changed) {
-      req.app.locals.onMessageDelivered?.(result.senderId, id, receiverId)
-    }
     return res.json({
       status: 200,
       message: 'Delivery acknowledged',

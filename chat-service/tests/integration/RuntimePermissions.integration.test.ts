@@ -127,7 +127,6 @@ it('accepts durable work during initial broker outage, recovers through the real
   child.stdout?.resume()
   child.stderr?.resume()
   let connection: import('amqplib').ChannelModel | undefined
-  let ws: WebSocket | undefined
   let exited = false
   const exit = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>(resolveExit => child.once('exit', (code, signal) => { exited = true; resolveExit({ code, signal }) }))
   async function waitFor(check: () => Promise<boolean>, timeout = 15000) {
@@ -177,26 +176,19 @@ it('accepts durable work during initial broker outage, recovers through the real
     expect(notification).not.toBe(false)
     if (!notification) throw new Error('Confirmed event is absent')
     expect(notification.properties.messageId).toBe(pending.id)
-    expect(JSON.parse(notification.content.toString())).toMatchObject({ eventId: pending.id, userEmail: 'receiver@example.test', envelope: '{"__encrypted":true,"body":"outage-ciphertext"}' })
-    ws = new WebSocket(`ws://127.0.0.1:${port}/chat/socket.io/?EIO=4&transport=websocket`)
-    await new Promise<void>((resolveSocket, reject) => {
-      const timer = setTimeout(() => reject(new Error('Runtime Socket.IO authentication timeout')), 3000)
-      ws!.addEventListener('message', event => {
-        const packet = String(event.data)
-        if (packet.startsWith('0')) ws!.send('40' + JSON.stringify({ token }))
-        if (packet.startsWith('40')) { clearTimeout(timer); resolveSocket() }
-        if (packet === '2') ws!.send('3')
-      })
-    })
+    const payload = JSON.parse(notification.content.toString())
+    expect(payload).toMatchObject({ eventId: pending.id, userEmail: 'receiver@example.test', envelope: '{"__encrypted":true,"body":"outage-ciphertext"}' })
+    expect(payload).not.toHaveProperty('recipientOnline')
+    const retired = await fetch(`http://127.0.0.1:${port}/chat/socket.io/?EIO=4&transport=polling`)
+    expect(retired.status).toBe(404)
+    await retired.body?.cancel()
     child.kill('SIGTERM')
     child.kill('SIGINT')
     const deadline = setTimeout(() => { if (!exited) child.kill('SIGKILL') }, 8000)
     const result = await exit
     clearTimeout(deadline)
     expect(result).toEqual({ code: 0, signal: null })
-    await waitFor(async () => ws!.readyState === WebSocket.CLOSED, 2000)
   } finally {
-    ws?.close()
     if (!exited) { child.kill('SIGKILL'); await exit }
     await connection?.close().catch(() => undefined)
     guardBroker()

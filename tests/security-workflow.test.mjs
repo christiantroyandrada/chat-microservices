@@ -79,7 +79,7 @@ test('every published backend image is built once and scanned before any registr
 		['chat-service', 'IMAGE_CHAT', 'build-chat'],
 		['notification-service', 'IMAGE_NOTIFICATION', 'build-notification'],
 		['nginx', 'IMAGE_NGINX', 'build-nginx'],
-		['websocket-service', 'IMAGE_RELAY', 'publish-relay', 'Go relay', 'chat-websocket:scan', "vars.GO_WS_PILOT == 'true'"]
+		['websocket-service', 'IMAGE_RELAY', 'publish-relay', 'Go relay', 'chat-websocket:scan']
 	]) {
 		const build = step(job, `Build ${label} for security scan`);
 		assert.match(build.uses, /^docker\/build-push-action@[a-f0-9]{40}$/);

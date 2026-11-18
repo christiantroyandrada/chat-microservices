@@ -215,7 +215,6 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Build Go relay for security scan
-        if: vars.GO_WS_PILOT == 'true'
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: ./websocket-service
@@ -266,7 +265,6 @@ jobs:
           scanners: vuln
 
       - name: Scan Go relay release image
-        if: vars.GO_WS_PILOT == 'true'
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: chat-websocket:scan
@@ -313,7 +311,6 @@ jobs:
         run: *publish-scanned-image
 
       - name: Publish Go relay
-        if: vars.GO_WS_PILOT == 'true'
         id: publish-relay
         env:
           SCAN_IMAGE: chat-websocket:scan

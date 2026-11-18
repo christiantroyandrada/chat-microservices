@@ -14,7 +14,6 @@ describe('MessageController additional tests', () => {
           this.statusCode = statusCode
         }
       },
-      handleMessageReceived: jest.fn(),
     }))
   })
 
@@ -78,8 +77,6 @@ describe('MessageController additional tests', () => {
   // mock repository and utils before requiring controller
   const repo = { save: jest.fn().mockResolvedValue({ id: 'm1', senderId: 'u1', receiverId: 'u2' }) }
   jest.spyOn(AppDataSource, 'getRepository').mockReturnValue(repo as any)
-  const utils = require('../../src/utils')
-  jest.spyOn(utils, 'handleMessageReceived').mockResolvedValue(undefined)
   const { requireControllerAfterMocks } = require('../utils/testHelpers')
   const { controller } = requireControllerAfterMocks('../../src/controllers/MessageController')
   const MessageController = controller && controller.default ? controller.default : controller

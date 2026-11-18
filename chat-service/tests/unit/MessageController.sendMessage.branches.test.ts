@@ -12,7 +12,7 @@ describe('MessageController sendMessage branches', () => {
 
   it('returns error when receiverId is missing', async () => {
   // Minimal DB mock + controller require after mocks
-  jest.doMock('../../src/utils', () => ({ APIError: class APIError extends Error { constructor(public statusCode:number, public message:string){ super(message) } }, handleMessageReceived: jest.fn() }))
+  jest.doMock('../../src/utils', () => ({ APIError: class APIError extends Error { constructor(public statusCode:number, public message:string){ super(message) } } }))
   const { controller, repo } = requireControllerWithMock('../../src/controllers/MessageController', { saveResult: undefined })
   const mod = controller
   const MC = mod.default || mod
@@ -30,7 +30,7 @@ describe('MessageController sendMessage branches', () => {
   })
 
   it('returns error when sender and receiver are the same', async () => {
-  jest.doMock('../../src/utils', () => ({ APIError: class APIError extends Error { constructor(public statusCode:number, public message:string){ super(message) } }, handleMessageReceived: jest.fn() }))
+  jest.doMock('../../src/utils', () => ({ APIError: class APIError extends Error { constructor(public statusCode:number, public message:string){ super(message) } } }))
   const { controller, repo } = requireControllerWithMock('../../src/controllers/MessageController', { saveResult: undefined })
   const mod = controller
   const MC = mod.default || mod
@@ -47,7 +47,7 @@ describe('MessageController sendMessage branches', () => {
   })
 
   it('rejects invalid envelope (parse error)', async () => {
-  jest.doMock('../../src/utils', () => ({ APIError: class APIError extends Error { constructor(public statusCode:number, public message:string){ super(message) } }, handleMessageReceived: jest.fn() }))
+  jest.doMock('../../src/utils', () => ({ APIError: class APIError extends Error { constructor(public statusCode:number, public message:string){ super(message) } } }))
   const { controller, repo } = requireControllerWithMock('../../src/controllers/MessageController', { saveResult: undefined })
   const mod = controller
   const MC = mod.default || mod
@@ -64,7 +64,7 @@ describe('MessageController sendMessage branches', () => {
   })
 
   it('rejects messages exceeding maximum length', async () => {
-  jest.doMock('../../src/utils', () => ({ APIError: class APIError extends Error { constructor(public statusCode:number, public message:string){ super(message) } }, handleMessageReceived: jest.fn() }))
+  jest.doMock('../../src/utils', () => ({ APIError: class APIError extends Error { constructor(public statusCode:number, public message:string){ super(message) } } }))
   const { controller, repo } = requireControllerWithMock('../../src/controllers/MessageController', { saveResult: undefined })
 
     const mod = controller
@@ -84,8 +84,7 @@ describe('MessageController sendMessage branches', () => {
 
   it('succeeds for a durable submission without direct notification', async () => {
   const saved = { id: 'm1', senderId: 'u1', receiverId: 'u2' }
-  const handleMessageReceived = jest.fn().mockResolvedValue(undefined)
-  jest.doMock('../../src/utils', () => ({ APIError: class APIError extends Error { constructor(public statusCode:number, public message:string){ super(message) } }, handleMessageReceived }))
+  jest.doMock('../../src/utils', () => ({ APIError: class APIError extends Error { constructor(public statusCode:number, public message:string){ super(message) } } }))
   const { controller, repo } = requireControllerWithMock('../../src/controllers/MessageController', { saveResult: saved })
   const mod = controller
   const MC = mod.default || mod
@@ -100,7 +99,6 @@ describe('MessageController sendMessage branches', () => {
 
     expect(submit).toHaveBeenCalledWith(expect.objectContaining({ encryptedEnvelope: envelope }))
     expect(repo.save).not.toHaveBeenCalled()
-    expect(handleMessageReceived).not.toHaveBeenCalled()
     const called = res.json.mock.calls[0][0]
     expect(called.status).toBe(200)
     expect(called.data).toEqual(saved)

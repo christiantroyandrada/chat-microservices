@@ -63,6 +63,7 @@ cleanup() {
 trap cleanup EXIT
 
 JWT_SECRET_FILE="$DEPLOY_PATH/.jwt_secret"
+FRONTEND_REQUIRES_RELAY=false
 
 while IFS='=' read -r key value; do
   case "$key" in
@@ -76,8 +77,12 @@ while IFS='=' read -r key value; do
     nginx.previous) PREVIOUS_NGINX="$value" ;;
     go-websocket.current) CURRENT_RELAY="$value" ;;
     go-websocket.previous) PREVIOUS_RELAY="$value" ;;
+    frontend.go_ws.current) FRONTEND_REQUIRES_RELAY="$value" ;;
   esac
 done < <([[ -f "$STATE_FILE" ]] && awk 'NF || /^$/' "$STATE_FILE" || true)
+
+[[ "$FRONTEND_REQUIRES_RELAY" == true || "$FRONTEND_REQUIRES_RELAY" == false ]] || die "recorded frontend relay requirement is invalid"
+[[ "$FRONTEND_REQUIRES_RELAY" != true || -n "$RELAY_IMAGE_REF" ]] || die "current frontend requires the Go relay"
 
 [[ -z "${CURRENT_USER:-}" ]] || validate_ref user "$CURRENT_USER"
 [[ -z "${CURRENT_CHAT:-}" ]] || validate_ref chat "$CURRENT_CHAT"

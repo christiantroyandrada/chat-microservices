@@ -34,12 +34,16 @@ The system uses the Signal Protocol for end-to-end encryption (E2EE).
 
 ```bash
 # Clone and setup
-git clone https://github.com/christiantroyandrada/chat-user-microservice.git
-cd chat-user-microservice
+git clone https://github.com/christiantroyandrada/chat-microservices.git
+cd chat-microservices
 
 # Configure environment
 cp docker-secrets/app_secrets.example docker-secrets/app_secrets
 # Edit app_secrets with your values
+
+# Create distinct disposable keys for local Go authentication
+export GO_WS_SESSION_KEY="$(openssl rand -hex 32)"
+export GO_WS_BRIDGE_TOKEN="$(openssl rand -hex 32)"
 
 # Start all services
 docker compose up -d
@@ -48,13 +52,17 @@ docker compose up -d
 curl http://localhost:80/health
 ```
 
+The Go service is required. For production, keep its two distinct keys in Infisical and reuse them across releases.
+See [the Go service guide](websocket-service/README.md) for transport limits and rollback checks.
+
 <a id="-project-structure"></a>
 ## Project Structure
 
 ```
 chat-microservices/
 ├── user-service/         # Authentication, user management, prekey storage
-├── chat-service/         # Real-time messaging, WebSocket, conversations
+├── chat-service/         # REST messages, conversations, durable outbox
+├── websocket-service/    # Go delivery, receipts, typing, presence
 ├── notification-service/ # Email notifications, push notifications
 ├── nginx/               # Reverse proxy configuration
 ├── deploy/              # Deployment scripts and guides
@@ -107,7 +115,7 @@ cd notification-service && npm run test:unit
 | Framework | Express.js |
 | Database | PostgreSQL 17 + TypeORM |
 | Message Queue | RabbitMQ |
-| Real-time | Socket.IO |
+| Real-time | Go WebSocket service |
 | Security | JWT, bcrypt, Helmet.js |
 | Container | Docker (distroless) |
 | CI/CD | GitHub Actions |

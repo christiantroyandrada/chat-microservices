@@ -32,13 +32,6 @@ function getOrCreateHistogram(
   )
 }
 
-function getOrCreateGauge(name: string, help: string): promClient.Gauge {
-  return (
-    (promClient.register.getSingleMetric(name) as promClient.Gauge | undefined) ??
-    new promClient.Gauge({ name, help })
-  )
-}
-
 export const httpRequestsTotal: promClient.Counter = getOrCreateCounter(
   'http_requests_total',
   'Total number of HTTP requests',
@@ -50,20 +43,6 @@ export const httpRequestDurationSeconds: promClient.Histogram = getOrCreateHisto
   'HTTP request duration in seconds',
   ['method', 'route', 'status_code'],
   [0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5],
-)
-
-// ── Socket.IO metrics (chat-service only) ─────────────────────────────────────
-export const socketConnectionsActive: promClient.Gauge = getOrCreateGauge(
-  'socket_connections_active',
-  'Number of currently active Socket.IO connections',
-)
-
-// ── Redis adapter metrics ─────────────────────────────────────────────────────
-// 1 when all three Redis clients (pub/sub/presence) are connected, 0 otherwise.
-// Lets Grafana alert when Redis goes away and the service falls back to single-node mode.
-export const redisConnectedGauge: promClient.Gauge = getOrCreateGauge(
-  'redis_adapter_connected',
-  'Whether the Socket.IO Redis adapter is currently connected (1=yes, 0=no)',
 )
 
 // ── Domain telemetry (Factor XIV) ─────────────────────────────────────────────
@@ -78,12 +57,6 @@ export const chatMessagesReadTotal: promClient.Counter = getOrCreateCounter(
   'chat_messages_read_total',
   'Total markAsRead operations',
   [],
-)
-
-export const chatPresenceChangesTotal: promClient.Counter = getOrCreateCounter(
-  'chat_presence_changes_total',
-  'Total presence state transitions emitted',
-  ['direction'],
 )
 
 // ── Metrics endpoint helpers ──────────────────────────────────────────────────

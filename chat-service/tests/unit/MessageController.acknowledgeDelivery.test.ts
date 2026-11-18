@@ -22,11 +22,10 @@ describe('MessageController.acknowledgeDelivery', () => {
     params: { messageId },
     query: { expectedUserId: receiverId },
     user: { _id: receiverId },
-    app: { locals: { onMessageDelivered: jest.fn() } },
     ...overrides,
   })
 
-  test('acknowledges a new delivery and notifies the sender', async () => {
+  test('acknowledges a new durable delivery', async () => {
     markMessageDelivered.mockResolvedValue({ senderId, changed: true })
     const req = request()
     const res = { json: jest.fn() }
@@ -34,26 +33,18 @@ describe('MessageController.acknowledgeDelivery', () => {
     await controller.acknowledgeDelivery(req, res, jest.fn())
 
     expect(markMessageDelivered).toHaveBeenCalledWith(messageId, receiverId)
-    expect(req.app.locals.onMessageDelivered).toHaveBeenCalledWith(senderId, messageId, receiverId)
     expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ data: { modifiedCount: 1 } }))
   })
 
-  test('returns replay success without notifying again', async () => {
+  test('returns replay success without modifying delivery again', async () => {
     markMessageDelivered.mockResolvedValue({ senderId, changed: false })
     const req = request()
 
     const json = jest.fn()
     await controller.acknowledgeDelivery(req, { json }, jest.fn())
 
-    expect(req.app.locals.onMessageDelivered).not.toHaveBeenCalled()
+    expect(markMessageDelivered).toHaveBeenCalledTimes(1)
     expect(json).toHaveBeenCalledWith(expect.objectContaining({ data: { modifiedCount: 0 } }))
-  })
-
-  test('acknowledges stored delivery when the optional live callback is absent', async () => {
-    markMessageDelivered.mockResolvedValue({ senderId, changed: true })
-    const json = jest.fn()
-    await controller.acknowledgeDelivery(request({ app: { locals: {} } }), { json }, jest.fn())
-    expect(json).toHaveBeenCalledWith(expect.objectContaining({ data: { modifiedCount: 1 } }))
   })
 
   test.each([

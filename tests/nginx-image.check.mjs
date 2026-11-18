@@ -9,6 +9,7 @@ import test from 'node:test';
 const image = process.env.NGINX_TEST_IMAGE;
 assert.ok(image, 'Set NGINX_TEST_IMAGE to the locally built gateway image');
 const context = process.env.NGINX_TEST_DOCKER_CONTEXT ?? 'default';
+const platform = process.env.NGINX_TEST_PLATFORM ?? 'linux/amd64';
 const tcpProbe = "if command -v nc >/dev/null 2>&1; then nc -z -w 2 127.0.0.1 8080; else timeout 2 bash -c '</dev/tcp/127.0.0.1/8080'; fi";
 
 function docker(...args) {
@@ -45,7 +46,7 @@ test('gateway remains non-root with development, production TLS and read-only sh
 			{ name: 'override', mounts: ['-v', `${override}:/opt/bitnami/nginx/conf/nginx.conf:ro`], command: [], expected: 'shared-override' }
 		];
 		for (const fixture of cases) {
-			const id = docker('run', '-d', '--platform', 'linux/amd64', '-p', '127.0.0.1::8080', '-p', '127.0.0.1::8443', ...['user', 'chat', 'notification', 'frontend', 'n8n'].flatMap(host => ['--add-host', `${host}:127.0.0.1`]), ...fixture.mounts, image, ...fixture.command);
+			const id = docker('run', '-d', '--platform', platform, '-p', '127.0.0.1::8080', '-p', '127.0.0.1::8443', ...['user', 'chat', 'notification', 'frontend', 'n8n'].flatMap(host => ['--add-host', `${host}:127.0.0.1`]), ...fixture.mounts, image, ...fixture.command);
 			containers.push(id);
 			assert.equal(docker('exec', id, 'id', '-u'), '1001');
 			if (fixture.name === 'development') {
@@ -103,6 +104,23 @@ test('gateway remains non-root with development, production TLS and read-only sh
 			} else {
 				assert.equal(response.status, 200);
 				assert.ok(response.body.includes(fixture.expected));
+			}
+			if (fixture.name !== 'override') {
+				const secure = fixture.name === 'production';
+				const endpoint = secure
+					? `https://127.0.0.1:${docker('port', id, '8443/tcp').split(':').at(-1)}`
+					: `http://127.0.0.1:${port}`;
+				for (const path of ['/chat/socket.io', '/chat/socket.io/?EIO=4&transport=polling', '/api/user/internal/ws/session', '/user/internal/ws/session', '/ws/v1']) {
+					const status = await new Promise((resolve, reject) => {
+						const request = (secure ? get : httpGet)(endpoint + path, {
+							rejectUnauthorized: false,
+							headers: { Host: 'chat.ctaprojects.xyz', Upgrade: 'websocket', Connection: 'Upgrade' },
+						}, res => { res.resume(); resolve(res.statusCode); });
+						request.setTimeout(5000, () => request.destroy(new Error('Retired endpoint probe timeout')));
+						request.on('error', reject);
+					});
+					assert.equal(status, 404, `${fixture.name}: ${path}`);
+				}
 			}
 		}
 	} finally {

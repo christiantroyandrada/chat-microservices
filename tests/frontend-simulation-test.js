@@ -31,12 +31,7 @@
  *   DELETE /notifications/:id
  *   POST   /notifications
  *
- * websocket.service.ts:
- *   Socket.IO connect (path: /chat/socket.io)
- *   Event: sendMessage
- *   Event: typing
- *   Event: receiveMessage (listen)
- *   Event: presence (listen)
+ * Native Go WebSocket integration runs in websocket-simulation-test.js.
  *
  * Health checks:
  *   GET /health (nginx)

@@ -14,19 +14,11 @@ import { rabbitMQService } from './services/RabbitMQService'
 import { AppDataSource } from './database/connection'
 import openapiSpec from './openapi'
 
-// ── Redis health provider ─────────────────────────────────────────────────────
-// Set by server.ts after Redis is initialised (if REDIS_URL is configured).
-// null means Redis is not configured — omitted from health checks (not a failure).
-let _getRedisHealth: (() => boolean | null) | null = null
-
-export function setRedisHealthProvider(fn: () => boolean | null): void {
-  _getRedisHealth = fn
-}
 const app: Express = express()
 
 app.disable('x-powered-by')
 app.set('trust proxy', 1)
-// CORS for chat REST endpoints. Socket.IO has its own CORS settings in server.ts.
+// CORS for chat REST endpoints.
 const allowedOrigins = process.env.CORS_ORIGINS
   ? process.env.CORS_ORIGINS.split(',').map(o => o.trim())
   : ['http://localhost:5173', 'http://localhost:3000', 'http://localhost:80', 'http://localhost:8080']
@@ -99,8 +91,7 @@ app.get('/health', async (_req, res) => {
 	try {
 		const dbOk = AppDataSource.isInitialized
 		const mqOk = rabbitMQService.isHealthy()
-		const redisOk = _getRedisHealth !== null ? (_getRedisHealth() ?? true) : true
-		const healthy = dbOk && mqOk && redisOk
+		const healthy = dbOk && mqOk
 		return res.status(healthy ? 200 : 503).json({ status: healthy ? 'ok' : 'degraded' })
 	} catch (err) {
 		logError('[chat-service] Health check error:', err)

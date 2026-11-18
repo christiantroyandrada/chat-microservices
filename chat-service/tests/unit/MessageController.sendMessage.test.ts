@@ -15,13 +15,11 @@ jest.mock('../../src/utils', () => ({
     constructor(public statusCode: number, message: string) {
       super(message)
     }
-  },
-  handleMessageReceived: jest.fn().mockResolvedValue(undefined)
+  }
 }))
 
 import MessageController from '../../src/controllers/MessageController'
 import { AppDataSource } from '../../src/database'
-import { handleMessageReceived } from '../../src/utils'
 import { MessageSubmissionService } from '../../src/services/MessageSubmissionService'
 
 describe('MessageController.sendMessage', () => {
@@ -82,7 +80,6 @@ describe('MessageController.sendMessage', () => {
       clientMessageId: undefined,
     })
     expect(repo.save).not.toHaveBeenCalled()
-    expect(handleMessageReceived).not.toHaveBeenCalled()
     expect(mockRes.json).toHaveBeenCalledWith(expect.objectContaining({ status: 200 }))
   })
 

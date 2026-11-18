@@ -25,7 +25,8 @@ requireText(ci, /chat_digest:\s*\$\{\{\s*needs\.docker-build\.outputs\.chat_dige
 requireText(ci, /notification_digest:\s*\$\{\{\s*needs\.docker-build\.outputs\.notification_digest\s*\}\}/, 'main CI must pass notification digest to deploy');
 requireText(ci, /nginx_digest:\s*\$\{\{\s*needs\.docker-build\.outputs\.nginx_digest\s*\}\}/, 'main CI must pass nginx digest to deploy');
 requireText(ci, /relay_digest:\s*\$\{\{\s*steps\.publish-relay\.outputs\.digest\s*\}\}/, 'main CI must export the relay registry digest');
-requireText(ci, /name: Publish Go relay\s+if: vars\.GO_WS_PILOT == 'true'\s+id: publish-relay/, 'relay publishing must require explicit opt-in');
+requireText(ci, /name: Publish Go relay\s+id: publish-relay/, 'relay publishing must be unconditional');
+assert.doesNotMatch(ci, /vars\.GO_WS_PILOT/, 'Go releases must not depend on the retired pilot variable');
 requireText(ci, /relay_digest:\s*\$\{\{\s*needs\.docker-build\.outputs\.relay_digest\s*\}\}/, 'main CI must pass relay digest to deploy');
 assert.doesNotMatch(ci, /image_tag:\s*\$\{\{\s*github\.sha\s*\}\}/, 'main CI must not pass image_tag SHA');
 requireText(ci, /node --test tests\/deployment-workflow\.test\.mjs/, 'main CI must run deployment workflow tests');
@@ -41,8 +42,8 @@ requireText(deploy, /user_digest:[\s\S]*required:\s*true/, 'release must require
 requireText(deploy, /chat_digest:[\s\S]*required:\s*true/, 'release must require chat_digest');
 requireText(deploy, /notification_digest:[\s\S]*required:\s*true/, 'release must require notification_digest');
 requireText(deploy, /nginx_digest:[\s\S]*required:\s*true/, 'release must require nginx_digest');
-requireText(deploy, /relay_digest:\s*\n[^\n]*\n\s*required:\s*false/, 'release must keep the relay optional');
-requireText(deploy, /GO_WS_IMAGE:.*inputs\.relay_digest != ''[^\n]*chat-websocket@/, 'only a supplied relay digest may enable the relay');
+requireText(deploy, /relay_digest:\s*\n[^\n]*\n\s*required:\s*true/, 'release must require the relay');
+requireText(deploy, /GO_WS_IMAGE: ghcr\.io\/\$\{\{ github\.repository_owner \}\}\/chat-websocket@\$\{\{ inputs\.relay_digest \}\}/, 'release must pass the required relay digest');
 requireText(deploy, /actions\/checkout@[0-9a-f]{40}/, 'release workflow must checkout an exact revision');
 assert.doesNotMatch(deploy, /ref:\s*\$\{\{\s*inputs\.image_tag\s*\}\}/, 'release checkout must not be bound to image_tag');
 requireText(deploy, /appleboy\/ssh-action@[0-9a-f]{40}/, 'SSH action must remain pinned');
@@ -120,7 +121,7 @@ for (const [earlier, later] of [
 const rollback = release.slice(release.indexOf('rollback()'), release.lastIndexOf('if ! pull_images'));
 assert.doesNotMatch(rollback, /write_state/, 'rollback must preserve authoritative release state');
 assert.doesNotMatch(release, /DROP\s+SCHEMA|docker\s+system\s+prune/, 'release must not destructively reset the database or global Docker state');
-assert.doesNotMatch(release, /(^|[^A-Za-z])frontend([^A-Za-z]|$)|docker\s+(volume|container)\s+prune|docker\s+image\s+prune/, 'release must not alter unowned services or prune shared state');
+assert.doesNotMatch(release, /chat-frontend@|frontend:|docker\s+(volume|container)\s+prune|docker\s+image\s+prune/, 'release must not alter unowned services or prune shared state');
 
 const integrationGrants = await readFile(path.join(root, 'scripts/grant-service-privileges.sql'), 'utf8');
 const grantFunction = release.slice(release.indexOf('\ngrant_service_tables() {'), release.indexOf('\nensure_dependencies()'));

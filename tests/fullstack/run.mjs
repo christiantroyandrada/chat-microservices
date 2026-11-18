@@ -33,18 +33,16 @@ const composePrefix = macOS ? [] : ['--context', context, 'compose'];
 const runId = `fullstack-${randomUUID().replaceAll('-', '').slice(0, 12)}`;
 const project = runId;
 const databaseName = `fullstack_${runId.slice(10)}`;
-const goWebSocket = options.has('--go-websocket');
 const rehearseRollback = options.has('--rehearse-rollback');
 const rollbackFrontendCommit = options.get('--rollback-frontend-sha');
 const checkRelayCapacity = options.has('--check-relay-capacity');
-assert.ok(!rehearseRollback || (goWebSocket && options.has('--start-fixture')), '--rehearse-rollback requires --start-fixture and --go-websocket');
+assert.ok(!rehearseRollback || options.has('--start-fixture'), '--rehearse-rollback requires --start-fixture');
 if (rollbackFrontendCommit) {
   assert.ok(rehearseRollback, '--rollback-frontend-sha requires --rehearse-rollback');
   assert.match(rollbackFrontendCommit, /^[0-9a-f]{40}$/, 'Use the full prior frontend commit SHA');
 }
-assert.ok(!checkRelayCapacity || (goWebSocket && options.has('--start-fixture')), '--check-relay-capacity requires --start-fixture and --go-websocket');
-const services = new Set(['postgres', 'rabbitmq', 'user', 'chat', 'notification', 'frontend', 'gateway']);
-if (goWebSocket) services.add('go-websocket');
+assert.ok(!checkRelayCapacity || options.has('--start-fixture'), '--check-relay-capacity requires --start-fixture');
+const services = new Set(['postgres', 'rabbitmq', 'user', 'chat', 'notification', 'frontend', 'gateway', 'go-websocket']);
 const cleanEnvironment = Object.fromEntries(['HOME', 'PATH', 'TMPDIR', 'USER'].filter(key => process.env[key]).map(key => [key, process.env[key]]));
 cleanEnvironment.DOCKER_CONTEXT = context;
 const require = createRequire(join(root, 'user-service/package.json'));
@@ -326,17 +324,15 @@ async function main() {
     FULLSTACK_TLS_PORT: String(await freePort()), FULLSTACK_PG_PORT: String(await freePort()) };
   assert.notEqual(env.FULLSTACK_PG_PORT, env.FULLSTACK_TLS_PORT, 'Fixture PostgreSQL and TLS ports must differ');
   env.FULLSTACK_ORIGIN = `https://127.0.0.1:${env.FULLSTACK_TLS_PORT}`;
-  env.FULLSTACK_GO_WS = String(goWebSocket);
+  env.FULLSTACK_GO_WS = 'true';
   env.FULLSTACK_FRONTEND_CONTEXT = join(env.FULLSTACK_SNAPSHOT, 'frontend');
   env.FULLSTACK_FRONTEND_IMAGE = `${project}-frontend:${runId}`;
-  if (goWebSocket) {
-    env.FULLSTACK_GO_WS_BRIDGE_TOKEN = randomUUID() + randomUUID();
-    env.FULLSTACK_GO_WS_SESSION_KEY = randomUUID() + randomUUID();
-    env.FULLSTACK_GO_WS_BRIDGE_URL = 'http://go-websocket:8090/internal/messages';
-  }
+  env.FULLSTACK_GO_WS_BRIDGE_TOKEN = randomUUID() + randomUUID();
+  env.FULLSTACK_GO_WS_SESSION_KEY = randomUUID() + randomUUID();
+  env.FULLSTACK_GO_WS_BRIDGE_URL = 'http://go-websocket:8090/internal/messages';
   writeFileSync(join(runtime, 'empty.env'), '');
   const composeArgs = ['--env-file', join(runtime, 'empty.env'), '--project-directory', runtime, '-p', project, '-f', join(root, 'tests/fullstack/compose.yml')];
-  if (goWebSocket) composeArgs.push('--profile', 'go-websocket');
+  composeArgs.push('--profile', 'go-websocket');
   const command = (title, executable, args, extra = {}) => runCommand(title, executable, args, { cwd: root, env, log, ...extra });
   const composeCommand = (title, args, extra) => command(title, compose, [...composePrefix, ...composeArgs, ...args], extra);
   const dockerOutput = args => output(docker, ['--context', context, ...args]);
@@ -364,20 +360,17 @@ async function main() {
   let databaseIdentity;
   let primaryFailure;
   try {
-    await archiveSnapshot(root, backendCommit, 'backend', ['user-service', 'chat-service', 'notification-service', 'nginx', ...(goWebSocket ? ['websocket-service'] : [])]);
+    await archiveSnapshot(root, backendCommit, 'backend', ['user-service', 'chat-service', 'notification-service', 'nginx', 'websocket-service']);
     await archiveSnapshot(frontend, frontendCommit, 'frontend');
     const certificates = join(runtime, 'certificates');
     mkdirSync(certificates);
     await command('Generate disposable localhost TLS fixture', 'openssl', ['req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-days', '1', '-subj', '/CN=127.0.0.1', '-addext', 'subjectAltName=IP:127.0.0.1', '-keyout', join(certificates, 'privkey.pem'), '-out', join(certificates, 'fullchain.pem')]);
     chmodSync(join(certificates, 'privkey.pem'), 0o644);
     const gatewayRoot = join(env.FULLSTACK_SNAPSHOT, 'backend/nginx');
-    const gateway = goWebSocket
-      ? readFileSync(join(gatewayRoot, 'ssl/nginx-ssl.conf'), 'utf8')
-        .replaceAll(/\/etc\/letsencrypt\/live\/[^/]+\//g, '/fixture-certificates/')
-        .replaceAll('server_name chat.ctaprojects.xyz www.chat.ctaprojects.xyz;', 'server_name 127.0.0.1;')
-        .replace('server n8n:5678;', 'server 127.0.0.1:1;')
-      : readFileSync(join(gatewayRoot, 'nginx.conf'), 'utf8')
-        .replace('listen 8080;', 'listen 8443 ssl;\n    ssl_certificate /fixture-certificates/fullchain.pem;\n    ssl_certificate_key /fixture-certificates/privkey.pem;');
+    const gateway = readFileSync(join(gatewayRoot, 'ssl/nginx-ssl.conf'), 'utf8')
+      .replaceAll(/\/etc\/letsencrypt\/live\/[^/]+\//g, '/fixture-certificates/')
+      .replaceAll('server_name chat.ctaprojects.xyz www.chat.ctaprojects.xyz;', 'server_name 127.0.0.1;')
+      .replace('server n8n:5678;', 'server 127.0.0.1:1;');
     writeFileSync(join(runtime, 'nginx.conf'), gateway);
     for (const image of ['postgres@sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24', 'rabbitmq@sha256:6931816af1a943f471c038b278835d36692d55dec769232739296bb91b7de0f5']) {
       const [detail] = JSON.parse(dockerOutput(['image', 'inspect', image]));
@@ -445,8 +438,8 @@ async function main() {
       ownedContainer(container, owner);
       return container;
     };
-    const relay = goWebSocket ? inspectService('go-websocket') : undefined;
-    if (relay) {
+    const relay = inspectService('go-websocket');
+    {
       assert.equal(relay.Config.User, '65532:65532', 'The relay must run as an unprivileged user');
       assert.equal(relay.HostConfig.ReadonlyRootfs, true);
       assert.ok(relay.HostConfig.CapDrop?.includes('ALL'));
@@ -458,7 +451,8 @@ async function main() {
     for (const path of ['/user/health', '/chat/health', '/notifications/health', '/login']) {
       await waitForHTTPS(path);
     }
-    if (goWebSocket) {
+    {
+      assert.equal(await httpsStatus('/chat/socket.io/?EIO=4&transport=polling'), 404);
       assert.equal(await httpsStatus('/ws/v1', { Origin: env.FULLSTACK_ORIGIN }), 401);
       const user = inspectService('user');
       await command('Verify the internal session endpoint requires both credentials', docker, ['--context', context, 'exec', user.Id, user.Path, '-e', `
@@ -482,11 +476,11 @@ async function main() {
         assert.equal(status, 404, `Gateway exposed ${path}`);
       }
     }
-    const browserFlow = (title, testArgs, evidencePath = evidence) => command(title, process.execPath,
+    const browserFlow = (title, testArgs, evidencePath = evidence, accountSuffix = '') => command(title, process.execPath,
       [join(frontend, 'node_modules/@playwright/test/cli.js'), 'test', ...testArgs, '--config', join(frontend, 'playwright.fullstack.config.ts')],
       { cwd: frontend, timeout: 180_000, env: {
         ...cleanEnvironment, FULLSTACK_ORIGIN: env.FULLSTACK_ORIGIN, FULLSTACK_EVIDENCE: evidencePath,
-        FULLSTACK_RUN_ID: runId, FULLSTACK_BACKEND_ROOT: root,
+        FULLSTACK_RUN_ID: runId, FULLSTACK_ACCOUNT_SUFFIX: accountSuffix, FULLSTACK_BACKEND_ROOT: root,
         FULLSTACK_DATABASE_URL: databaseUrl,
         FULLSTACK_DATABASE_ID: databaseIdentity.system
       } });
@@ -497,30 +491,32 @@ async function main() {
       assert.equal(restarted.State.Running, true);
       assert.notEqual(restarted.State.StartedAt, relay.State.StartedAt);
     }
-    await browserFlow('Real two-context browser and database flow', goWebSocket ? ['go-websocket.spec.ts', '--grep', 'Go delivers ciphertext'] : ['chat.spec.ts']);
+    await browserFlow('Real encrypted chat persistence and account isolation', ['chat.spec.ts']);
+    console.log('Wait for the shared prekey rate limit window before the Go flow.');
+    await delay(60_000);
+    await browserFlow('Real Go delivery, receipt, presence, and reconnect flow', ['go-websocket.spec.ts']);
     if (checkRelayCapacity) {
       await browserFlow('Go relay capacity through NGINX', ['go-websocket-capacity.spec.ts'], join(runtime, 'capacity-evidence'));
     }
     if (rehearseRollback) {
       const stored = (await query('SELECT * FROM messages ORDER BY id')).rows;
       assert.ok(stored.length >= 2 && stored.every(row => row.isEncrypted), 'Expected persisted ciphertext from the Go flow');
-      await command('Stop verified Go relay', docker, ['--context', context, 'stop', '--timeout', '8', relay.Id]);
-      assert.equal(inspectService('go-websocket').State.Running, false);
-      await poll('Socket.IO-only gateway', async () =>
-        (await httpsStatus('/ws/v1', { Origin: env.FULLSTACK_ORIGIN })) === 404, 20_000);
+      const relayBeforeRollback = inspectService('go-websocket');
+      assert.equal(relayBeforeRollback.State.Running, true);
       const frontendBefore = inspectService('frontend');
       if (rollbackImage) assert.notEqual(rollbackImage, frontendBefore.Image, 'Rollback image equals the active image');
-      await composeCommand('Restore the frontend with Go disabled', ['up', '-d', '--no-deps', '--force-recreate', '--no-build', '--pull', 'never', 'frontend'], {
-        env: { ...env, FULLSTACK_GO_WS: 'false', FULLSTACK_FRONTEND_IMAGE: rollbackImage ?? env.FULLSTACK_FRONTEND_IMAGE }
+      await composeCommand('Restore the verified prior Go frontend', ['up', '-d', '--no-deps', '--force-recreate', '--no-build', '--pull', 'never', 'frontend'], {
+        env: { ...env, FULLSTACK_FRONTEND_IMAGE: rollbackImage ?? env.FULLSTACK_FRONTEND_IMAGE }
       });
       const frontendAfter = inspectService('frontend');
       assert.equal(frontendAfter.Image, rollbackImage ?? frontendBefore.Image);
       assert.notEqual(frontendAfter.Id, frontendBefore.Id);
-      assert.ok(frontendAfter.Config.Env.includes('PUBLIC_GO_WS_ENABLED=false'));
+      assert.ok(frontendAfter.Config.Env.includes('PUBLIC_GO_WS_ENABLED=true'));
+      assert.equal(inspectService('go-websocket').State.StartedAt, relayBeforeRollback.State.StartedAt);
       await waitForHTTPS('/login');
       console.log('Wait for the 60-second shared prekey rate limit window to expire.');
       await delay(60_000);
-      await browserFlow('Socket.IO browser flow after rollback', ['go-websocket.spec.ts', '--grep', 'Socket.IO delivers after Go rollback'], join(runtime, 'rollback-evidence'));
+      await browserFlow('Go browser flow after frontend image rollback', ['go-websocket.spec.ts'], join(runtime, 'rollback-evidence'), '_prior');
       const afterRollback = (await query('SELECT * FROM messages WHERE id = ANY($1::uuid[]) ORDER BY id', [stored.map(row => row.id)])).rows;
       assert.deepEqual(afterRollback, stored, 'Rollback changed messages from the Go flow');
       if (rollbackImage) {
@@ -530,7 +526,7 @@ async function main() {
           preservedMessages: stored.length
         }, null, 2));
       }
-      console.log(`Verified Socket.IO rollback and preserved ${stored.length} Go message rows.`);
+      console.log(`Verified Go frontend rollback and preserved ${stored.length} message rows.`);
     }
   } catch (error) {
     primaryFailure = error;

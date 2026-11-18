@@ -10,8 +10,7 @@ describe('MessageController branch coverage', () => {
     // Mock repository and helpers before requiring controller
     const AppDataSource = { getRepository: jest.fn() }
     jest.doMock('../../src/database', () => ({ AppDataSource, Message: class {} }))
-    // minimal handleMessageReceived so require doesn't fail
-    jest.doMock('../../src/utils', () => ({ APIError: class APIError extends Error { constructor(public statusCode:number, public message:string){ super(message) } }, handleMessageReceived: jest.fn() }))
+    jest.doMock('../../src/utils', () => ({ APIError: class APIError extends Error { constructor(public statusCode:number, public message:string){ super(message) } } }))
 
   const { requireControllerAfterMocks } = require('../utils/testHelpers')
   const { controller } = requireControllerAfterMocks('../../src/controllers/MessageController')
@@ -25,7 +24,7 @@ describe('MessageController branch coverage', () => {
 
   it('sendMessage rejects when sender equals receiver', async () => {
     jest.doMock('../../src/database', () => ({ AppDataSource: { getRepository: jest.fn() }, Message: class {} }))
-    jest.doMock('../../src/utils', () => ({ APIError: class APIError extends Error { constructor(public statusCode:number, public message:string){ super(message) } }, handleMessageReceived: jest.fn() }))
+    jest.doMock('../../src/utils', () => ({ APIError: class APIError extends Error { constructor(public statusCode:number, public message:string){ super(message) } } }))
   const { requireControllerAfterMocks } = require('../utils/testHelpers')
   const { controller } = requireControllerAfterMocks('../../src/controllers/MessageController')
   const MC = controller.default || controller
@@ -38,7 +37,7 @@ describe('MessageController branch coverage', () => {
 
   it('sendMessage rejects when message too long', async () => {
     jest.doMock('../../src/database', () => ({ AppDataSource: { getRepository: jest.fn() }, Message: class {} }))
-    jest.doMock('../../src/utils', () => ({ APIError: class APIError extends Error { constructor(public statusCode:number, public message:string){ super(message) } }, handleMessageReceived: jest.fn() }))
+    jest.doMock('../../src/utils', () => ({ APIError: class APIError extends Error { constructor(public statusCode:number, public message:string){ super(message) } } }))
   const { requireControllerAfterMocks } = require('../utils/testHelpers')
   const { controller } = requireControllerAfterMocks('../../src/controllers/MessageController')
   const MC = controller.default || controller
@@ -52,7 +51,7 @@ describe('MessageController branch coverage', () => {
 
   it('sendMessage rejects when envelope __encrypted !== true', async () => {
     jest.doMock('../../src/database', () => ({ AppDataSource: { getRepository: jest.fn() }, Message: class {} }))
-    jest.doMock('../../src/utils', () => ({ APIError: class APIError extends Error { constructor(public statusCode:number, public message:string){ super(message) } }, handleMessageReceived: jest.fn() }))
+    jest.doMock('../../src/utils', () => ({ APIError: class APIError extends Error { constructor(public statusCode:number, public message:string){ super(message) } } }))
   const { requireControllerAfterMocks } = require('../utils/testHelpers')
   const { controller } = requireControllerAfterMocks('../../src/controllers/MessageController')
   const MC = controller.default || controller

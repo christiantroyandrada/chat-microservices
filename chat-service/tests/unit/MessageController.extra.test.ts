@@ -5,7 +5,6 @@ jest.mock('amqplib', () => ({ connect: jest.fn() }))
 import MessageController from '../../src/controllers/MessageController'
 import { AppDataSource } from '../../src/database/connection'
 import { Message } from '../../src/database'
-import * as utils from '../../src/utils'
 import { MessageSubmissionService } from '../../src/services/MessageSubmissionService'
 
 describe('MessageController (extra)', () => {
@@ -24,9 +23,6 @@ describe('MessageController (extra)', () => {
     // Mock repository
     const repo: any = { save: jest.fn() }
     jest.spyOn(AppDataSource, 'getRepository').mockReturnValue(repo as any)
-
-    // Mock handleMessageReceived so it doesn't throw
-    jest.spyOn(utils, 'handleMessageReceived').mockResolvedValue(undefined as any)
 
     // No remote fetch required for this test
     global.fetch = jest.fn()
@@ -90,7 +86,6 @@ describe('MessageController (extra)', () => {
     const repo: any = { save: jest.fn().mockResolvedValue(saved) }
     jest.spyOn(AppDataSource, 'getRepository').mockReturnValue(repo as any)
 
-    const handleSpy = jest.spyOn(utils, 'handleMessageReceived').mockResolvedValue(undefined as any)
     const submit = jest.spyOn(MessageSubmissionService.prototype, 'submit').mockResolvedValue({ message: saved as any, replayed: false })
 
     // create a valid envelope
@@ -103,7 +98,6 @@ describe('MessageController (extra)', () => {
 
   expect(submit).toHaveBeenCalledWith({ senderId: 's1', receiverId: 'r1', encryptedEnvelope: envelope, clientMessageId: undefined, senderName: 'u', senderEmail: 'a@b.com' })
   expect(repo.save).not.toHaveBeenCalled()
-  expect(handleSpy).not.toHaveBeenCalled()
   expect(out.status).toBe(200)
   expect(out.data).toEqual(saved)
   })

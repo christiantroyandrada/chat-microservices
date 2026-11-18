@@ -1,6 +1,8 @@
 # Chat Application — Architecture & Engineering Documentation
 
-> Last updated: March 2026
+> Historical architecture: March 2026. The Socket.IO sections below describe the retired design.
+> The current transport uses the backend [Go WebSocket service](websocket-service/README.md).
+> Message persistence and receipts use the authenticated REST API.
 
 ## Table of Contents
 
