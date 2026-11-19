@@ -2,9 +2,7 @@ import { randomUUID } from 'node:crypto'
 import type { DataSource, EntityManager } from 'typeorm'
 import { AppDataSource } from '../database/connection'
 import { notificationTransaction } from '../database/notificationTransaction'
-import config from '../config/config'
-import { APP_URL, WELCOME_EMAIL_SUBJECT } from '../config/constants'
-import { loadTemplate, renderTemplate } from './EmailTemplateService'
+import { renderNotificationEmail } from './NotificationEmail'
 import { NotificationProvider, NotificationProviderBoundaryError, ProviderRequest, ProviderResult, validateProviderRequest } from './NotificationProvider'
 import { logError } from '../utils/logger'
 
@@ -17,7 +15,6 @@ type Receipt = Event & {
 }
 type Reservation = { request: ProviderRequest; advisory: Record<string, unknown>; state: string; attempt: number }
 const ACTIVE = ['pending', 'retry', 'deferred']
-const escapeHtml = (value: string) => value.replace(/[&<>"']/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character]!)
 
 export class NotificationDeliveryWorker {
   private running = false
@@ -142,17 +139,9 @@ export class NotificationDeliveryWorker {
       let request: ProviderRequest | undefined
       if (!policy) {
         if (provider === 'email') {
-          const welcome = row.canonical.type === 'USER_REGISTERED'
-          const template = loadTemplate(welcome ? 'welcome.html' : 'message.html')
-          if (!template) policy = { state: 'deferred', reason: 'template_unavailable' }
-          else {
-            const subject = welcome ? WELCOME_EMAIL_SUBJECT : `New message from ${row.canonical.fromName || 'Unknown'}`
-            const body = row.canonical.isEncrypted ? 'You have a new encrypted message. Open the app to view it.' : String(row.canonical.message)
-            request = { provider: 'email', to: row.advisory.userEmail as string, subject, html: renderTemplate(template, {
-              TITLE: escapeHtml(subject), BODY: escapeHtml(body), APP_URL, YEAR: String(new Date().getFullYear()),
-              EMAIL_FROM: config.EMAIL_FROM || 'notifications@chat-app',
-            }) }
-          }
+          const email = renderNotificationEmail(row.canonical)
+          if (email) request = { provider: 'email', to: row.advisory.userEmail as string, ...email }
+          else policy = { state: 'deferred', reason: 'template_unavailable' }
         } else request = { provider: 'push', token: row.advisory.userToken as string, message: row.canonical.message as string, ...(row.canonical.isEncrypted ? { envelope: row.canonical.envelope as string } : {}) }
         if (request) {
           try { request = validateProviderRequest(request) }

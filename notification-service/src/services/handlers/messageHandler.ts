@@ -5,10 +5,8 @@ import type { Repository } from 'typeorm'
 import { FCMService } from '../FCMService'
 import { SecureEmailService } from '../SecureEmailService'
 import { UserStatusStore } from '../../utils'
-import { loadTemplate, renderTemplate } from '../EmailTemplateService'
-import config from '../../config/config'
+import { renderNotificationEmail } from '../NotificationEmail'
 import { logError } from '../../utils/logger'
-import { APP_URL } from '../../config/constants'
 import type { MessageReceivedPayload } from '../../types'
 
 type Deps = {
@@ -49,20 +47,10 @@ export async function handleMessageReceived (payload: MessageReceivedPayload, ms
       await fcmService.sendPushNotification(userToken, message || 'You have a new message')
     }
 
-    const messageTpl = loadTemplate('message.html')
     const sendEmail = async () => {
       if (!userEmail) return
-      const emailBody = isEncrypted ? 'You have a new encrypted message. Open the app to view it.' : (message || '')
-
-      const html = renderTemplate(messageTpl, {
-        TITLE: `New message from ${fromName || 'Unknown'}`,
-        BODY: emailBody,
-        APP_URL,
-        YEAR: String(new Date().getFullYear()),
-        EMAIL_FROM: config.EMAIL_FROM || 'notifications@chat-app',
-      })
-
-      await emailService.sendEmail(userEmail, `New message from ${fromName || 'Unknown'}`, html)
+      const email = renderNotificationEmail({ fromName, message, isEncrypted })
+      if (email) await emailService.sendEmail(userEmail, email.subject, email.html)
     }
 
     if (online && userToken) {

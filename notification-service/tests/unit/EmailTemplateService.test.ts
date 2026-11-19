@@ -1,5 +1,8 @@
 import fs from 'fs'
 import path from 'path'
+import { renderNotificationEmail } from '../../src/services/NotificationEmail'
+
+jest.mock('../../src/config/config', () => ({ __esModule: true, default: {} }))
 
 import {
   loadTemplate,
@@ -21,18 +24,19 @@ describe('EmailTemplateService', () => {
     expect(out).toBe('<div>Hello Alice, welcome to Chat!</div>')
   })
 
-  test.each(['welcome.html', 'message.html'])('renders the Secret email and its app link from %s', (file) => {
-    const html = renderTemplate(loadTemplate(file), {
-      TITLE: 'New message from Alice',
-      BODY: 'Open Secret to read your message.',
-      APP_URL: 'https://chat.example.test',
-      YEAR: '2026',
-      EMAIL_FROM: 'no-reply@example.test',
-    })
-    expect(html).toContain(file === 'welcome.html' ? 'Welcome to Secret' : 'New message from Alice')
-    expect(html).toContain('href="https://chat.example.test"')
-    expect(html).toContain('Open Secret')
-    expect(html).not.toMatch(/{{|<img\b/)
+  test.each([
+    [{ type: 'USER_REGISTERED' }, 'Welcome to Secret', 'Your account is ready.'],
+    [{ fromName: '<Alice>', message: '<b>Hello</b>' }, 'New message from <Alice>', '&lt;b&gt;Hello&lt;/b&gt;'],
+    [{ fromName: '', isEncrypted: true, message: 'ciphertext fixture' }, 'New message from Unknown', 'You have a new encrypted message.'],
+    [{}, 'New message from Unknown', 'You have a new message.'],
+  ])('renders notification content safely with both themes', (content, subject, body) => {
+    const email = renderNotificationEmail(content)
+    expect(email?.subject).toBe(subject)
+    expect(email?.html).toContain(body)
+    expect(email?.html).toContain('Open Secret')
+    expect(email?.html).toContain('notifications@chat-app')
+    expect(email?.html).toContain('prefers-color-scheme: dark')
+    expect(email?.html).not.toMatch(/{{|<img\b|<Alice>|<b>|ciphertext fixture/)
   })
 
   test('loadTemplate returns file contents when candidate exists', () => {

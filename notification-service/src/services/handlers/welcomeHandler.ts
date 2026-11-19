@@ -3,10 +3,8 @@ import { NotificationType } from '../../database/models/NotificationModel'
 import type { Channel, ConsumeMessage } from 'amqplib'
 import type { Repository } from 'typeorm'
 import { SecureEmailService } from '../SecureEmailService'
-import { loadTemplate, renderTemplate } from '../EmailTemplateService'
-import config from '../../config/config'
+import { renderNotificationEmail } from '../NotificationEmail'
 import { logError } from '../../utils/logger'
-import { APP_URL, WELCOME_EMAIL_SUBJECT } from '../../config/constants'
 import type { UserRegisteredPayload } from '../../types'
 
 type Deps = {
@@ -31,15 +29,8 @@ export async function handleUserRegistered (payload: UserRegisteredPayload, msg:
 
     if (userEmail) {
       try {
-        const welcomeTpl = loadTemplate('welcome.html')
-
-        const html = renderTemplate(welcomeTpl, {
-          APP_URL,
-          YEAR: String(new Date().getFullYear()),
-          EMAIL_FROM: config.EMAIL_FROM || 'notifications@chat-app',
-        })
-
-        await emailService.sendEmail(userEmail, WELCOME_EMAIL_SUBJECT, html)
+        const email = renderNotificationEmail({ type: 'USER_REGISTERED' })
+        if (email) await emailService.sendEmail(userEmail, email.subject, email.html)
       } catch (e) {
         logError('[welcomeHandler] Failed to send welcome email', e)
       }
