@@ -1,39 +1,42 @@
 <!doctype html>
-<html>
+<html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light dark" />
+    <style>
+      :root { color-scheme: light dark; }
+      @media (prefers-color-scheme: dark) {
+        .canvas { background-color: #1e1612 !important; }
+        .letter { background-color: #2a211a !important; }
+        .rule { border-color: #514237 !important; }
+        .ink { color: #ebe4db !important; }
+        .detail { color: #c8beb3 !important; }
+        .accent { background-color: #d8654e !important; color: #1b110d !important; }
+      }
+    </style>
   </head>
-  <body style="margin:0;padding:0;background:#0b1220;color:#e6eef8;font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial;">
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="min-width:100%;background:linear-gradient(180deg,#06080d, #0b1220);">
+  <body class="canvas ink" style="margin:0;padding:0;background-color:#f5efe4;color:#30231c;font-family:Verdana, sans-serif;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" class="canvas" bgcolor="#f5efe4" style="background-color:#f5efe4;">
       <tr>
-        <td align="center" style="padding:28px 16px">
-          <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="background:#0f1724;border-radius:12px;box-shadow:0 6px 18px rgba(2,6,23,0.6);overflow:hidden;">
+        <td align="center" style="padding:24px 12px;">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" class="letter rule" bgcolor="#faf6ee" style="max-width:560px;background-color:#faf6ee;border:1px solid #d8cbbd;border-radius:16px;">
             <tr>
-              <td style="padding:20px 24px;vertical-align:middle;">
-                <!-- Inline-block + vertical-align used for broad email client support -->
-                <div style="display:inline-block;vertical-align:middle;margin-right:18px;flex:0 0 auto;align-items:center;justify-content:center;height:52px;width:52px;border-radius:12px;background:linear-gradient(135deg,#6366f1,#7c3aed);overflow:hidden;">
-                  <!-- Logo (PNG). Fill the purple box and center using object-fit:cover. No text fallback. -->
-                  <img src="{{LOGO_DATA_URI}}" alt="Chat logo" style="display:block;width:100%;height:100%;object-fit:cover;" />
-                </div>
-                <div style="display:inline-block;vertical-align:middle;line-height:1;">
-                  <div style="font-size:17px;font-weight:600;color:#e6eef8;">Chat</div>
-                  <div style="font-size:12px;color:#9fb0cc;">Stay connected</div>
-                </div>
+              <td class="rule" style="padding:24px;border-bottom:1px solid #d8cbbd;">
+                <span class="accent" aria-hidden="true" style="display:inline-block;width:36px;line-height:36px;margin-right:10px;border-radius:50%;background-color:#9d372c;color:#faf6ee;text-align:center;font-size:20px;vertical-align:middle;">&#9993;&#65038;</span>
+                <span class="ink" style="font: bold 24px Georgia, serif;color:#30231c;vertical-align:middle;">Secret</span>
               </td>
             </tr>
             <tr>
-              <td style="padding:18px 24px;border-top:1px solid rgba(255,255,255,0.02);">
-                <h2 style="margin:0 0 10px 0;color:#f1f7ff;font-size:16px;font-weight:600;">{{TITLE}}</h2>
-                <p style="margin:0 0 18px 0;color:#c9dbf3;font-size:14px;">{{BODY}}</p>
-                <p style="margin:0 0 18px 0;"><a href="{{APP_URL}}" style="display:inline-block;padding:10px 16px;border-radius:8px;background:linear-gradient(90deg,#6366f1,#7c3aed);color:#fff;text-decoration:none;font-weight:600;font-size:14px;">Open Chat</a></p>
-                <hr style="border:none;border-top:1px solid rgba(255,255,255,0.03);margin:18px 0;" />
-                <p style="margin:0;color:#8ea7c6;font-size:12px;">If you didn't expect this email, you can safely ignore it.</p>
+              <td style="padding:24px;">
+                <h1 class="ink" style="margin:0 0 12px;color:#30231c;font:bold 28px/1.25 Georgia, serif;overflow-wrap:anywhere;">{{TITLE}}</h1>
+                <p class="detail" style="margin:0 0 24px;color:#625044;font-size:15px;line-height:1.6;overflow-wrap:anywhere;">{{BODY}}</p>
+                <a class="accent" href="{{APP_URL}}" style="display:inline-block;padding:12px 20px;border-radius:8px;background-color:#9d372c;color:#faf6ee;text-decoration:none;font-size:15px;font-weight:bold;line-height:20px;">Open Secret</a>
               </td>
             </tr>
             <tr>
-              <td style="padding:14px 24px;background:transparent;color:#6f8fa6;font-size:12px;">
-                © {{YEAR}} Chat App — <span style="color:#94b6db">{{EMAIL_FROM}}</span>
+              <td class="detail rule" style="padding:16px 24px;border-top:1px solid #d8cbbd;color:#625044;font-size:12px;line-height:1.5;overflow-wrap:anywhere;">
+                © {{YEAR}} Secret · {{EMAIL_FROM}}
               </td>
             </tr>
           </table>

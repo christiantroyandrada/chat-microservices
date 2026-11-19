@@ -21,6 +21,20 @@ describe('EmailTemplateService', () => {
     expect(out).toBe('<div>Hello Alice, welcome to Chat!</div>')
   })
 
+  test.each(['welcome.html', 'message.html'])('renders the Secret email and its app link from %s', (file) => {
+    const html = renderTemplate(loadTemplate(file), {
+      TITLE: 'New message from Alice',
+      BODY: 'Open Secret to read your message.',
+      APP_URL: 'https://chat.example.test',
+      YEAR: '2026',
+      EMAIL_FROM: 'no-reply@example.test',
+    })
+    expect(html).toContain(file === 'welcome.html' ? 'Welcome to Secret' : 'New message from Alice')
+    expect(html).toContain('href="https://chat.example.test"')
+    expect(html).toContain('Open Secret')
+    expect(html).not.toMatch(/{{|<img\b/)
+  })
+
   test('loadTemplate returns file contents when candidate exists', () => {
     // Mock fs to simulate a template file present at one of the candidates
     const fakePath = path.join(__dirname, '..', '..', 'src', 'templates', 'fake-template.html')

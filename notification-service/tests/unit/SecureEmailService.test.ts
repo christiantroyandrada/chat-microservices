@@ -150,7 +150,7 @@ describe('SecureEmailService', () => {
       socketTimeout: 10000,
     })
     expect(transport.sendMail).toHaveBeenNthCalledWith(1, {
-      from: 'Chat Service <noreply@chat.example>',
+      from: 'Secret <noreply@chat.example>',
       to: 'person@example.com',
       subject: 'Welcome',
       html: '<p>Welcome</p>',
@@ -195,7 +195,7 @@ describe('SecureEmailService', () => {
     )).resolves.toEqual({ messageId: 'brevo-message-1' })
 
     expect(httpClient.post).toHaveBeenCalledWith('/smtp/email', {
-      sender: { email: 'noreply@chat.example', name: 'Chat Service' },
+      sender: { email: 'noreply@chat.example', name: 'Secret' },
       to: [{ email: 'person@example.com' }],
       subject: 'Welcome',
       htmlContent: '<p>Welcome</p>',

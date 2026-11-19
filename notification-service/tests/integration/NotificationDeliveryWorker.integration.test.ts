@@ -21,7 +21,7 @@ const admin = new DataSource({ type: 'postgres', url, installExtensions: false }
 const database = new DataSource({ type: 'postgres', url, schema, installExtensions: false, entities: [Notification], extra: { options: `-c search_path=${schema},public`, connectionTimeoutMillis: 2000 } })
 const inbox = new NotificationInbox(database)
 const sent: ProviderResult = { status: 'sent', attempt: 'started' }
-const template = '<h1>{{TITLE}}</h1><main>{{BODY}}</main><a href="{{APP_URL}}">app</a>{{YEAR}}{{EMAIL_FROM}}{{LOGO_DATA_URI}}'
+const template = '<h1>{{TITLE}}</h1><main>{{BODY}}</main><a href="{{APP_URL}}">app</a>{{YEAR}}{{EMAIL_FROM}}'
 const guard = () => fixture.assertIdentity(admin)
 beforeAll(async () => {
   await admin.initialize(); await guard()
@@ -197,7 +197,7 @@ test('welcome ignores online presence and always skips registration push', async
   const { worker: current, dispatch } = worker()
   await current.runOnce()
   expect(dispatch).toHaveBeenCalledTimes(1)
-  expect(dispatch.mock.calls[0][0]).toMatchObject({ provider: 'email', subject: 'Welcome to Chat App' })
+  expect(dispatch.mock.calls[0][0]).toMatchObject({ provider: 'email', subject: 'Welcome to Secret' })
   expect(await row(value.eventKey)).toMatchObject({ emailState: 'sent', pushState: 'skipped', pushReason: 'registration_push', pushAttempts: 0 })
 })
 

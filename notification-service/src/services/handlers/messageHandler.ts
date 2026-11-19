@@ -8,7 +8,7 @@ import { UserStatusStore } from '../../utils'
 import { loadTemplate, renderTemplate } from '../EmailTemplateService'
 import config from '../../config/config'
 import { logError } from '../../utils/logger'
-import { LOGO_URL, APP_URL } from '../../config/constants'
+import { APP_URL } from '../../config/constants'
 import type { MessageReceivedPayload } from '../../types'
 
 type Deps = {
@@ -60,7 +60,6 @@ export async function handleMessageReceived (payload: MessageReceivedPayload, ms
         APP_URL,
         YEAR: String(new Date().getFullYear()),
         EMAIL_FROM: config.EMAIL_FROM || 'notifications@chat-app',
-        LOGO_DATA_URI: LOGO_URL,
       })
 
       await emailService.sendEmail(userEmail, `New message from ${fromName || 'Unknown'}`, html)

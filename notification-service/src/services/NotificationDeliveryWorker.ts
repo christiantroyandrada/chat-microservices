@@ -3,7 +3,7 @@ import type { DataSource, EntityManager } from 'typeorm'
 import { AppDataSource } from '../database/connection'
 import { notificationTransaction } from '../database/notificationTransaction'
 import config from '../config/config'
-import { APP_URL, LOGO_URL } from '../config/constants'
+import { APP_URL, WELCOME_EMAIL_SUBJECT } from '../config/constants'
 import { loadTemplate, renderTemplate } from './EmailTemplateService'
 import { NotificationProvider, NotificationProviderBoundaryError, ProviderRequest, ProviderResult, validateProviderRequest } from './NotificationProvider'
 import { logError } from '../utils/logger'
@@ -146,11 +146,11 @@ export class NotificationDeliveryWorker {
           const template = loadTemplate(welcome ? 'welcome.html' : 'message.html')
           if (!template) policy = { state: 'deferred', reason: 'template_unavailable' }
           else {
-            const subject = welcome ? 'Welcome to Chat App' : `New message from ${row.canonical.fromName || 'Unknown'}`
+            const subject = welcome ? WELCOME_EMAIL_SUBJECT : `New message from ${row.canonical.fromName || 'Unknown'}`
             const body = row.canonical.isEncrypted ? 'You have a new encrypted message. Open the app to view it.' : String(row.canonical.message)
             request = { provider: 'email', to: row.advisory.userEmail as string, subject, html: renderTemplate(template, {
               TITLE: escapeHtml(subject), BODY: escapeHtml(body), APP_URL, YEAR: String(new Date().getFullYear()),
-              EMAIL_FROM: config.EMAIL_FROM || 'notifications@chat-app', LOGO_DATA_URI: LOGO_URL,
+              EMAIL_FROM: config.EMAIL_FROM || 'notifications@chat-app',
             }) }
           }
         } else request = { provider: 'push', token: row.advisory.userToken as string, message: row.canonical.message as string, ...(row.canonical.isEncrypted ? { envelope: row.canonical.envelope as string } : {}) }

@@ -61,7 +61,7 @@ export class SecureEmailService {
         }
 
         const mailOptions: SendMailOptions = {
-          from: `${'Chat Service'} <${config.EMAIL_FROM}>`,
+          from: `Secret <${config.EMAIL_FROM}>`,
           to,
           subject,
           html: htmlContent,
@@ -85,7 +85,7 @@ export class SecureEmailService {
       const payload: BrevoEmailPayload = {
         sender: {
           email: config.EMAIL_FROM,
-          name: 'Chat Service'
+          name: 'Secret'
         },
         to: [{ email: to }],
         subject,
