@@ -18,6 +18,8 @@ import type { Server } from 'node:http'
 import jwt from 'jsonwebtoken'
 import { MessageSubmissionService } from '../../src/services/MessageSubmissionService'
 import { start, gracefulShutdown } from '../../src/server'
+import { AppDataSource } from '../../src/database/connection'
+import { rabbitMQService } from '../../src/services/RabbitMQService'
 
 let server: Server
 let origin: string
@@ -27,6 +29,7 @@ beforeAll(async () => {
   origin = 'http://127.0.0.1:' + (server.address() as import('node:net').AddressInfo).port
 })
 afterAll(async () => { await gracefulShutdown('TEST'); jest.restoreAllMocks() })
+afterEach(() => { jest.restoreAllMocks() })
 
 it('has no legacy realtime dependencies in the manifest or installed lock graph', () => {
   const manifest = JSON.parse(readFileSync(resolve(__dirname, '../../package.json'), 'utf8'))
@@ -63,4 +66,16 @@ it('preserves the health response shape without a Redis provider', async () => {
   const response = await fetch(origin + '/health')
   expect(response.status).toBe(503)
   expect(await response.json()).toEqual({ status: 'degraded' })
+})
+
+it.each<[boolean, boolean, number, string]>([
+  [false, true, 503, 'degraded'],
+  [true, false, 503, 'degraded'],
+  [true, true, 200, 'ok'],
+])('reports health with database=%s and broker=%s', async (databaseReady, brokerReady, status, health) => {
+  jest.replaceProperty(AppDataSource, 'isInitialized', databaseReady)
+  jest.spyOn(rabbitMQService, 'isHealthy').mockReturnValue(brokerReady)
+  const response = await fetch(origin + '/health')
+  expect(response.status).toBe(status)
+  expect(await response.json()).toEqual({ status: health })
 })

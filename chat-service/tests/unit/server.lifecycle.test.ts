@@ -57,3 +57,16 @@ it('attempts every owned cleanup after HTTP and worker cleanup failures', async 
   expect(mockDatabase.destroy).toHaveBeenCalledTimes(1)
   expect(process.exitCode).toBe(1)
 })
+
+it('cleans up once after startup fails before HTTP can listen', async () => {
+  const { connectDB } = require('../../src/database')
+  connectDB.mockRejectedValueOnce(new Error('fixture database startup failure'))
+  const runtime = require('../../src/server')
+  await expect(runtime.start()).rejects.toThrow('fixture database startup failure')
+  await Promise.all([runtime.gracefulShutdown('STARTUP_FAILURE'), runtime.gracefulShutdown('SIGTERM')])
+  expect(mockApp.listen).not.toHaveBeenCalled()
+  expect(mockHttp.close).not.toHaveBeenCalled()
+  expect(mockHttp.closeAllConnections).not.toHaveBeenCalled()
+  expect(mockWorker.start).not.toHaveBeenCalled()
+  expect(order).toEqual(['worker-stop', 'broker', 'database'])
+})

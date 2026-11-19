@@ -30,9 +30,9 @@ USER root
 # Keep the gateway and Alpine runtime packages on their verified security fixes.
 RUN apk add --no-cache --upgrade nginx=1.30.7-r0 zlib=1.4-r0 musl=1.2.6-r3 musl-utils=1.2.6-r3
 
-# Keep the existing VPS bind-mount path and UID; only nginx's writable cache changes owner.
+# Preserve the VPS bind mount and give UID 1001 access to both NGINX runtime directories.
 RUN mkdir -p /opt/bitnami/nginx/conf /var/www/certbot /etc/letsencrypt \
-    && chown -R 1001:0 /var/cache/nginx /var/www/certbot /etc/letsencrypt \
+    && chown -R 1001:0 /var/cache/nginx /var/lib/nginx /var/www/certbot /etc/letsencrypt \
     && ln -sf /opt/bitnami/nginx/conf/nginx.conf /etc/nginx/nginx.conf
 
 # Copy the appropriate config based on environment
