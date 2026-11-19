@@ -35,6 +35,8 @@ To run the isolated test, use the committed frontend and backend worktrees. From
 node tests/fullstack/run.mjs --start-fixture --go-websocket --frontend-dir /path/to/frontend-worktree
 ```
 
+Without `--go-websocket`, the fixture checks encrypted persistence and account isolation. With it, the fixture checks Go events and reconnects. Both modes start Go. Run each mode in a fresh fixture to preserve the production authentication rate limits.
+
 Add `--rehearse-rollback` to restart Go before the browser test. The fixture restores the prior Go-compatible frontend while Go stays running. It waits one minute between flows for the shared prekey rate limit and checks that stored ciphertext remains unchanged.
 
 Add `--rollback-frontend-sha <full-commit-sha>` to restore a prior frontend image during the rehearsal. The fixture builds the prior image before the test and starts it by local image ID. It records both image IDs after Go delivery and database checks pass.

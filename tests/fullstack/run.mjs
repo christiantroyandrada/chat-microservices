@@ -33,15 +33,16 @@ const composePrefix = macOS ? [] : ['--context', context, 'compose'];
 const runId = `fullstack-${randomUUID().replaceAll('-', '').slice(0, 12)}`;
 const project = runId;
 const databaseName = `fullstack_${runId.slice(10)}`;
+const goBrowserFlow = options.has('--go-websocket');
 const rehearseRollback = options.has('--rehearse-rollback');
 const rollbackFrontendCommit = options.get('--rollback-frontend-sha');
 const checkRelayCapacity = options.has('--check-relay-capacity');
-assert.ok(!rehearseRollback || options.has('--start-fixture'), '--rehearse-rollback requires --start-fixture');
+assert.ok(!rehearseRollback || (goBrowserFlow && options.has('--start-fixture')), '--rehearse-rollback requires --start-fixture and --go-websocket');
 if (rollbackFrontendCommit) {
   assert.ok(rehearseRollback, '--rollback-frontend-sha requires --rehearse-rollback');
   assert.match(rollbackFrontendCommit, /^[0-9a-f]{40}$/, 'Use the full prior frontend commit SHA');
 }
-assert.ok(!checkRelayCapacity || options.has('--start-fixture'), '--check-relay-capacity requires --start-fixture');
+assert.ok(!checkRelayCapacity || (goBrowserFlow && options.has('--start-fixture')), '--check-relay-capacity requires --start-fixture and --go-websocket');
 const services = new Set(['postgres', 'rabbitmq', 'user', 'chat', 'notification', 'frontend', 'gateway', 'go-websocket']);
 const cleanEnvironment = Object.fromEntries(['HOME', 'PATH', 'TMPDIR', 'USER'].filter(key => process.env[key]).map(key => [key, process.env[key]]));
 cleanEnvironment.DOCKER_CONTEXT = context;
@@ -491,10 +492,7 @@ async function main() {
       assert.equal(restarted.State.Running, true);
       assert.notEqual(restarted.State.StartedAt, relay.State.StartedAt);
     }
-    await browserFlow('Real encrypted chat persistence and account isolation', ['chat.spec.ts']);
-    console.log('Wait for the shared prekey rate limit window before the Go flow.');
-    await delay(60_000);
-    await browserFlow('Real Go delivery, receipt, presence, and reconnect flow', ['go-websocket.spec.ts']);
+    await browserFlow('Real encrypted browser and database flow', [goBrowserFlow ? 'go-websocket.spec.ts' : 'chat.spec.ts']);
     if (checkRelayCapacity) {
       await browserFlow('Go relay capacity through NGINX', ['go-websocket-capacity.spec.ts'], join(runtime, 'capacity-evidence'));
     }
