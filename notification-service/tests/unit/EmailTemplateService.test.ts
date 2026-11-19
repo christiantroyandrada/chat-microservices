@@ -34,6 +34,7 @@ describe('EmailTemplateService', () => {
     expect(email?.subject).toBe(subject)
     expect(email?.html).toContain(body)
     expect(email?.html).toContain('Open Secret')
+    expect(email?.html).toMatch(/<title>[^<]+<\/title>/)
     expect(email?.html).toContain('notifications@chat-app')
     expect(email?.html).toContain('prefers-color-scheme: dark')
     expect(email?.html).not.toMatch(/{{|<img\b|<Alice>|<b>|ciphertext fixture/)
