@@ -7,7 +7,7 @@ const CHAT_PAGINATION = {
 } as const
 
 type PaginationField = keyof typeof CHAT_PAGINATION
-type PaginationQuery = Partial<Record<PaginationField, unknown>>
+type PaginationQuery = Partial<Record<PaginationField | 'afterMessageId' | 'beforeMessageId', unknown>>
 
 function parseBoundedSafeInteger(field: PaginationField, value: unknown): number {
   const { min, max } = CHAT_PAGINATION[field]
@@ -27,15 +27,41 @@ function parseBoundedSafeInteger(field: PaginationField, value: unknown): number
 export function parseConversationPagination(queryValues: PaginationQuery): {
   limit: number
   offset: number
+  afterMessageId?: string
+  beforeMessageId?: string
 } {
+  const { afterMessageId, beforeMessageId } = queryValues
+  if (afterMessageId !== undefined && afterMessageId !== 'start' &&
+      (typeof afterMessageId !== 'string' || !UUID.test(afterMessageId))) {
+    throw new Error('afterMessageId must be a UUID or start')
+  }
+  if (beforeMessageId !== undefined &&
+      (typeof beforeMessageId !== 'string' || !UUID.test(beforeMessageId))) {
+    throw new Error('beforeMessageId must be a UUID')
+  }
+  const offset = queryValues.offset === undefined
+    ? CHAT_PAGINATION.offset.defaultValue
+    : parseBoundedSafeInteger('offset', queryValues.offset)
+  if ((afterMessageId !== undefined && beforeMessageId !== undefined) ||
+      (offset !== 0 && (afterMessageId !== undefined || beforeMessageId !== undefined))) {
+    throw new Error('Use one cursor without an offset')
+  }
   return {
     limit: queryValues.limit === undefined
       ? CHAT_PAGINATION.limit.defaultValue
       : parseBoundedSafeInteger('limit', queryValues.limit),
-    offset: queryValues.offset === undefined
-      ? CHAT_PAGINATION.offset.defaultValue
-      : parseBoundedSafeInteger('offset', queryValues.offset),
+    offset,
+    ...(afterMessageId === undefined ? {} : { afterMessageId: afterMessageId.toLowerCase() }),
+    ...(beforeMessageId === undefined ? {} : { beforeMessageId: beforeMessageId.toLowerCase() }),
   }
+}
+
+export function parseReadMessageIds(value: unknown): string[] {
+  if (!Array.isArray(value) || value.length < 1 || value.length > 50 ||
+      !value.every((id): id is string => typeof id === 'string' && UUID.test(id))) {
+    throw new Error('messageIds must contain between 1 and 50 UUIDs')
+  }
+  return [...new Set(value.map(id => id.toLowerCase()))]
 }
 
 export const sendMessageValidation: ValidationChain[] = [

@@ -50,6 +50,51 @@ async function request(path: string, user = senderId, method = 'GET', body?: Rec
 }
 const rest = (body: Record<string, unknown>, user = senderId) => request('/send', user, 'POST', body)
 
+it('recovers more than one page after a scoped cursor, including equal timestamps', async () => {
+  const id = (index: number) => '00000000-0000-4000-8000-' + String(index).padStart(12, '0')
+  await AppDataSource.query(`
+    INSERT INTO messages (id, "senderId", "receiverId", message, "createdAt")
+    SELECT ('00000000-0000-4000-8000-' || lpad(n::text, 12, '0'))::uuid, $1, $2, $3,
+      TIMESTAMP '2026-01-01 00:00:00.123456'
+    FROM generate_series(0, 61) AS n
+  `, [senderId, receiverId, envelope])
+  await AppDataSource.query('INSERT INTO messages (id, "senderId", "receiverId", message) VALUES ($1, $2, $3, $4)', [id(99), foreignId, receiverId, envelope])
+  const url = '/get/' + senderId + '?limit=50&afterMessageId='
+  const first = await request(url + id(0), receiverId)
+  expect(first.status).toBe(200)
+  expect(first.body.pagination.hasMore).toBe(true)
+  expect(first.body.data.map((row: { id: string }) => row.id)).toEqual(Array.from({ length: 50 }, (_, i) => id(i + 1)))
+  const next = await request(url + id(50), receiverId)
+  expect(next.status).toBe(200)
+  expect(next.body.pagination.hasMore).toBe(false)
+  expect(next.body.data.map((row: { id: string }) => row.id)).toEqual(Array.from({ length: 11 }, (_, i) => id(i + 51)))
+  const earlier = await request('/get/' + senderId + '?limit=2&beforeMessageId=' + id(4), receiverId)
+  expect(earlier.body).toMatchObject({ data: [{ id: id(2) }, { id: id(3) }], pagination: { hasMore: true } })
+  const start = await request('/get/' + senderId + '?limit=1&afterMessageId=start', receiverId)
+  expect(start.body).toMatchObject({ data: [{ id: id(0) }], pagination: { hasMore: true } })
+  expect((await request(url + id(99), receiverId)).status).toBe(404)
+  expect((await request(url + 'bad', receiverId)).status).toBe(400)
+})
+
+it('marks only the submitted incoming message IDs as seen', async () => {
+  const repo = AppDataSource.getRepository(Message)
+  const [earlier, visible, later, foreign] = await repo.save([senderId, senderId, senderId, foreignId].map(id => ({
+    senderId: id, receiverId, message: envelope,
+  })))
+  const path = '/messages/read/' + senderId + '/visible?expectedUserId=' + receiverId
+  expect(await request(path, receiverId, 'PUT', { messageIds: [visible.id, foreign.id] }))
+    .toMatchObject({ status: 200, body: { data: { modifiedCount: 1 } } })
+  expect(await request(path, receiverId, 'PUT', { messageIds: [visible.id] }))
+    .toMatchObject({ status: 200, body: { data: { modifiedCount: 0 } } })
+  expect((await request(path, receiverId, 'PUT', { messageIds: [] })).status).toBe(400)
+  expect((await request(path, receiverId, 'PUT', {})).status).toBe(400)
+  expect((await request(path, receiverId, 'PUT')).status).toBe(400)
+  const statuses = Object.fromEntries((await repo.find()).map(row => [row.id, row.status]))
+  expect(statuses).toEqual({
+    [earlier.id]: 'NotDelivered', [visible.id]: 'Seen', [later.id]: 'NotDelivered', [foreign.id]: 'NotDelivered',
+  })
+})
+
 beforeAll(async () => {
   await AppDataSource.initialize()
   await guard()

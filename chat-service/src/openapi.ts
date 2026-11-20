@@ -65,6 +65,13 @@ const spec = {
           },
         },
       },
+      MarkVisibleAsReadRequest: {
+        type: 'object' as const,
+        required: ['messageIds'],
+        properties: {
+          messageIds: { type: 'array' as const, minItems: 1, maxItems: 50, items: { type: 'string' as const, format: 'uuid' } },
+        },
+      },
       Message: {
         type: 'object' as const,
         required: ['id', 'senderId', 'receiverId', 'message', 'isEncrypted', 'status', 'createdAt', 'updatedAt'],
@@ -199,12 +206,15 @@ const spec = {
           { name: 'expectedUserId', in: 'query' as const, required: false, schema: { type: 'string' as const, format: 'uuid' }, description: 'Optional account precondition. A mismatch with the authenticated user returns 403 before data access.' },
           { name: 'limit',  in: 'query' as const, schema: { type: 'integer' as const, default: 50, minimum: 1, maximum: 200 } },
           { name: 'offset', in: 'query' as const, schema: { type: 'integer' as const, default: 0, minimum: 0, maximum: Number.MAX_SAFE_INTEGER } },
+          { name: 'afterMessageId', in: 'query' as const, schema: { type: 'string' as const }, description: 'Set the cursor to a message ID in this conversation or to start. The page starts after the cursor. Use offset 0.' },
+          { name: 'beforeMessageId', in: 'query' as const, schema: { type: 'string' as const, format: 'uuid' }, description: 'Set the cursor to a message ID in this conversation. The page ends before the cursor. Use offset 0.' },
         ],
         responses: {
           '200': { description: 'Conversation messages (chronological order)', content: { 'application/json': { schema: { $ref: '#/components/schemas/MessagesPageResponse' } } } },
           '400': { description: 'Invalid pagination or account precondition', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
           '401': { description: 'Authentication required' },
           '403': { description: 'Expected user does not match authenticated user', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
+          '404': jsonResponse('Message cursor not found in this conversation', 'Error'),
         },
       },
     },
@@ -240,6 +250,33 @@ const spec = {
         responses: {
           '200': { description: 'Messages marked as read', content: { 'application/json': { schema: { $ref: '#/components/schemas/MarkReadResponse' } } } },
           '400': { description: 'Invalid sender ID or account precondition', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
+          '401': { description: 'Authentication required' },
+          '403': { description: 'Expected user does not match authenticated user', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
+        },
+      },
+    },
+    '/messages/read/{senderId}/visible': {
+      put: {
+        operationId: 'chat.markVisibleAsRead' as const,
+        'x-response-mode': 'envelope' as const,
+        tags: ['Messages'],
+        summary: 'Mark the specified messages from a sender as read',
+        security: [{ cookieAuth: [] }],
+        parameters: [
+          { name: 'senderId', in: 'path' as const, required: true, schema: { type: 'string' as const, format: 'uuid' } },
+          { name: 'expectedUserId', in: 'query' as const, required: false, schema: { type: 'string' as const, format: 'uuid' }, description: 'Optional account precondition. A mismatch with the authenticated user returns 403 before data access.' },
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: { $ref: '#/components/schemas/MarkVisibleAsReadRequest' },
+            },
+          },
+        },
+        responses: {
+          '200': { description: 'Messages marked as read', content: { 'application/json': { schema: { $ref: '#/components/schemas/MarkReadResponse' } } } },
+          '400': jsonResponse('Invalid message IDs, sender ID, or account precondition', 'Error'),
           '401': { description: 'Authentication required' },
           '403': { description: 'Expected user does not match authenticated user', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
         },

@@ -2,7 +2,7 @@ import { Response, Request, NextFunction } from 'express'
 import { LRUCache } from 'lru-cache'
 import type { ConversationRow, UserDetails } from '../types'
 import { AuthenticatedRequest } from '../middleware'
-import { parseConversationPagination } from '../middleware/validation/messageValidation'
+import { parseConversationPagination, parseReadMessageIds } from '../middleware/validation/messageValidation'
 import { Message, AppDataSource } from '../database'
 import { APIError } from '../utils'
 import { MessageSubmissionService } from '../services/MessageSubmissionService'
@@ -186,27 +186,41 @@ const fetchConversation = async (
 
     // Keep controller parsing aligned with route validation so bypassed middleware
     // cannot pass Infinity or unsafe values into TypeORM's skip/take methods.
-    let limit: number
-    let offset: number
+    let pagination: ReturnType<typeof parseConversationPagination>
     try {
-      ({ limit, offset } = parseConversationPagination(req.query))
+      pagination = parseConversationPagination(req.query)
     } catch (error) {
       throw new APIError(400, error instanceof Error ? error.message : 'Invalid pagination parameters')
     }
     
     const messageRepo = AppDataSource.getRepository(Message)
-    const [messages, total] = await messageRepo
+    const { limit, offset, afterMessageId, beforeMessageId } = pagination
+    const scope = "((message.senderId = :senderId AND message.receiverId = :receiverId) OR (message.senderId = :receiverId AND message.receiverId = :senderId))"
+    const query = messageRepo
       .createQueryBuilder("message")
-      .where(
-        "(message.senderId = :senderId AND message.receiverId = :receiverId) OR (message.senderId = :receiverId AND message.receiverId = :senderId)",
-        { senderId, receiverId },
+      .where(scope, { senderId, receiverId })
+    const cursor = afterMessageId ?? beforeMessageId
+    if (cursor && cursor !== 'start') {
+      // Keep the database timestamp's full precision when resolving the cursor.
+      const [anchor] = await messageRepo.query(
+        'SELECT "createdAt"::text AS timestamp FROM messages WHERE id = $1 AND (("senderId" = $2 AND "receiverId" = $3) OR ("senderId" = $3 AND "receiverId" = $2))',
+        [cursor, senderId, receiverId],
       )
-      .orderBy("message.createdAt", "DESC") // newest first for pagination
+      if (!anchor) throw new APIError(404, 'Message cursor not found')
+      const comparison = afterMessageId ? '>' : '<'
+      query.andWhere(`(message.createdAt, message.id) ${comparison} (:timestamp, :cursor)`, {
+        timestamp: anchor.timestamp,
+        cursor,
+      })
+    }
+    const direction = afterMessageId ? 'ASC' : 'DESC'
+    const [messages, total] = await query
+      .orderBy({ "message.createdAt": direction, "message.id": direction })
       .skip(offset)
       .take(limit)
       .getManyAndCount();
 
-    messages.reverse();
+    if (!afterMessageId) messages.reverse();
 
     return res.json({
       status: 200,
@@ -325,6 +339,7 @@ const markAsRead = async (
   req: AuthenticatedRequest,
   res: Response,
   next: NextFunction,
+  visibleOnly = false,
 ) => {
   try {
     validateExpectedIdentity(req.query?.expectedUserId, req.user._id);
@@ -334,7 +349,13 @@ const markAsRead = async (
     if (typeof requestedSenderId !== 'string' || !requestedSenderId) {
       throw new APIError(400, "Sender ID is required");
     }
-    const modifiedCount = await markConversationSeen(canonicalUserId(requestedSenderId), receiverId);
+    let messageIds: string[] | undefined
+    try {
+      if (visibleOnly) messageIds = parseReadMessageIds(req.body?.messageIds)
+    } catch (error) {
+      throw new APIError(400, error instanceof Error ? error.message : 'Invalid message IDs')
+    }
+    const modifiedCount = await markConversationSeen(canonicalUserId(requestedSenderId), receiverId, messageIds);
 
     chatMessagesReadTotal.inc();
 
@@ -378,6 +399,8 @@ export default {
   fetchConversation,
   getConversations,
   markAsRead,
+  markVisibleAsRead: (req: AuthenticatedRequest, res: Response, next: NextFunction) =>
+    markAsRead(req, res, next, true),
 };
 
 // Also provide named exports to support CommonJS `require()` consumers in tests

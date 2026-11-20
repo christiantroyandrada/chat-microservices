@@ -42,6 +42,14 @@ chatServiceRouter.put(
 )
 
 chatServiceRouter.put(
+  '/messages/read/:senderId/visible',
+  authMiddleware as RequestHandler,
+  ...markAsReadValidation,
+  validateRequest,
+  MessageController.markVisibleAsRead as RequestHandler
+)
+
+chatServiceRouter.put(
   '/messages/:messageId/delivered',
   authMiddleware as RequestHandler,
   ...acknowledgeDeliveryValidation,

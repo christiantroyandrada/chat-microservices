@@ -21,15 +21,17 @@ export async function markMessageDelivered(messageId: string, receiverId: string
   return { senderId: existing.senderId, changed }
 }
 
-export async function markConversationSeen(senderId: string, receiverId: string): Promise<number> {
-  const result = await AppDataSource.getRepository(Message)
+export async function markConversationSeen(senderId: string, receiverId: string, messageIds?: readonly string[]): Promise<number> {
+  if (messageIds?.length === 0) return 0
+  const update = AppDataSource.getRepository(Message)
     .createQueryBuilder()
     .update(Message)
     .set({ status: MessageStatus.Seen })
     .where('senderId = :senderId', { senderId })
     .andWhere('receiverId = :receiverId', { receiverId })
     .andWhere('status != :status', { status: MessageStatus.Seen })
-    .execute()
+  if (messageIds) update.andWhere('id IN (:...messageIds)', { messageIds })
+  const result = await update.execute()
 
   const count = result.affected ?? 0
   if (count > 0) void relayReceipt({ type: 'read', userId: senderId, by: receiverId })

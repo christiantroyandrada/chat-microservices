@@ -24,7 +24,7 @@ describe('MessageController - query builder and repository branches', () => {
 
     expect(repo.createQueryBuilder).toHaveBeenCalledWith('message')
     expect(qb.where).toHaveBeenCalled()
-    expect(qb.orderBy).toHaveBeenCalledWith('message.createdAt', 'DESC')
+    expect(qb.orderBy).toHaveBeenCalledWith({ 'message.createdAt': 'DESC', 'message.id': 'DESC' })
     expect(qb.getManyAndCount).toHaveBeenCalled()
     expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ status: 200, data: messages }))
   })

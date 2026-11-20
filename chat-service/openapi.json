@@ -68,6 +68,23 @@
           }
         }
       },
+      "MarkVisibleAsReadRequest": {
+        "type": "object",
+        "required": [
+          "messageIds"
+        ],
+        "properties": {
+          "messageIds": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 50,
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        }
+      },
       "Message": {
         "type": "object",
         "required": [
@@ -430,6 +447,23 @@
               "minimum": 0,
               "maximum": 9007199254740991
             }
+          },
+          {
+            "name": "afterMessageId",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Set the cursor to a message ID in this conversation or to start. The page starts after the cursor. Use offset 0."
+          },
+          {
+            "name": "beforeMessageId",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Set the cursor to a message ID in this conversation. The page ends before the cursor. Use offset 0."
           }
         ],
         "responses": {
@@ -458,6 +492,16 @@
           },
           "403": {
             "description": "Expected user does not match authenticated user",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Message cursor not found in this conversation",
             "content": {
               "application/json": {
                 "schema": {
@@ -578,6 +622,87 @@
           },
           "400": {
             "description": "Invalid sender ID or account precondition",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Expected user does not match authenticated user",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/messages/read/{senderId}/visible": {
+      "put": {
+        "operationId": "chat.markVisibleAsRead",
+        "x-response-mode": "envelope",
+        "tags": [
+          "Messages"
+        ],
+        "summary": "Mark the specified messages from a sender as read",
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "senderId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "expectedUserId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Optional account precondition. A mismatch with the authenticated user returns 403 before data access."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MarkVisibleAsReadRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Messages marked as read",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MarkReadResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid message IDs, sender ID, or account precondition",
             "content": {
               "application/json": {
                 "schema": {
