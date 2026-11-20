@@ -12,6 +12,17 @@ const jsonResponse = (description: string, schemaName: string) => ({
   content: { 'application/json': { schema: { $ref: `#/components/schemas/${schemaName}` } } },
 })
 
+const readReceiptParameters = [
+  { name: 'senderId', in: 'path' as const, required: true, schema: { type: 'string' as const, format: 'uuid' } },
+  { name: 'expectedUserId', in: 'query' as const, required: false, schema: { type: 'string' as const, format: 'uuid' }, description: 'Optional account precondition. A mismatch with the authenticated user returns 403 before data access.' },
+]
+const readReceiptResponses = {
+  '200': jsonResponse('Messages marked as read', 'MarkReadResponse'),
+  '400': jsonResponse('Invalid sender ID or account precondition', 'Error'),
+  '401': { description: 'Authentication required' },
+  '403': jsonResponse('Expected user does not match authenticated user', 'Error'),
+}
+
 const spec = {
   openapi: '3.0.3',
   info: {
@@ -243,16 +254,8 @@ const spec = {
         tags: ['Messages'],
         summary: 'Mark all messages from a sender as read',
         security: [{ cookieAuth: [] }],
-        parameters: [
-          { name: 'senderId', in: 'path' as const, required: true, schema: { type: 'string' as const, format: 'uuid' } },
-          { name: 'expectedUserId', in: 'query' as const, required: false, schema: { type: 'string' as const, format: 'uuid' }, description: 'Optional account precondition. A mismatch with the authenticated user returns 403 before data access.' },
-        ],
-        responses: {
-          '200': { description: 'Messages marked as read', content: { 'application/json': { schema: { $ref: '#/components/schemas/MarkReadResponse' } } } },
-          '400': { description: 'Invalid sender ID or account precondition', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
-          '401': { description: 'Authentication required' },
-          '403': { description: 'Expected user does not match authenticated user', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
-        },
+        parameters: readReceiptParameters,
+        responses: readReceiptResponses,
       },
     },
     '/messages/read/{senderId}/visible': {
@@ -262,10 +265,7 @@ const spec = {
         tags: ['Messages'],
         summary: 'Mark the specified messages from a sender as read',
         security: [{ cookieAuth: [] }],
-        parameters: [
-          { name: 'senderId', in: 'path' as const, required: true, schema: { type: 'string' as const, format: 'uuid' } },
-          { name: 'expectedUserId', in: 'query' as const, required: false, schema: { type: 'string' as const, format: 'uuid' }, description: 'Optional account precondition. A mismatch with the authenticated user returns 403 before data access.' },
-        ],
+        parameters: readReceiptParameters,
         requestBody: {
           required: true,
           content: {
@@ -275,10 +275,8 @@ const spec = {
           },
         },
         responses: {
-          '200': { description: 'Messages marked as read', content: { 'application/json': { schema: { $ref: '#/components/schemas/MarkReadResponse' } } } },
+          ...readReceiptResponses,
           '400': jsonResponse('Invalid message IDs, sender ID, or account precondition', 'Error'),
-          '401': { description: 'Authentication required' },
-          '403': { description: 'Expected user does not match authenticated user', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
         },
       },
     },

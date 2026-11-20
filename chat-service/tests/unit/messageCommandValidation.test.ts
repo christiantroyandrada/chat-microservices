@@ -1,5 +1,41 @@
 import { validationResult } from 'express-validator'
-import { sendMessageValidation, fetchConversationValidation, getConversationsValidation, markAsReadValidation, acknowledgeDeliveryValidation } from '../../src/middleware/validation/messageValidation'
+import { sendMessageValidation, fetchConversationValidation, getConversationsValidation, markAsReadValidation, acknowledgeDeliveryValidation, parseConversationPagination, parseReadMessageIds } from '../../src/middleware/validation/messageValidation'
+
+describe('cursor pagination', () => {
+  const id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+
+  it('accepts a cursor in either direction or the start sentinel', () => {
+    expect(parseConversationPagination({ afterMessageId: id.toUpperCase() }))
+      .toEqual({ limit: 50, offset: 0, afterMessageId: id })
+    expect(parseConversationPagination({ beforeMessageId: id.toUpperCase(), limit: '2', offset: '0' }))
+      .toEqual({ limit: 2, offset: 0, beforeMessageId: id })
+    expect(parseConversationPagination({ afterMessageId: 'start' }).afterMessageId).toBe('start')
+  })
+
+  it.each([
+    [{ afterMessageId: [id] }, 'afterMessageId'],
+    [{ afterMessageId: 'invalid' }, 'afterMessageId'],
+    [{ beforeMessageId: [id] }, 'beforeMessageId'],
+    [{ beforeMessageId: 'start' }, 'beforeMessageId'],
+    [{ afterMessageId: id, beforeMessageId: id }, 'Use one cursor'],
+    [{ afterMessageId: id, offset: 1 }, 'Use one cursor'],
+    [{ beforeMessageId: id, offset: 1 }, 'Use one cursor'],
+  ] as const)('rejects invalid cursor options %p', (query, message) => {
+    expect(() => parseConversationPagination(query)).toThrow(message)
+  })
+})
+
+describe('visible receipt validation', () => {
+  const id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+  it('canonicalizes duplicate IDs', () => {
+    expect(parseReadMessageIds([id, id.toUpperCase()])).toEqual([id])
+  })
+  it.each([undefined, [], Array(51).fill(id), [7], ['invalid']].map(value => ({ value })))(
+    'rejects an invalid message selection $value', ({ value }) => {
+      expect(() => parseReadMessageIds(value)).toThrow('messageIds must contain between 1 and 50 UUIDs')
+    },
+  )
+})
 
 describe('delivery acknowledgement validation', () => {
   const user = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'

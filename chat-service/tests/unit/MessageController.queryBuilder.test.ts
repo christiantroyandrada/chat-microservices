@@ -4,6 +4,7 @@ jest.mock('amqplib', () => ({}))
 jest.mock('../../src/services/RabbitMQService', () => ({ rabbitMQService: { getUserDetails: jest.fn() } }))
 
 describe('MessageController - query builder and repository branches', () => {
+  const cursor = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
   beforeEach(() => {
     jest.resetModules()
     jest.clearAllMocks()
@@ -47,6 +48,61 @@ describe('MessageController - query builder and repository branches', () => {
     expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ status: 200 }))
     const called = res.json.mock.calls[0][0]
     expect(called.data[0].username).toBe('Unknown User')
+  })
+
+  it.each([
+    ['afterMessageId', '>', 'ASC'],
+    ['beforeMessageId', '<', 'DESC'],
+  ])('uses a conversation-scoped tuple for %s', async (option, comparison, direction) => {
+    const timestamp = '2026-01-01 00:00:00.123456'
+    const { requireControllerWithMock } = require('../utils/testHelpers')
+    const { controller, repo, qb } = requireControllerWithMock('../../src/controllers/MessageController', {
+      queryResult: [{ timestamp }],
+      getManyResult: [{ id: cursor }],
+    })
+    const res = { json: jest.fn() }
+    const next = jest.fn()
+    await controller.fetchConversation({ params: { receiverId: 'u2' }, user: { _id: 'u1' }, query: { [option]: cursor } }, res, next)
+
+    expect(next).not.toHaveBeenCalled()
+    expect(repo.query).toHaveBeenCalledWith(expect.stringContaining('"createdAt"::text'), [cursor, 'u1', 'u2'])
+    expect(qb.andWhere).toHaveBeenCalledWith(`(message.createdAt, message.id) ${comparison} (:timestamp, :cursor)`, { timestamp, cursor })
+    expect(qb.orderBy).toHaveBeenCalledWith({ 'message.createdAt': direction, 'message.id': direction })
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ data: [{ id: cursor }] }))
+  })
+
+  it.each([['start', undefined], [cursor, 404]])('handles a start or missing cursor %s', async (afterMessageId, statusCode) => {
+    const { requireControllerWithMock } = require('../utils/testHelpers')
+    const { controller, repo, qb } = requireControllerWithMock('../../src/controllers/MessageController')
+    const res = { json: jest.fn() }
+    const next = jest.fn()
+    await controller.fetchConversation({ params: { receiverId: 'u2' }, user: { _id: 'u1' }, query: { afterMessageId } }, res, next)
+
+    if (statusCode) {
+      expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode }))
+      expect(qb.getManyAndCount).not.toHaveBeenCalled()
+    } else {
+      expect(next).not.toHaveBeenCalled()
+      expect(repo.query).not.toHaveBeenCalled()
+      expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ data: [] }))
+    }
+  })
+
+  it('applies the visible ID filter and rejects an absent selection before updating rows', async () => {
+    const { requireControllerWithMock } = require('../utils/testHelpers')
+    const { controller, qb } = requireControllerWithMock('../../src/controllers/MessageController', { executeResult: { affected: 1 } })
+    const req = { params: { senderId: 'u1' }, user: { _id: 'u2' } }
+    const res = { json: jest.fn() }
+    const next = jest.fn()
+    await controller.default.markVisibleAsRead(req, res, next)
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 400 }))
+    expect(qb.execute).not.toHaveBeenCalled()
+    expect(res.json).not.toHaveBeenCalled()
+
+    await controller.default.markVisibleAsRead({ ...req, body: { messageIds: [cursor] } }, res, next)
+    expect(qb.andWhere).toHaveBeenCalledWith('id IN (:...messageIds)', { messageIds: [cursor] })
+    expect(qb.execute).toHaveBeenCalledTimes(1)
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ data: { modifiedCount: 1 } }))
   })
 
   it('getConversations attaches real username when broker returns data', async () => {

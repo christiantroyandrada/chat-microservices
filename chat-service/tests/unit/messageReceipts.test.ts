@@ -54,3 +54,9 @@ it('relays a receiver-scoped Seen update to Go after storage changes and suppres
   expect(await markConversationSeen(senderId, receiverId)).toBe(0)
   expect(relayReceipt).toHaveBeenCalledTimes(1)
 })
+
+it('treats an empty scoped receipt as a no-op', async () => {
+  expect(await markConversationSeen(senderId, receiverId, [])).toBe(0)
+  expect(getRepository).not.toHaveBeenCalled()
+  expect(relayReceipt).not.toHaveBeenCalled()
+})
