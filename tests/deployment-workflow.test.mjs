@@ -596,7 +596,12 @@ test('successful release uses least-privilege database grants and never exposes 
   assert.match(compose, /POSTGRES_PASSWORD: \$\{ADMIN_PASSWORD/);
   assert.match(compose, /\$\{ADMIN_PASSWORD:.*is required\}/);
   const log = await readFile(h.log, 'utf8');
-  assert.match(log, /GRANT SELECT, INSERT, UPDATE, DELETE ON users, prekeys TO user_svc/);
+  const grants = log.split('\n').find(line => line.includes('REVOKE ALL ON ALL TABLES'));
+  assert.ok(grants, 'the release must reset table grants');
+  assert.match(grants, /\bpsql -X --single-transaction -v ON_ERROR_STOP=1\b/);
+  assert.match(grants, /GRANT SELECT, INSERT, UPDATE, DELETE ON users, prekeys TO user_svc/);
+  assert.match(grants, /GRANT SELECT, INSERT, UPDATE, DELETE ON notifications TO notif_svc/);
+  assert.match(yaml.load(compose).services.postgres.image, /^postgres:17\.12-bookworm@sha256:[0-9a-f]{64}$/);
 });
 
 const hasRealFlock = spawnSync('which', ['flock'], { encoding: 'utf8' }).status === 0;

@@ -76,7 +76,7 @@ declare -a BASE_IMAGES=(
     "node:22-trixie-slim"
     "gcr.io/distroless/nodejs22-debian13:nonroot"
     "nginxinc/nginx-unprivileged:stable-alpine-slim"
-    "postgres:17.6-trixie"
+    "postgres:17.12-trixie"
 )
 
 log "Checking ${#BASE_IMAGES[@]} base images for updates..."

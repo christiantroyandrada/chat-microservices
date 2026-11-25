@@ -194,7 +194,7 @@ write_compose() {
 name: $PROJECT_NAME
 services:
   postgres:
-    image: postgres:17-bookworm
+    image: postgres:17.12-bookworm@sha256:1eff563f6c868b9b433566e9f3cf6e5c79fbd3b95bf70ec7277d376cdbfc50d7
     restart: unless-stopped
     volumes:
       - postgres-data:/var/lib/postgresql/data
@@ -350,7 +350,7 @@ run_migrations() {
 }
 
 grant_service_tables() {
-  compose exec -T postgres psql -v ON_ERROR_STOP=1 -U "$ADMIN_USERNAME" -d chat_db \
+  compose exec -T postgres psql -X --single-transaction -v ON_ERROR_STOP=1 -U "$ADMIN_USERNAME" -d chat_db \
     -c "REVOKE ALL ON ALL TABLES IN SCHEMA public FROM user_svc, chat_svc, notif_svc;" \
     -c "ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE ALL ON TABLES FROM user_svc, chat_svc, notif_svc;" \
     -c "ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE ALL ON SEQUENCES FROM user_svc, chat_svc, notif_svc;" \

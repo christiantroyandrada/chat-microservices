@@ -125,6 +125,7 @@ assert.doesNotMatch(release, /chat-frontend@|frontend:|docker\s+(volume|containe
 
 const integrationGrants = await readFile(path.join(root, 'scripts/grant-service-privileges.sql'), 'utf8');
 const grantFunction = release.slice(release.indexOf('\ngrant_service_tables() {'), release.indexOf('\nensure_dependencies()'));
+assert.match(grantFunction, /\bpsql -X --single-transaction -v ON_ERROR_STOP=1\b/, 'production grants must share a fail-fast transaction');
 const releaseStatements = Array.from(grantFunction.matchAll(/-c "([^"\n]+;)"/g), match => match[1]);
 const integrationStatements = integrationGrants.split('\n').map(line => line.trim()).filter(line => line && !line.startsWith('--'));
 assert.deepEqual(integrationStatements, releaseStatements, 'integration grants must match production grants');

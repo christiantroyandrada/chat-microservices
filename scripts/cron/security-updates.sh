@@ -51,7 +51,7 @@ log "Checking Docker images for security updates..."
 cd /opt/chat-app/chat-microservices 2>/dev/null || exit 0
 
 # Check if base images have updates
-for image in postgres:17.6-trixie node:22-bullseye-slim nginx:latest; do
+for image in postgres:17.12-trixie node:22-bullseye-slim nginx:latest; do
     LOCAL_ID=$(docker images --format '{{.ID}}' "$image" 2>/dev/null | head -1)
     if [ -n "$LOCAL_ID" ]; then
         # Pull to check for updates (doesn't replace running containers)
