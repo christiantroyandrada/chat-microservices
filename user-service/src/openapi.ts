@@ -5,6 +5,16 @@
  * The spec is served at /api-docs.json (always) and /api-docs (dev-only UI).
  */
 
+const expectedAccount = {
+  name: 'expectedUserId',
+  in: 'query' as const,
+  required: false,
+  schema: { type: 'string' as const, minLength: 1 },
+  description: 'If specified, the ID must match the authenticated account.',
+}
+const accountMismatch = { description: 'The authenticated account does not match the expected account' }
+const invalidExpectedAccount = { description: 'Invalid request parameters' }
+
 const spec = {
   openapi: '3.0.3',
   info: {
@@ -302,13 +312,16 @@ const spec = {
         summary: 'Publish prekey bundle',
         description: 'Upload a Signal Protocol prekey bundle for the authenticated user.',
         security: [{ cookieAuth: [] }],
+        parameters: [expectedAccount],
         requestBody: {
           required: true,
           content: { 'application/json': { schema: { $ref: '#/components/schemas/PublishPrekeyRequest' } } },
         },
         responses: {
           '200': { description: 'Prekey bundle stored', content: { 'application/json': { schema: { $ref: '#/components/schemas/StatusResponse' } } } },
+          '400': invalidExpectedAccount,
           '401': { description: 'Authentication required' },
+          '403': accountMismatch,
         },
       },
     },
@@ -335,10 +348,13 @@ const spec = {
         tags: ['E2EE'],
         summary: 'Store complete Signal key set',
         security: [{ cookieAuth: [] }],
+        parameters: [expectedAccount],
         requestBody: { required: true, content: { 'application/json': { schema: { $ref: '#/components/schemas/SignalKeyBackupRequest' } } } },
         responses: {
           '200': { description: 'Keys stored', content: { 'application/json': { schema: { $ref: '#/components/schemas/StatusResponse' } } } },
+          '400': invalidExpectedAccount,
           '401': { description: 'Authentication required' },
+          '403': accountMismatch,
         },
       },
       get: {
@@ -349,10 +365,13 @@ const spec = {
         security: [{ cookieAuth: [] }],
         parameters: [
           { name: 'deviceId', in: 'query' as const, required: true, schema: { type: 'string' as const } },
+          expectedAccount,
         ],
         responses: {
           '200': { description: 'Stored keys', content: { 'application/json': { schema: { $ref: '#/components/schemas/SignalKeyBackupResponse' } } } },
+          '400': invalidExpectedAccount,
           '401': { description: 'Authentication required' },
+          '403': accountMismatch,
           '404': {
             description: 'No keys found',
             content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } },

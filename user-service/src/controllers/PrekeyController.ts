@@ -8,6 +8,12 @@ import { consumeOneTimePreKey, isPrekeyBundle } from '../utils/prekeyConsumption
 import { PrekeyMutationService } from '../services/PrekeyMutationService'
 import type { PrekeyBundle, EncryptedKeyBundle } from '../types'
 
+function assertExpectedAccount(expected: unknown, authenticated: string) {
+  if (expected === undefined) return
+  if (typeof expected !== 'string' || !expected.trim()) throw new APIError(400, 'Invalid expected user ID')
+  if (expected !== authenticated) throw new APIError(403, 'Authenticated account changed')
+}
+
 /**
  * Audit log helper - logs all key operations for security monitoring
  * CVE-010 FIX: Comprehensive audit logging
@@ -44,6 +50,7 @@ const storeSignalKeys = async (req: Request, res: Response, next: NextFunction) 
       throw new APIError(401, 'Authentication required')
     }
     
+    assertExpectedAccount(req.query?.expectedUserId, userId)
     if (!deviceId || !encryptedBundle) {
       auditLog('STORE_KEYS', userId, deviceId || 'unknown', clientIp, false, 'Missing required fields')
       throw new APIError(400, 'deviceId and encryptedBundle are required')
@@ -98,6 +105,7 @@ const getSignalKeys = async (req: Request, res: Response, next: NextFunction) =>
       throw new APIError(401, 'Authentication required')
     }
     
+    assertExpectedAccount(req.query.expectedUserId, userId)
     // CVE-005 FIX: Require deviceId parameter - prevents cross-device key access
     if (!deviceId) {
       auditLog('FETCH_KEYS', userId, 'unknown', clientIp, false, 'Missing deviceId')
@@ -145,6 +153,7 @@ const publishPrekey = async (req: Request, res: Response, next: NextFunction) =>
   const publisherId = req.user?.id as string | undefined
   const { deviceId, bundle } = req.body as { deviceId?: string; bundle?: PrekeyBundle }
     if (!publisherId) throw new APIError(401, 'Authentication required')
+    assertExpectedAccount(req.query?.expectedUserId, publisherId)
     if (!deviceId || !bundle) throw new APIError(400, 'deviceId and bundle are required')
 
     const { created } = await new PrekeyMutationService().publish(publisherId, deviceId, bundle)

@@ -3,6 +3,7 @@ process.env.JWT_SECRET = process.env.JWT_SECRET || 'test_jwt_secret_which_is_lon
 
 import PrekeyController from '../../src/controllers/PrekeyController'
 import { PrekeyMutationService } from '../../src/services/PrekeyMutationService'
+import { AppDataSource } from '../../src/database'
 import * as logger from '../../src/utils/logger'
 
 const userId = 'u1'
@@ -23,6 +24,25 @@ function reqRes(body: unknown) {
 
 describe('PrekeyController mutations via PrekeyMutationService', () => {
   afterEach(() => jest.restoreAllMocks())
+
+  it.each(['publishPrekey', 'storeSignalKeys', 'getSignalKeys'] as const)(
+    'rejects a stale account before accessing storage in %s',
+    async (handler) => {
+      const publish = jest.spyOn(PrekeyMutationService.prototype, 'publish').mockResolvedValue({ created: true })
+      const storeBackup = jest.spyOn(PrekeyMutationService.prototype, 'storeBackup').mockResolvedValue({ created: true })
+      const getRepository = jest.spyOn(AppDataSource, 'getRepository')
+      const { req, res, next } = reqRes({ deviceId: 'd1', bundle, encryptedBundle })
+      req.query = { deviceId: 'd1', expectedUserId: 'previous-user' }
+
+      await PrekeyController[handler](req, res, next)
+
+      expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 403 }))
+      expect(getRepository).not.toHaveBeenCalled()
+      expect(publish).not.toHaveBeenCalled()
+      expect(storeBackup).not.toHaveBeenCalled()
+      expect(res.json).not.toHaveBeenCalled()
+    }
+  )
 
   it('catches controller-owned publish: new bundle delegates to the service and returns published', async () => {
     const publish = jest.spyOn(PrekeyMutationService.prototype, 'publish').mockResolvedValue({ created: true })

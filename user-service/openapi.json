@@ -595,6 +595,18 @@
             "cookieAuth": []
           }
         ],
+        "parameters": [
+          {
+            "name": "expectedUserId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "If specified, the ID must match the authenticated account."
+          }
+        ],
         "requestBody": {
           "required": true,
           "content": {
@@ -616,8 +628,14 @@
               }
             }
           },
+          "400": {
+            "description": "Invalid request parameters"
+          },
           "401": {
             "description": "Authentication required"
+          },
+          "403": {
+            "description": "The authenticated account does not match the expected account"
           }
         }
       }
@@ -672,6 +690,18 @@
             "cookieAuth": []
           }
         ],
+        "parameters": [
+          {
+            "name": "expectedUserId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "If specified, the ID must match the authenticated account."
+          }
+        ],
         "requestBody": {
           "required": true,
           "content": {
@@ -693,8 +723,14 @@
               }
             }
           },
+          "400": {
+            "description": "Invalid request parameters"
+          },
           "401": {
             "description": "Authentication required"
+          },
+          "403": {
+            "description": "The authenticated account does not match the expected account"
           }
         }
       },
@@ -718,6 +754,16 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "expectedUserId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "If specified, the ID must match the authenticated account."
           }
         ],
         "responses": {
@@ -731,8 +777,14 @@
               }
             }
           },
+          "400": {
+            "description": "Invalid request parameters"
+          },
           "401": {
             "description": "Authentication required"
+          },
+          "403": {
+            "description": "The authenticated account does not match the expected account"
           },
           "404": {
             "description": "No keys found",

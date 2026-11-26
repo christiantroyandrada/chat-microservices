@@ -72,14 +72,24 @@ describe('user-service OpenAPI contract', () => {
 
   it('requires the device id used by the Signal backup lookup', () => {
     const paths = spec.paths as Record<string, Record<string, any>>;
-    expect(paths['/signal-keys'].get.parameters).toEqual([
+    expect(paths['/signal-keys'].get.parameters).toContainEqual(
       {
         name: 'deviceId',
         in: 'query',
         required: true,
         schema: { type: 'string' },
       },
-    ]);
+    );
+  });
+
+  it('declares the account precondition on each authenticated Signal key operation', () => {
+    const paths = spec.paths as Record<string, Record<string, any>>;
+    for (const operation of [paths['/prekeys'].post, paths['/signal-keys'].post, paths['/signal-keys'].get]) {
+      expect(operation.parameters).toContainEqual(expect.objectContaining({
+        name: 'expectedUserId', in: 'query', required: false,
+      }));
+      expect(operation.responses['403']).toBeDefined();
+    }
   });
 
   it('declares the runtime status and body contracts for prekey operations', () => {
