@@ -28,7 +28,7 @@ ARG NGINX_ENV=development
 USER root
 
 # Keep the gateway and Alpine runtime packages on their verified security fixes.
-RUN apk add --no-cache --upgrade nginx=1.30.7-r0 zlib=1.4-r0 musl=1.2.6-r3 musl-utils=1.2.6-r3
+RUN apk add --no-cache --upgrade nginx=1.30.8-r0 zlib=1.4-r0 musl=1.2.6-r3 musl-utils=1.2.6-r3
 
 # Preserve the VPS bind mount and give UID 1001 access to both NGINX runtime directories.
 RUN mkdir -p /opt/bitnami/nginx/conf /var/www/certbot /etc/letsencrypt \
